@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "CompanyFloat" ALTER COLUMN "id" SET DEFAULT 'COMPANY_ACCOUNT';

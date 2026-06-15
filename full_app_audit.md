@@ -1,0 +1,573 @@
+# 🔍 Full Application Audit Report — OTEBEN
+
+**Audited:** 2026-06-14 • **Scope:** All 24 API routes, 4 services, 12 dashboard pages, auth layer, data model, financial flows
+
+---
+
+## Executive Summary
+
+| Category | Findings |
+|----------|----------|
+| 🔴 **Critical (P0)** — Must fix before production | 6 |
+| 🟠 **High (P1)** — Significant bugs/security risks | 9 |
+| 🟡 **Medium (P2)** — Logic issues / data integrity | 8 |
+| 🔵 **Low (P3)** — Improvements / best practices | 10 |
+
+---
+
+## 🔴 CRITICAL (P0) — Fix Before Production
+
+### C1. Dead Code with Fastify References in `auth.service.ts`
+
+**File:** [auth.service.ts](file:///home/cimess/Dev/oteben/src/app/server/services/auth.service.ts#L251-L355)
+
+Lines 251–355 contain **Fastify-era code** that uses `this.prisma`, `req.session`, `reply.send()` — these will crash immediately at runtime. Two dead functions:
+
+- `verifyEmail()` (L251–294) — references `FastifyInstance`, `FastifyRequest`, `FastifyReply` which don't exist
+- `deleteToken()` (L300–353) — uses `this.prisma`, `reply` — will throw `undefined`
+
+```typescript
+// Line 251: This will crash — FastifyInstance is never imported
+export async function verifyEmail(this: FastifyInstance, req: FastifyRequest, reply: FastifyReply) {
+```
+
+**Impact:** If any route calls these functions, the server crashes. If unused, it's dead code that bloats the bundle and confuses maintainers.
+
+**Fix:** Delete both functions entirely (L251–355). Rewrite `verifyEmail` as a standalone Next.js-compatible function if email verification is still needed.
+
+---
+
+### C2. No Middleware — ALL Routes Are Unprotected at the Edge
+
+**Finding:** There is **NO `middleware.ts`** file anywhere in the project.
+
+Every API route currently checks `await auth()` inside the handler body. This means:
+1. The request **already enters the serverless function** before being rejected
+2. There's no centralized protection — you're relying on each route to remember its own auth check
+3. **If a developer forgets `await auth()` in a new route, it's completely open**
+
+**Impact:** Government-grade compliance requires defense-in-depth. Without middleware, you have a single layer of protection that's opt-in per route.
+
+**Fix:** Create `src/middleware.ts`:
+
+```typescript
+import { auth } from "@/auth";
+import { NextResponse } from "next/server";
+
+export default auth((req) => {
+  const { pathname } = req.nextUrl;
+  
+  // Public routes
+  if (pathname.startsWith("/api/auth") || 
+      pathname.startsWith("/api/register") ||
+      pathname.startsWith("/api/verifyToken") ||
+      pathname.startsWith("/api/regtoken") ||
+      pathname === "/login" ||
+      pathname === "/register") {
+    return NextResponse.next();
+  }
+  
+  // Protected: require auth
+  if (!req.auth) {
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    return NextResponse.redirect(new URL("/login", req.url));
+  }
+  
+  return NextResponse.next();
+});
+
+export const config = {
+  matcher: ["/dashboard/:path*", "/api/:path*"],
+};
+```
+
+---
+
+### C3. Password Hashing Inconsistency — Login Will Never Work
+
+**File:** [auth.service.ts L193](file:///home/cimess/Dev/oteben/src/app/server/services/auth.service.ts#L193) vs [auth.ts L34](file:///home/cimess/Dev/oteben/src/auth.ts#L34)
+
+The `login()` function in `auth.service.ts` adds a **salt/pepper**:
+```typescript
+const combinedPassword = password + (process.env.PASSWORD_SALT || "osarenowhen");
+const isValid = await bcrypt.compare(combinedPassword, user.password);
+```
+
+But `auth.ts` (the actual NextAuth authorize function) does **NOT** add the pepper:
+```typescript
+const isValid = await bcrypt.compare(password, user.password);  // No pepper!
+```
+
+And `register()` also does NOT add the pepper:
+```typescript
+const hashedPassword = await bcrypt.hash(password, 10);  // No pepper!
+```
+
+**Impact:** 
+- If `login()` is the active path → login always fails (pepper mismatch)
+- If `auth.ts` authorize is the active path → login works but `login()` function is broken dead code
+- Either way there's a dangerous inconsistency
+
+**Fix:** Decide on ONE auth flow. Since you're using NextAuth v5 with Credentials, the `authorize` function in `auth.ts` is the real login. **Delete the `login()` function** from `auth.service.ts` since it's unused dead code. If you want the pepper, add it to BOTH `register()` AND `authorize()`.
+
+---
+
+### C4. Restricted Users Can Still Log In
+
+**File:** [auth.ts L28-43](file:///home/cimess/Dev/oteben/src/auth.ts#L28-L43)
+
+The NextAuth `authorize()` function does NOT check `user.restricted`. A banned user can still authenticate and receive a valid JWT:
+
+```typescript
+// auth.ts authorize() — no restricted check!
+if (!isValid) return null;
+return { id: user.id.toString(), email: user.email, ... }; // ← banned user gets a token!
+```
+
+The `login()` function in `auth.service.ts` DOES check restricted (L202–204), but that function is dead code (see C3 above).
+
+**Impact:** An admin can restrict a user via `/api/admin/user PATCH`, but the user can still log in, get a JWT, and call any API.
+
+**Fix:** Add to `authorize()` in `auth.ts`:
+
+```typescript
+if (user.restricted) {
+  throw new Error("Your account has been restricted.");
+}
+```
+
+---
+
+### C5. `gettopup` Has No Role Check
+
+**File:** [gettopup/route.ts L11](file:///home/cimess/Dev/oteben/src/app/api/admin/float/gettopup/route.ts#L11)
+
+```typescript
+if (!session?.user) {  // ← Only checks if logged in, NOT role!
+  return Response.json({error: "Unauthorized"}, {status: 401});
+}
+```
+
+Any authenticated user (including TICKETER) can call `GET /api/admin/float/gettopup` and see **all company top-ups**. This is a financial data leak.
+
+**Fix:** Add role check:
+```typescript
+if (!session?.user || !["ADMIN", "AUDITOR"].includes(session.user.role)) {
+```
+
+---
+
+### C6. `admin/user GET` Has No Role Check
+
+**File:** [admin/user/route.ts L11](file:///home/cimess/Dev/oteben/src/app/api/admin/user/route.ts#L11)
+
+```typescript
+if (!session?.user?.id) {  // ← Any authenticated user can list ALL users!
+```
+
+A ticketer can call `GET /api/admin/user` and dump the entire user directory including emails, roles, supervisor assignments.
+
+**Fix:** Add role check:
+```typescript
+if (!session?.user?.id || !["ADMIN", "AUDITOR"].includes(session.user.role)) {
+```
+
+---
+
+## 🟠 HIGH (P1) — Significant Issues
+
+### H1. `ticketer/float` Route Has Broken Auth Guard
+
+**File:** [ticketer/float/route.ts L15](file:///home/cimess/Dev/oteben/src/app/api/ticketer/float/route.ts#L15)
+
+```typescript
+if (session.user.role !== "TICKETER" && !session.user.id) {
+```
+
+This reads: "block if role is NOT ticketer AND id is missing". Since `id` is always present after `auth()`, the check `!session.user.id` is always `false`, making the entire condition always `false`. **Any role can access ticketer float data.**
+
+**Fix:**
+```typescript
+if (session.user.role !== "TICKETER") {
+```
+
+---
+
+### H2. `topup` Route Missing Role Check
+
+**File:** [admin/float/topup/route.ts L14](file:///home/cimess/Dev/oteben/src/app/api/admin/float/topup/route.ts#L14)
+
+```typescript
+if(!session?.user?.id){  // ← Only checks if logged in!
+  throw new ApiError(401,"Unauthorized" );
+}
+```
+
+Any authenticated user can create company top-ups.
+
+**Fix:**
+```typescript
+if(!session?.user?.id || !["ADMIN"].includes(session.user.role)){
+```
+
+---
+
+### H3. SSE Events Route is Completely Commented Out
+
+**File:** [events/route.ts](file:///home/cimess/Dev/oteben/src/app/api/events/route.ts)
+
+The entire SSE endpoint is commented out (35 lines), but `topup.service.ts` still calls `broadcast()`:
+
+```typescript
+// topup.service.ts L75
+broadcast("TOPUP_CREATED", { ... }, ["ADMIN","SUPERVISOR"]);
+```
+
+**Impact:** The `broadcast` call either silently fails or throws depending on implementation. No real-time events are reaching the frontend.
+
+---
+
+### H4. `deleteTopUp` Service Uses Wrong `account_id`
+
+**File:** [topup.service.ts L244](file:///home/cimess/Dev/oteben/src/app/server/services/topup.service.ts#L244)
+
+```typescript
+await tx.float_Ledger.create({
+  data: {
+    account_id: existingTopUp.allocated_from,  // ← BUG: This is "COMPANY_RESERVE" not "COMPANY_ACCOUNT"
+    account_type: "COMPANY",
+    ...
+    posSession: ""  // ← Empty string instead of null/undefined
+  }
+});
+```
+
+`allocated_from` is a TopUpSource enum value like `"COMPANY_RESERVE"`, NOT a valid account_id. The ledger entry is corrupted and won't appear in any balance reconciliation.
+
+**Fix:**
+```typescript
+account_id: "COMPANY_ACCOUNT",  // Always the company account
+// Remove posSession: "" — use null or omit
+```
+
+---
+
+### H5. Supervisor Float Allocation Route Swallows Errors
+
+**File:** [supervisor/floatallocation/route.ts L196-201](file:///home/cimess/Dev/oteben/src/app/api/supervisor/floatallocation/route.ts#L196-L201)
+
+```typescript
+} catch (error) {
+  console.error("POST /api/supervisor/topup error:", error);
+  return NextResponse.json({ 
+    success: false, 
+    message:"Internal Server Error" 
+  }, { status: 400 });  // ← Always returns 400, even for ApiError(400, "Insufficient float")
+}
+```
+
+Custom ApiError messages from the transaction (like "Insufficient company float") are swallowed and replaced with generic "Internal Server Error".
+
+**Fix:** Add ApiError handling like the other routes:
+```typescript
+if (error instanceof ApiError) {
+  return NextResponse.json({ success: false, message: error.message }, { status: error.statusCode });
+}
+```
+
+---
+
+### H6. `supervisor/device/assign POST` Swallows Errors Similarly
+
+**File:** [supervisor/device/assign/route.ts L108-110](file:///home/cimess/Dev/oteben/src/app/api/supervisor/device/assign/route.ts#L108-L110)
+
+Same issue — ApiError messages from the transaction are replaced with "Internal Server Error" and status 400.
+
+---
+
+### H7. No Audit Log on POS Device Assignment/Unassignment
+
+**Files:**
+- [admin/device/assign/route.ts](file:///home/cimess/Dev/oteben/src/app/api/admin/device/assign/route.ts) — POST/PUT
+- [supervisor/device/assign/route.ts](file:///home/cimess/Dev/oteben/src/app/api/supervisor/device/assign/route.ts) — POST/PUT
+
+Neither device assignment nor unassignment creates an `AuditLog` entry. For a government system, every device handoff should be auditable.
+
+---
+
+### H8. `deleteTopUp` Service has `before_state: 0`
+
+**File:** [topup.service.ts L261](file:///home/cimess/Dev/oteben/src/app/server/services/topup.service.ts#L261)
+
+```typescript
+await tx.auditLog.create({
+  data: {
+    before_state: 0,  // ← Should be the existingTopUp object, not the number 0
+```
+
+---
+
+### H9. Verify Route Doesn't Return ApiError Messages
+
+**File:** [verify/route.ts L124-127](file:///home/cimess/Dev/oteben/src/app/api/remitance/%5Bid%5D/verify/route.ts#L124-L127)
+
+```typescript
+} catch (error) {
+  return NextResponse.json({ error:"Internal Server Error" }, { status: 500 });
+}
+```
+
+ApiErrors like "Remittance not found" (404) or "already processed" (400) are swallowed and returned as generic 500s.
+
+---
+
+## 🟡 MEDIUM (P2) — Logic / Data Integrity
+
+### M1. `reverseTopUp` Swallows Errors and Returns `error` Object to Client
+
+**File:** [topup.service.ts L179-187](file:///home/cimess/Dev/oteben/src/app/server/services/topup.service.ts#L179-L187)
+
+```typescript
+} catch (error) {
+  return {
+    status: 500,
+    success: false,
+    message: "Internal server error",
+    error  // ← Leaks the entire error object (stack traces, Prisma details) to the client!
+  }
+}
+```
+
+**Impact:** Error stack traces containing table names, column names, and query details are exposed. Same issue in `deleteTopUp` (L280-285).
+
+---
+
+### M2. `remittance POST` — No Amount Validation
+
+**File:** [remitance/route.ts L22-24](file:///home/cimess/Dev/oteben/src/app/api/remitance/route.ts#L22-L24)
+
+```typescript
+if (!amount || !method || !remittance_date) {
+  return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+}
+```
+
+No validation that `amount > 0`, that `amount` is a number, or that `amount` isn't absurdly large. A user could submit `amount: -5000` or `amount: "hello"`.
+
+---
+
+### M3. `remittance POST` — Missing `posSession` Link
+
+Remittances are created without any reference to which POS session they came from. In a reconciliation audit, you can't tie a remittance back to the specific device session.
+
+---
+
+### M4. Registration Skips `existingUser` Check for Admin Role
+
+**File:** [auth.service.ts L52-100](file:///home/cimess/Dev/oteben/src/app/server/services/auth.service.ts#L52-L100)
+
+The `existingUser` duplicate check is inside the `if (role !== "ADMIN")` block. An admin can register the same email multiple times (Prisma will catch it via `@unique`, but the error message will be a generic Prisma error, not a friendly "already registered" message).
+
+---
+
+### M5. POS Session Carry-Over Float Is Dangerous
+
+**File:** [admin/device/assign/route.ts L38-43](file:///home/cimess/Dev/oteben/src/app/api/admin/device/assign/route.ts#L38-L43)
+
+```typescript
+const lastSession = await tx.posDeviceSession.findFirst({
+  where: { device_id: deviceId },
+  orderBy: { assigned_at: "desc" },
+});
+const carriedOverFloat = lastSession ? lastSession.pos_float : new Prisma.Decimal(0);
+```
+
+When a device is returned with float and re-assigned to a **different** user, the new user inherits the previous user's float without any ledger entry explaining the transfer. This creates a phantom balance.
+
+---
+
+### M6. `RemittanceExpectation` Revert Is Too Broad
+
+**File:** [reverse/route.ts L99-106](file:///home/cimess/Dev/oteben/src/app/api/remitance/%5Bid%5D/reverse/route.ts#L99-L106)
+
+```typescript
+await tx.remittanceExpectation.updateMany({
+  where: {
+    ticketer_id: remittance.submitted_by,
+    status: "PAID",
+  },
+  data: { status: "PENDING" },
+});
+```
+
+This reverts **ALL** paid expectations for the ticketer, not just the ones related to this specific remittance. If the ticketer has multiple confirmed remittances and one is reversed, ALL their paid expectations flip back to PENDING.
+
+---
+
+### M7. No Pagination on Remittances GET
+
+**File:** [remitance/route.ts L136](file:///home/cimess/Dev/oteben/src/app/api/remitance/route.ts#L136)
+
+```typescript
+const remittances = await prisma.remittance.findMany({
+  where,
+  orderBy: { created_at: "desc" },
+  // No take/limit!
+```
+
+For an Admin viewing all remittances, this returns EVERY remittance ever created. Over time this becomes a performance bottleneck.
+
+---
+
+### M8. Transaction Route Hardcoded `take: 100`
+
+**File:** [transaction/route.ts L82](file:///home/cimess/Dev/oteben/src/app/api/transaction/route.ts#L82)
+
+```typescript
+const entries = await prisma.float_Ledger.findMany({
+  where,
+  orderBy: { created_at: "desc" },
+  take: 100,  // ← No cursor/pagination support
+```
+
+No way for the frontend to load more than 100 entries. Should support cursor-based pagination.
+
+---
+
+## 🔵 LOW (P3) — Improvements
+
+### L1. No Database Indexes on Frequently Queried Fields
+
+The Prisma schema has NO explicit indexes. For a financial system, these queries will get slow:
+
+| Table | Fields to Index |
+|-------|----------------|
+| `Float_Ledger` | `account_id`, `entry_type`, `reference_type`, `created_at` |
+| `Remittance` | `submitted_by`, `status`, `remittance_date` |
+| `Float_allocations` | `from_user`, `allocated_at`, `status` |
+| `PosDeviceSession` | `user_id + status` (composite) |
+| `SalesReport` | `ticketer_id`, `report_date` |
+| `RemittanceExpectation` | `ticketer_id`, `status` |
+
+### L2. Session Duration is 24 Hours
+
+`maxAge: 24 * 60 * 60` means a session lasts a full day. For a government financial system, consider 8 hours (matching a work shift).
+
+### L3. No Rate Limiting Anywhere
+
+No rate limiting on any endpoint. A malicious user could:
+- Spam `POST /api/admin/float/topup` to create millions of top-ups
+- DOS the metrics endpoint
+- Brute-force login credentials
+
+### L4. Console.log Statements in Production Code
+
+Multiple `console.log` calls across auth.service.ts and topup.service.ts that leak debug info.
+
+### L5. Inconsistent Import Paths
+
+Some files use `@/lib/prisma`, others use `@/app/lib/prisma`. This suggests two prisma instances may exist:
+
+```
+/home/cimess/Dev/oteben/src/app/lib/prisma.ts   ← Used by most routes
+/home/cimess/Dev/oteben/src/lib/prisma.ts        ← Used by auth, devices, etc.
+```
+
+> [!WARNING]
+> If these are two different files creating separate `PrismaClient` instances, you'll get **connection pool exhaustion** and potential transaction isolation issues.
+
+### L6. `deleteTopUp` Uses `posSession: ""` Instead of `null`
+
+This violates the FK constraint silently. Should be `null` or omitted.
+
+### L7. `Reconciliation_reports` and `Commission_rules` Tables Are Unused
+
+No API routes read or write to these tables. They exist in the schema but have no business logic.
+
+### L8. `Fine` Model Has No API Routes
+
+Fines are counted in metrics (`alertCount`) but there are no routes to create, update, or pay fines.
+
+### L9. `OpsTopBar.tsx` Has a Commented-Out Debug Block
+
+Lines 132-144 contain a large commented-out block showing the metrics response shape. Should be removed.
+
+### L10. `refreshMetrics` Not Wrapped in `useCallback`
+
+**File:** [layout.tsx L67-78](file:///home/cimess/Dev/oteben/src/app/dashboard/layout.tsx#L67-L78)
+
+`refreshMetrics` is defined as a plain `async` function and used in a `useEffect` dependency array. The `useEffect` at L80-88 depends on `[session]` but references `refreshMetrics` which is recreated on every render — this can trigger cascading renders.
+
+---
+
+## 📊 Financial Flow Integrity Summary
+
+### Flow: Top-Up → Allocate → Sell → Remit → Verify/Reverse
+
+```mermaid
+graph LR
+    A[Admin TopUp] -->|✅ Correct| B[CompanyFloat++, Ledger CREDIT]
+    B --> C[Supervisor Allocates to POS]
+    C -->|✅ Correct| D[CompanyFloat--, POS++ , Dual Ledger]
+    D --> E[Ticketer Sells Tickets]
+    E -->|⚠️ No SalesReport API| F[Manual SalesReport?]
+    F --> G[Ticketer Submits Remittance]
+    G -->|✅ Correct| H[Remittance PENDING created]
+    H --> I{Admin Verifies}
+    I -->|CONFIRM + Company Cash| J[✅ CompanyFloat++, Ledger CREDIT]
+    I -->|CONFIRM + Supervisor Cash| K[✅ Supervisor Ledger CREDIT only]
+    I -->|REJECT| L[✅ Status change only, no financial movement]
+    J --> M{Admin Reverses}
+    K --> M
+    M -->|Company originated| N[✅ CompanyFloat--, Ledger DEBIT]
+    M -->|Supervisor originated| O[✅ Fixed! Supervisor Ledger DEBIT only]
+```
+
+> [!NOTE]
+> The reversal bug you just fixed (supervisor-held cash incorrectly decrementing CompanyFloat) is now resolved in the code. However, the **2 phantom DEBIT ledger entries** from the old bug still exist in your database and need manual correction.
+
+---
+
+## 🎯 Priority Fix Order
+
+### Phase 1 — Security (Do Before Launch)
+1. **C2** — Add middleware.ts
+2. **C4** — Block restricted users in auth.ts
+3. **C5** — Add role check to gettopup
+4. **C6** — Add role check to admin/user GET
+5. **H1** — Fix ticketer/float broken auth guard
+6. **H2** — Add role check to topup POST
+
+### Phase 2 — Data Integrity
+1. **C1** — Delete dead Fastify code
+2. **C3** — Remove dead `login()` function
+3. **H4** — Fix `deleteTopUp` wrong account_id
+4. **M1** — Stop leaking error objects
+5. **M6** — Fix overbroad expectation revert
+
+### Phase 3 — Operational Readiness
+1. **H5/H6** — Fix error swallowing in supervisor routes
+2. **H7** — Add audit logs for device assignment
+3. **H9** — Fix verify route error handling
+4. **L1** — Add database indexes
+5. **L5** — Verify single Prisma instance
+
+### Phase 4 — Polish
+1. **M2** — Add amount validation to remittance
+2. **M7/M8** — Add pagination
+3. **L2** — Reduce session duration
+4. **L3** — Add rate limiting
+5. Clean up console.logs and debug comments
+
+---
+
+## Database Corruption Fix (From Previous Bug)
+
+You still have 2 phantom DEBIT entries on `COMPANY_ACCOUNT` that should target the SUPERVISOR account. When you're ready, the fix requires:
+
+1. Update the 2 bad ledger entries to point to the correct supervisor account
+2. Recalculate and correct the `companyFloat.available_balance` cache
+
+Let me know when you're ready to execute the cleanup.

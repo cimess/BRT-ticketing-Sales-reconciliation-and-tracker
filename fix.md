@@ -1,0 +1,1 @@
+# fix the event which keep calling the server and also other pages nonstop causing memory leakage
