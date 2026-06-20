@@ -1,7 +1,7 @@
 // src/app/api/supervisor/user/route.ts
 import { NextResponse, NextRequest } from "next/server";
 import { auth } from "@/auth";
-import { prisma } from "@/app/lib/prisma";
+import { prisma } from "@/lib/prisma";
 
 export async function GET(req: NextRequest) {
   try {
@@ -11,11 +11,13 @@ export async function GET(req: NextRequest) {
     if (!session?.user?.id || session.user.role !== "SUPERVISOR") {
       return NextResponse.json({ error: "Unauthorized. Only Supervisors can access this." }, { status: 403 });
     }
+    const { company_id } = session.user;
 
     // Fetch ONLY the ticketers assigned to this specific supervisor
     const ticketers = await prisma.user.findMany({
       where: {
         supervisor_id: session.user.id,
+        company_id,
         role: "TICKETER"
       },
       select: {

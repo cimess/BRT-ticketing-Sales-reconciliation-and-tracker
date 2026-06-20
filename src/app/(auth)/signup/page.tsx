@@ -34,15 +34,17 @@ export default function Register() {
     const [phoneNumber, setPhoneNumber] = useState("")
     const [showPasswordToken, setShowPasswordToken] = useState(false)
     const [tokenMessage, setTokenMessage] = useState("")
+    const [companyCode, setCompanyCode] = useState("")
+    const [companyName, setCompanyName] = useState("")
 
     const navigate = useRouter();
 
 
-    const handleVerifyToken = async (token_to_verify: string) => {
+    const handleVerifyToken = async (token_to_verify: string, company_code: string) => {
 
 
         try {
-            const res = await api.post("/verifyToken", { token: token_to_verify })
+            const res = await api.post("/verifyToken", { token: token_to_verify, company_code })
             setRole(res.data.role)
             setTokenMessage(res.data.message)
             toast.success(res.data?.message)
@@ -67,15 +69,15 @@ export default function Register() {
     useEffect(() => {
         if (token.length < 16) return
 
-        
+
         const timeout = setTimeout(() => {
             try {
-                handleVerifyToken(token)
+                handleVerifyToken(token, companyCode)
             } catch (err) {
-                  setTokenMessage("Network error||system error")
-  setRole("")
+                setTokenMessage("Network error||system error")
+                setRole("")
             }
-            
+
         }, 800)
 
         return () => clearTimeout(timeout)
@@ -142,9 +144,16 @@ export default function Register() {
             setTimeout(() => setShake(false), 500)
             return
         }
+        if (!companyCode) {
+            toast.warning("Please enter company code")
+            setMessage("Please enter company code")
+            setShake(true)
+            setTimeout(() => setShake(false), 500)
+            return
+        }
 
 
-        try {           
+        try {
             setShowLoader(true)
             const res = await api.post('/register', {
                 email,
@@ -153,10 +162,11 @@ export default function Register() {
                 lastName,
                 token,
                 phoneNumber,
+                companyCode,
                 // so if the role is ADMIN, send the role, otherwise don't 
                 // send it so i just dont send stuff that wont be used
-                ...(role === "ADMIN" && { role }),
-                ...(role !== "ADMIN" && { guarantorName, guarantorPhone, guarantorAddress,role })
+                ...(role === "ADMIN" && { role, companyName }),
+                ...(role !== "ADMIN" && { guarantorName, guarantorPhone, guarantorAddress, role })
             })
 
             if (res.data.success) {
@@ -233,7 +243,7 @@ export default function Register() {
                                     className="w-full rounded-xl bg-white/3 border border-white/10
               text-white px-5 py-3.5 outline-none focus:border-white/20 transition-all font-medium"
                                     value={email}
-                                    onChange={(e) => setEmail(e.target.value)}
+                                    onChange={(e) => setEmail(e.target.value.trim())}
                                     onFocus={() => setMessage("Enter your email")}
                                 />
                             </div>
@@ -246,7 +256,7 @@ export default function Register() {
                                     className="w-full rounded-xl bg-white/3 border border-white/10
               text-white px-5 py-3.5 outline-none focus:border-white/20 transition-all font-medium"
                                     value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
+                                    onChange={(e) => setPassword(e.target.value.trim())}
                                     onFocus={() => { setMessage("Enter your password") }}
                                 />
                                 <button onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-gray-800"
@@ -263,7 +273,7 @@ export default function Register() {
                                     className="w-full rounded-xl bg-white/3 border border-white/10
               text-white px-5 py-3.5 outline-none focus:border-white/20 transition-all font-medium"
                                     value={confirmPassword}
-                                    onChange={(e) => setConfirmPassword(e.target.value)}
+                                    onChange={(e) => setConfirmPassword(e.target.value.trim())}
                                     onFocus={() => { setMessage("Enter your password") }}
                                 />
                                 <button onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-gray-800"
@@ -272,7 +282,17 @@ export default function Register() {
 
                                 </button>
                             </div>
-
+                            <div className="relative">
+                                <input
+                                    type="text"
+                                    placeholder="Company Code"
+                                    className="w-full rounded-xl bg-white/3 border border-white/10
+              text-white px-5 py-3.5 outline-none focus:border-white/20 transition-all font-medium"
+                                    value={companyCode}
+                                    onChange={(e) => setCompanyCode(e.target.value.trim())}
+                                    onFocus={() => setMessage("Enter your company code")}
+                                />
+                            </div>
 
                             <div className="relative">
                                 <input
@@ -324,7 +344,7 @@ export default function Register() {
               text-white px-5 py-3.5 outline-none focus:border-white/20 transition-all font-medium"
                                     value={token}
                                     onChange={(e) => {
-                                        setToken(e.target.value);
+                                        setToken(e.target.value.trim());
                                     }}
                                     onFocus={() => { setMessage("Enter your token") }}
                                 />
@@ -391,7 +411,18 @@ export default function Register() {
                                     {role}
                                 </div>
                             </div>
-
+                            {role === "ADMIN" && <div className="relative">
+                                <input
+                                    type="text"
+                                    placeholder="Company Name"
+                                    className="w-full rounded-xl bg-white/3 border border-white/10
+              text-white px-5 py-3.5 outline-none focus:border-white/20 transition-all font-medium"
+                                    value={companyName}
+                                    onChange={(e) => setCompanyName(e.target.value.trim())}
+                                    onFocus={() => setMessage("Enter your company name")}
+                                />
+                            </div>
+                            }
 
                             {role !== "ADMIN" && role !== "Please select your account role to proceed" &&
                                 <div className="relative">
@@ -415,7 +446,7 @@ export default function Register() {
                                         className="w-full rounded-xl bg-white/3 border border-white/10
               text-white px-5 py-3.5 outline-none focus:border-white/20 transition-all font-medium"
                                         value={guarantorPhone}
-                                        onChange={(e) => setGuarantorPhone(e.target.value)}
+                                        onChange={(e) => setGuarantorPhone(e.target.value.trim())}
                                         onFocus={() => { setMessage("Enter your guarantor's phone number") }}
                                     />
 
@@ -429,7 +460,7 @@ export default function Register() {
                                         className="w-full rounded-xl bg-white/3 border border-white/10
               text-white px-5 py-3.5 outline-none focus:border-white/20 transition-all font-medium"
                                         value={guarantorAddress}
-                                        onChange={(e) => setGuarantorAddress(e.target.value)}
+                                        onChange={(e) => setGuarantorAddress(e.target.value.trim())}
                                         onFocus={() => { setMessage("Enter your guarantor's address") }}
                                     />
 
@@ -466,9 +497,9 @@ export default function Register() {
 
                         <p className="text-center text-gray-400 text-xs sm:text-sm mt-6">
                             Already have an account?
-                            <a href="/login" className="text-cyan-400 ml-1 hover:underline">
+                            <Link href="/" className="text-cyan-400 ml-1 hover:underline">
                                 Login
-                            </a>
+                            </Link>
                         </p>
 
                     </div>

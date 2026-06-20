@@ -1,7 +1,7 @@
 // src/app/api/supervisor/topup/route.ts
 import { NextResponse, NextRequest } from "next/server";
 import { auth } from "@/auth";
-import { prisma } from "@/app/lib/prisma";
+import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { ApiError } from "next/dist/server/api-utils";
 
@@ -11,6 +11,7 @@ export async function GET(req: NextRequest) { // Updated signature
     if (!session?.user || (session.user.role !== "SUPERVISOR" && session.user.role !== "ADMIN")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    const { company_id } = session.user;
 
     const { searchParams } = new URL(req.url);
     const fromDate = searchParams.get("fromDate");
@@ -38,7 +39,7 @@ export async function GET(req: NextRequest) { // Updated signature
 
     // 2. Fetch history of POS float allocations filtered by date
     const history = await prisma.float_allocations.findMany({
-      where: whereClause, // Apply the date filters here
+      where: { company_id, ...whereClause }, // Apply the date filters here
       orderBy: {
         allocated_at: "desc"
       },
@@ -97,7 +98,7 @@ export async function POST(req: Request) {
     if (!session?.user || (session.user.role !== "SUPERVISOR" && session.user.role !== "ADMIN")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-
+    const { company_id } = session.user;
     const { posSessionId, amount } = await req.json();
 
     if (!posSessionId || !amount || Number(amount) <= 0) {
@@ -109,7 +110,7 @@ export async function POST(req: Request) {
     const result = await prisma.$transaction(async (tx) => {
       // 1. Get and verify company float
       const companyFloat = await tx.companyFloat.findUnique({
-        where: { id: "COMPANY_ACCOUNT" }
+        where: { id: "COMPANY_ACCOUNT" ,company_id}
       });
 
       if (!companyFloat || companyFloat.available_balance.lt(allocationAmount)) {
@@ -118,7 +119,7 @@ export async function POST(req: Request) {
 
       // 2. Verify target POS session exists and is active
       const posSession = await tx.posDeviceSession.findUnique({
-        where: { id: posSessionId }
+        where: { id: posSessionId,company_id }
       });
 
       if (!posSession || posSession.status !== "ACTIVE") {
@@ -127,7 +128,7 @@ export async function POST(req: Request) {
 
       // 3. Decrement Company Float
       const updatedCompanyFloat = await tx.companyFloat.update({
-        where: { id: "COMPANY_ACCOUNT" },
+        where: { id: "COMPANY_ACCOUNT",company_id },
         data: {
           available_balance: {
             decrement: allocationAmount
@@ -137,7 +138,7 @@ export async function POST(req: Request) {
 
       // 4. Increment POS session float
     await tx.posDeviceSession.update({
-        where: { id: posSessionId },
+        where: { id: posSessionId,company_id },
         data: {
           pos_float: {
             increment: allocationAmount
@@ -148,6 +149,7 @@ export async function POST(req: Request) {
       // 5. Create Float Allocation record
       const allocation = await tx.float_allocations.create({
         data: {
+          company_id,
           from_user: session.user.id!,
           pos_device_id: posSessionId,
           amount_allocated: allocationAmount,
@@ -155,9 +157,22 @@ export async function POST(req: Request) {
         }
       });
 
+      // 5.1 Create Remittance Expectation record
+      await tx.remittanceExpectation.create({
+        data: {
+          company_id,
+          user_id: posSession.user_id,
+          allocation_id: allocation.id,
+          expected_amount: Number(allocationAmount),
+          due_date: new Date(Date.now() + 24 * 60 * 60 * 1000),
+          status: "PENDING",
+        }
+      });
+
       // 6. Create Debit entry in Company Ledger
       await tx.float_Ledger.create({
         data: {
+          company_id,
           account_id: "COMPANY_ACCOUNT",
           account_type: "COMPANY",
           amount: allocationAmount,
@@ -171,6 +186,7 @@ export async function POST(req: Request) {
       // 7. Create Credit entry in POS Ledger
       await tx.float_Ledger.create({
         data: {
+          company_id,
           account_id: posSessionId,
           account_type: "POS_DEVICE",
           posSession: posSessionId,
@@ -197,7 +213,7 @@ export async function POST(req: Request) {
     console.error("POST /api/supervisor/topup error:", error);
     return NextResponse.json({ 
       success: false, 
-      message:"Internal Server Error" 
-    }, { status: 400 });
+      message: error instanceof ApiError ? (error.statusCode===500?"Internal Server Error":error.message) : "Internal Server Error" 
+    }, { status: error instanceof ApiError ? error.statusCode  : 500 });
   }
 }

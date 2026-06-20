@@ -1,12 +1,18 @@
-import register from "@/app/server/services/auth.service";
+import register from "@/server/services/auth.service";
 import { registerSchema } from "@/schemas/auth.schema";
-import { AppError } from "@/app/server/services/auth.service";
+import { AppError } from "@/server/services/auth.service";
 
 export async function POST(req: Request) {
 
   try {
     const body = await req.json();
+
+    if (body.company_code && !body.companyCode) {
+      body.companyCode = body.company_code;
+    }
+
     const validation = registerSchema.safeParse(body);
+    
     if (!validation.success) {
       const message = Object.values(validation.error.flatten().fieldErrors)
         .flat()

@@ -1,7 +1,7 @@
 // src/app/api/supervisor/device/assign/route.ts
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { prisma } from "@/app/lib/prisma";
+import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { ApiError } from "@/lib/ApiError";
 
@@ -12,7 +12,7 @@ export async function POST(req: Request) {
     if (!session?.user || (session.user.role !== "SUPERVISOR" && session.user.role !== "ADMIN")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-
+    const { company_id} = session.user;
     const { deviceId, userId } = await req.json();
 
     if (!deviceId || !userId) {
@@ -22,7 +22,7 @@ export async function POST(req: Request) {
     const result = await prisma.$transaction(async (tx) => {
       // a. Validate POS device exists and is inactive
       const device = await tx.pos_devices.findUnique({
-        where: { id: deviceId },
+        where: { id: deviceId,company_id },
       });
       if (!device) throw new ApiError(404,"POS device not found" );
       if (device.status === "ACTIVE") throw new ApiError(400,"Device is already assigned to a session" );
@@ -30,19 +30,19 @@ export async function POST(req: Request) {
 
       // b. Validate user has role TICKETER and has no other active assignments
       const targetUser = await tx.user.findUnique({
-        where: { id: userId },
+        where: { id: userId,company_id },
       });
       if (!targetUser) throw new ApiError(404,"User not found" );
       if (targetUser.role !== "TICKETER") throw new ApiError(400,"Only ticketers can be assigned a device by a supervisor" );
 
       const activeUserSession = await tx.posDeviceSession.findFirst({
-        where: { user_id: userId, status: "ACTIVE" },
+        where: { user_id: userId, status: "ACTIVE" ,company_id},
       });
       if (activeUserSession) throw new ApiError(400,"This user is already active on another POS device" );
 
       // c. Fetch remaining float from the device's last session (carry over / handover)
       const lastSession = await tx.posDeviceSession.findFirst({
-        where: { device_id: deviceId },
+        where: { device_id: deviceId,company_id },
         orderBy: { assigned_at: "desc" },
       });
 
@@ -51,6 +51,7 @@ export async function POST(req: Request) {
       // d. Create assignment session with the carried over float
       const newSession = await tx.posDeviceSession.create({
         data: {
+          company_id,
           device_id: deviceId,
           user_id: userId,
           pos_float: carriedOverFloat,
@@ -61,14 +62,14 @@ export async function POST(req: Request) {
 
       // e. Update device status to ACTIVE
       await tx.pos_devices.update({
-        where: { id: deviceId },
+        where: { id: deviceId,company_id },
         data: { status: "ACTIVE" },
       });
 
       // f. AUTO-UPDATE: Set the ticketer's supervisor to the assigning supervisor
       if (session.user.role === "SUPERVISOR") {
         await tx.user.update({
-          where: { id: userId },
+          where: { id: userId,company_id },
           data: { supervisor_id: session.user.id! },
         });
       }
@@ -77,6 +78,7 @@ export async function POST(req: Request) {
       if (carriedOverFloat.gt(0)) {
         await tx.float_Ledger.create({
           data: {
+            company_id,
             account_id: newSession.id,
             account_type: "POS_DEVICE",
             posSession: newSession.id,
@@ -88,6 +90,18 @@ export async function POST(req: Request) {
           },
         });
       }
+
+      // audit log for supervisor action
+      await tx.auditLog.create({
+        data: {
+          company_id,
+          user_id: session.user.id!,
+          action: "CREATE",
+          entity_type: "POS_DEVICE",
+          entity_id: newSession.id,
+          after_state: newSession,
+        }
+      });
 
       return newSession;
     });
@@ -105,8 +119,13 @@ export async function POST(req: Request) {
       },
     });
   } catch (error) {
+
     console.error("POST /api/supervisor/device/assign error:", error);
-    return NextResponse.json({ success: false, error: "Internal Server Error" }, { status: 400 });
+    return NextResponse.json({
+       success: false, 
+       message: error instanceof ApiError ? (error.statusCode===500?"Internal Server Error":error.message) :
+        "Internal Server Error" }, 
+      { status: error instanceof ApiError ? error.statusCode : 500 });
   }
 }
 
@@ -117,7 +136,7 @@ export async function PUT(req: Request) {
     if (!session?.user || (session.user.role !== "SUPERVISOR" && session.user.role !== "ADMIN")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-
+    const { company_id} = session.user;
     const { sessionId, reason } = await req.json();
 
     if (!sessionId) {
@@ -127,7 +146,7 @@ export async function PUT(req: Request) {
     const result = await prisma.$transaction(async (tx) => {
       // a. Fetch target assignment session
       const posSession = await tx.posDeviceSession.findUnique({
-        where: { id: sessionId },
+        where: { id: sessionId,company_id },
         include: { user: true },
       });
       if (!posSession || posSession.status !== "ACTIVE") {
@@ -141,7 +160,7 @@ export async function PUT(req: Request) {
 
       // c. Update session status to RETURNED (preserving the remaining pos_float value)
       const updatedSession = await tx.posDeviceSession.update({
-        where: { id: sessionId },
+        where: { id: sessionId ,company_id},
         data: {
           status: "RETURNED",
           unassigned_at: new Date(),
@@ -152,8 +171,21 @@ export async function PUT(req: Request) {
 
       // d. Release device back to INACTIVE status
       await tx.pos_devices.update({
-        where: { id: posSession.device_id },
+        where: { id: posSession.device_id ,company_id},
         data: { status: "INACTIVE" },
+      });
+
+      // audit log for supervisor action
+      await tx.auditLog.create({
+        data: {
+          company_id,
+          user_id: session.user.id!,
+          action: "UPDATE",
+          entity_type: "POS_DEVICE",
+          entity_id: updatedSession.id,
+          before_state: posSession,
+          after_state: updatedSession,
+        }
       });
 
       return updatedSession;
@@ -172,7 +204,12 @@ export async function PUT(req: Request) {
       },
     });
   } catch (error) {
+
     console.error("PUT /api/supervisor/device/assign error:", error);
-    return NextResponse.json({ success: false, error: "Internal Server Error" }, { status: 400 });
+    return NextResponse.json({
+       success: false, 
+       message: error instanceof ApiError ? (error.statusCode===500?"Internal Server Error":error.message) :
+        "Internal Server Error" }, 
+      { status: error instanceof ApiError ? error.statusCode : 500 });
   }
 }

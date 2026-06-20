@@ -7,9 +7,10 @@ import { OpsTopBar } from '../../components/OpsTopBar';
 import { useState, useRef, useEffect, createContext, useContext } from "react";
 import { Suspense } from "react";
 import { useSession } from "next-auth/react";
+
 import api from "@/app/lib/axios";
 
-interface DashboardMetrics {
+export interface DashboardMetrics {
   availableFloat: number;
   salesToday: number;
   pendingRemittances: number;
@@ -18,6 +19,9 @@ interface DashboardMetrics {
   totalAllocated?: number;
   expectedRemittance?: number;
   totalRemitted?: number;
+  companyRemitted?: number;  
+  circulatingFloat?: number; 
+  supervisorCash?: number;   
   ledgerReconciliation?: {
     totalCredits: number;
     totalDebits: number;
@@ -25,7 +29,9 @@ interface DashboardMetrics {
     drift: number;
     isInSync: boolean;
   };
+  posSessionId?: string | null;
 }
+
 
 
 

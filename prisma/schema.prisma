@@ -7,15 +7,46 @@ datasource db {
   provider = "postgresql"
 }
 
+
+model Company {
+  id                      String                  @id @default(cuid())
+  name                    String                  @unique
+  code                    String                  @unique // e.g., "BRT", "LCC"
+  createdAt               DateTime                @default(now())
+  updatedAt               DateTime                @updatedAt
+
+  // Relations
+  users                   User[]
+  registration_tokens     RegistrationToken[]
+  company_floats          CompanyFloat[]
+  float_allocations       Float_allocations[]
+  remittances             Remittance[]
+  remittance_expectations RemittanceExpectation[]
+  float_ledgers           Float_Ledger[]
+  pos_devices             Pos_devices[]
+  sales_reports           SalesReport[]
+  commission_earnings     CommissionEarning[]
+  fines                   Fine[]
+  locations               Location[]
+  top_ups                 TopUp[]
+  reconciliation_reports  Reconciliation_reports[]
+  audit_logs              AuditLog[]
+  pos_device_sessions     PosDeviceSession[]
+  commission_rules        Commission_rules[]
+  ticketer_location_assignments Ticketer_Location_Assignment[]
+  
+}
+
 model User {
   id                   String              @id @default(cuid())
+  company_id           String
   first_name            String
   last_name             String
   address              String?
   guarantor_name        String?
   guarantor_phone      String?
   guarantor_address     String?
-  email                String              @unique
+  email                String              
   phone                String ?             
   password             String
   role                 Roles               @default(TICKETER)
@@ -42,10 +73,14 @@ model User {
   tokens_issued        RegistrationToken[] @relation("AdminTokensIssued")
   ticket_assignments   Ticketer_Location_Assignment[]
   received_remittances Remittance[] @relation("SupervisorRemittances")
+  remittance_expectations RemittanceExpectation[]
+  company              Company             @relation(fields: [company_id], references: [id])
+  @@unique([email, company_id])
   
 }
 model RegistrationToken {
   id          String   @id @default(cuid())
+  company_id           String
   token       String   @unique                 // e.g. "TICKETER-X7B9K"
   role        Roles                            // The role this token grants
   is_used     Boolean  @default(false)         // Becomes true once someone registers with it
@@ -54,6 +89,7 @@ model RegistrationToken {
   expires_at  DateTime?                        // Optional: When the token expires
   // Relation mapping back to the Admin who generated it
   issuer      User     @relation("AdminTokensIssued", fields: [issued_by], references: [id])
+  company              Company             @relation(fields: [company_id], references: [id])
 }
 
 model TopUp{
@@ -63,12 +99,15 @@ model TopUp{
   allocated_from   TopUpSource
   allocationNote   String?
   date_received    DateTime     @default(now())
-  
+  company_id           String
+  company              Company             @relation(fields: [company_id], references: [id])
 }
 
 model CompanyFloat{
+  company_id           String
   id               String       @id @default("COMPANY_ACCOUNT")
   available_balance Decimal      @db.Decimal(18, 2)
+  company              Company             @relation(fields: [company_id], references: [id])
 }
 
 model Float_allocations {
@@ -78,8 +117,12 @@ model Float_allocations {
   amount_allocated Decimal      @db.Decimal(18, 2)
   allocated_at     DateTime     @default(now())
   status           Float_Status @default(SUCCESS)
+  company_id           String
   supervisor       User         @relation("AllocationFrom", fields: [from_user], references: [id])
   pos_device       PosDeviceSession       @relation("AllocationTo", fields: [pos_device_id], references: [id])
+  remittance_expectations RemittanceExpectation[]
+  remittances             Remittance[]
+  company              Company             @relation(fields: [company_id], references: [id])
 }
 
 
@@ -94,12 +137,18 @@ model Remittance {
   status            RemittanceStatus  @default(PENDING)
   created_at        DateTime          @default(now())
   verified_at       DateTime?
+  allocation_id     String?
 
   received_by_supervisor_id String?
+  company_id           String
   supervisor_receiver       User?   @relation("SupervisorRemittances", fields: [received_by_supervisor_id], references: [id])
 
   //the user who submitted the remittance
   ticketer          User              @relation(fields: [submitted_by], references: [id])
+  company              Company             @relation(fields: [company_id], references: [id])
+
+
+  allocation        Float_allocations? @relation(fields: [allocation_id], references: [id])
 }
 model Reconciliation_reports {
   id                String       @id @default(cuid())
@@ -111,23 +160,38 @@ model Reconciliation_reports {
   status            ReconciliationStatus
   scope             ReconciliationScope
   generated_at      DateTime     @default(now())
+  company_id           String
+  company              Company             @relation(fields: [company_id], references: [id])
 }
 
 model RemittanceExpectation {
   id              String @id @default(cuid())
 
-  ticketer_id     String
-  allocation_id   String
+
+  user_id         String
+
+  allocation_id   String? @unique
+
+  source_remittance_id  String?
 
   expected_amount Float
 
-  due_date        DateTime
-  extended_due_date DateTime?
+  shortage_amount Float   @default(0)
 
-  status          ExpectationStatus // PENDING | SUBMITTED | OVERDUE | VIOLATED
+  due_date              DateTime
+  
+  extended_due_date     DateTime?
+
+  status          ExpectationStatus
 
   created_at      DateTime @default(now())
+  company_id           String
+  
+  user              User              @relation(fields: [user_id], references: [id])
+  allocation        Float_allocations? @relation(fields: [allocation_id], references: [id])
+  company              Company             @relation(fields: [company_id], references: [id])
 }
+
 
 model AuditLog {
   id           String   @id @default(cuid())
@@ -139,7 +203,9 @@ model AuditLog {
   after_state  Json?
   meta         Json?
   created_at   DateTime @default(now())
+  company_id           String
   user         User     @relation(fields: [user_id], references: [id])
+  company              Company             @relation(fields: [company_id], references: [id])
 }
 
 model Float_Ledger {
@@ -153,16 +219,21 @@ model Float_Ledger {
   reference_id   String
   description String?
   created_at  DateTime   @default(now())
+  company_id           String
   posDevice   PosDeviceSession? @relation("PosDeviceLedger", fields: [posSession], references: [id])
+  company              Company             @relation(fields: [company_id], references: [id])
 }
 
 model Pos_devices {
   id                String             @id @default(cuid())
   serial_number     String             @unique
-  name              String             @unique
+  name              String             
   status            Device_Status      @default(INACTIVE)
   created_at        DateTime           @default(now())
+  company_id           String
   device_assignment PosDeviceSession[]
+  company              Company             @relation(fields: [company_id], references: [id])
+  @@unique([name, company_id])
 }
 
 model PosDeviceSession {
@@ -176,17 +247,18 @@ model PosDeviceSession {
   unassigned_by     String?
   unassigned_reason String?
   status            Assignment_Status @default(ACTIVE)
+  company_id           String
   device            Pos_devices       @relation(fields: [device_id], references: [id])
   user              User              @relation(fields: [user_id], references: [id])
   sales_reports     SalesReport[]
   allocations_given    Float_allocations[] @relation("AllocationTo")
   float_ledger      Float_Ledger[]   @relation("PosDeviceLedger")
+  company              Company             @relation(fields: [company_id], references: [id])
 }
 
 model SalesReport {
   id           String           @id @default(cuid())
   ticketer_id  String
-  user_name    String
   pos_session_id   String
   location_id  String
   opening_balance Float
@@ -195,9 +267,15 @@ model SalesReport {
   report_day   DateTime @db.Date
   report_date  DateTime
   submitted_at DateTime         @default(now())
+  status          SalesReportStatus @default(PENDING)
+  verified_by     String?
+  verified_at     DateTime?
+  rejection_reason String?
+  company_id           String
   location     Location         @relation(fields: [location_id], references: [id])
   pos_device   PosDeviceSession @relation(fields: [pos_session_id], references: [id])
   ticketer     User             @relation(fields: [ticketer_id], references: [id])
+  company              Company             @relation(fields: [company_id], references: [id])
 }
 
 model Commission_rules {
@@ -206,6 +284,8 @@ model Commission_rules {
   percentage   Float
   fixed_amount Decimal  @db.Decimal(18, 2)
   created_at   DateTime @default(now())
+  company_id           String
+  company              Company             @relation(fields: [company_id], references: [id])
 }
 
 model CommissionEarning {
@@ -219,7 +299,9 @@ model CommissionEarning {
   net_pay           Float
   status            SalaryStatus @default(PENDING)
   created_at        DateTime     @default(now())
+  company_id           String
   user              User         @relation(fields: [user_id], references: [id])
+  company              Company             @relation(fields: [company_id], references: [id])
 }
 
 model Fine {
@@ -230,11 +312,12 @@ model Fine {
   issued_by  String
   status     fine_status @default(UNPAID)
   created_at DateTime    @default(now())
-
+  company_id           String
   //the admin/supervisor who issued the fine
   issuer      User        @relation("FineIssuer", fields: [issued_by], references: [id])
   //the user who received the fine
   defaulter       User        @relation("FineReceiver", fields: [defaulter_id], references: [id])
+  company              Company             @relation(fields: [company_id], references: [id])
 }
 
 
@@ -247,9 +330,10 @@ model Ticketer_Location_Assignment {
   assigned_for DateTime
 
   created_at   DateTime  @default(now())
-
+  company_id           String
   user         User      @relation(fields: [user_id], references: [id])
   location     Location  @relation(fields: [location_id], references: [id])
+  company              Company             @relation(fields: [company_id], references: [id])
 
   @@unique([location_id, assigned_for])
 }
@@ -259,10 +343,19 @@ model Location {
   name          String
   address       String
   created_at    DateTime      @default(now())
+  company_id           String
   sales_reports SalesReport[]
   ticket_assignments Ticketer_Location_Assignment[]
+  company              Company             @relation(fields: [company_id], references: [id])
 }
 
+
+enum SalesReportStatus{
+  PENDING
+  VERIFIED
+  REJECTED
+  CANCELLED
+}
 
 enum AuditAction {
   CREATE
@@ -285,6 +378,11 @@ enum AuditEntityType {
   REMITTANCE
   USER
   FINE
+  POS_DEVICE
+  SALARY
+  SALES_REPORT
+  LOCATION
+  LOCATION_ASSIGNMENT
 }
 
 
@@ -350,6 +448,7 @@ enum TopUpStatus {
 
 enum Assignment_Status {
   ACTIVE
+  SHARED
   RETURNED
 }
 

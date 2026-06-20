@@ -1,7 +1,7 @@
 // src/app/api/supervisor/device/route.ts
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { prisma } from "@/app/lib/prisma";
+import { prisma } from "@/lib/prisma";
 
 export async function GET() {
   try {
@@ -11,9 +11,11 @@ export async function GET() {
     }
 
     const supervisorId = session.user.id;
+    const { company_id} = session.user;
 
     // Fetch all registered POS devices
     const devices = await prisma.pos_devices.findMany({
+      where: { company_id },
       orderBy: { created_at: "desc" },
     });
 
@@ -21,6 +23,7 @@ export async function GET() {
     const sessions = await prisma.posDeviceSession.findMany({
       where: {
         user: { supervisor_id: supervisorId },
+        company_id
       },
       include: {
         device: true,
@@ -33,7 +36,7 @@ export async function GET() {
 
     // 1. Get active sessions to identify free users (FIXED BUG)
     const activeSessions = await prisma.posDeviceSession.findMany({
-      where: { status: "ACTIVE" },
+      where: { status: "ACTIVE",company_id },
       select: { user_id: true },
     });
     const activeUserIds = activeSessions.map((s) => s.user_id);
@@ -43,6 +46,7 @@ export async function GET() {
       where: {
         role: "TICKETER",
         id: { notIn: activeUserIds },
+        company_id
       },
       select: {
         id: true,
@@ -62,7 +66,7 @@ export async function GET() {
 
     // 4. Fetch full names of those supervisors
     const supervisors = await prisma.user.findMany({
-      where: { id: { in: Array.from(supervisorIds) } },
+      where: { id: { in: Array.from(supervisorIds) },company_id },
       select: { id: true, first_name: true, last_name: true },
     });
 

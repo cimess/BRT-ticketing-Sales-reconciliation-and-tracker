@@ -1,74 +1,103 @@
-import NextAuth from "next-auth";
-import Credentials from "next-auth/providers/credentials";
-import bcrypt from "bcrypt";
+/// src/auth.ts
+import NextAuth, { CredentialsSignin } from "next-auth";
+import CredentialsProvider from "next-auth/providers/credentials";
 import { prisma } from "@/lib/prisma";
+import bcrypt from "bcrypt";
 import { DashboardRoleUsers } from "@/types/types";
+
+// Define custom error classes
+class CompanyCodeInvalidError extends CredentialsSignin {
+  code = "company_code_invalid";
+}
+
+class RestrictedUserError extends CredentialsSignin {
+  code = "restricted";
+}
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [
-    Credentials({
+    CredentialsProvider({
+      name: "Credentials",
       credentials: {
-        email: { type: "email" },
-        password: { type: "password" },
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" },
+        companyCode: { label: "Company Code", type: "text" },
       },
-
-      async authorize(credentials) {
-        // Safety Fallback Check
-        if (!credentials?.email || !credentials?.password) {
+          async authorize(credentials) {
+        if (!credentials?.email || !credentials?.password || !credentials?.companyCode) {
+          console.log("❌ authorize: missing fields", { credentials });
           return null;
         }
 
         const email = credentials.email as string;
         const password = credentials.password as string;
+        const companyCode = (credentials.companyCode as string).toUpperCase();
 
-        const user = await prisma.user.findUnique({
-          where: { email },
+        console.log("🔑 authorize request for:", { email, companyCode });
+
+        const user = await prisma.user.findFirst({
+          where: {
+            email,
+          },
+          include: { company: true },
         });
 
-        // Debug Point 1: If database completely misses the email
         if (!user) {
-          console.log(`[AUTH CHECK] User not found for email: ${email}`);
+          console.log("❌ authorize: user not found in DB with email:", email);
           return null;
         }
 
-        const isValid = await bcrypt.compare(
-          password,
-          user.password
-        );
+        console.log("👤 authorize: user found in DB:", { 
+          id: user.id, 
+          email: user.email, 
+          role: user.role,
+          companyCodeInDb: user.company?.code 
+        });
 
-        // Debug Point 2: If the password hash fails verification
+        // Throw custom Company Code mismatch error
+        if (user.company.code !== companyCode) {
+          console.log("❌ authorize: company code mismatch. DB:", user.company.code, "Provided:", companyCode);
+          throw new CompanyCodeInvalidError();
+        }
+
+        // Check password
+        const isValid = await bcrypt.compare(password, user.password);
         if (!isValid) {
-          console.log(`[AUTH CHECK] Password validation failed for user: ${email}`);
+          console.log("❌ authorize: password validation failed");
           return null;
         }
 
+        // Throw custom Restricted User error
+        if (user.restricted) {
+          console.log("❌ authorize: user is restricted");
+          throw new RestrictedUserError();
+        }
+
+        console.log("✅ authorize: password matches, user authorized successfully.");
         return {
-          id: user.id.toString(), // Auth.js strictly prefers ids as strings
+          id: user.id.toString(),
           email: user.email,
           name: `${user.first_name || ""} ${user.last_name || ""}`.trim(),
-          role: user.role, 
+          role: user.role,
+          company_id: user.company_id,
         };
       },
+
     }),
   ],
-
-  // 1. CRITICAL FOR NEXTAUTH V5 CREDENTIALS
   trustHost: true,
 
   session: {
     strategy: "jwt",
-    maxAge: 24 * 60 * 60, // Secure session duration: 1 Day
-    updateAge: 24 * 60 * 60, // Prevents NextAuth from updating the cookie on every request
+    maxAge: 24 * 60 * 60,
   },
-
-  secret: process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET,
 
   callbacks: {
     async jwt({ token, user }) {
-      
       if (user) {
         token.id = user.id;
         token.role = user.role;
+        token.company_id = user.company_id; // <-- Propagate company_id to JWT
       }
       return token;
     },
@@ -77,6 +106,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (session.user) {
         session.user.id = token.sub as string;
         session.user.role = token.role as DashboardRoleUsers;
+        session.user.company_id = token.company_id as string; // <-- Make company_id available in session
       }
       return session;
     },

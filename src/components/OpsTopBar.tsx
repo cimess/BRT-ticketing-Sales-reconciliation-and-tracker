@@ -62,6 +62,7 @@ export function OpsTopBar({
   const role = session?.user?.role as Roles;
   const userFromSession = session?.user;
 
+  console.log(metrics.pendingRemittances)
   useEffect(() => {
     if (status === "unauthenticated") {
       navigate.push("/");

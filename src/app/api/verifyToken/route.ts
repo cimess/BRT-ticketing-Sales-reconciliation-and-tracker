@@ -1,10 +1,13 @@
-import { verifyRegToken } from "@/app/server/services/auth.service";
+import { verifyRegToken } from "@/server/services/auth.service";
 import { verifyTokenSchema } from "@/schemas/auth.schema";
 import { ApiError } from "@/lib/ApiError";
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
+    if (body.company_code && !body.companyCode) {
+      body.companyCode = body.company_code;
+    }
     const validation = verifyTokenSchema.safeParse(body);
     if (!validation.success) {
       throw new ApiError(400,validation.error.flatten().fieldErrors.token?.join(", ") || "Invalid data");

@@ -18,6 +18,7 @@ export async function GET() {
 
     // Fetch all POS session assignments
     const sessions = await prisma.posDeviceSession.findMany({
+      where: { company_id: session.user.company_id },
       include: {
         device: true,
         user: {
@@ -28,7 +29,7 @@ export async function GET() {
     });
 
     const activeSessions = await prisma.posDeviceSession.findMany({
-      where: { status: "ACTIVE" },
+      where: { company_id: session.user.company_id, status: "ACTIVE" },
       select: { user_id: true },
     });
     const activeUserIds = activeSessions.map((s) => s.user_id);
@@ -36,6 +37,7 @@ export async function GET() {
     const availableUsers = await prisma.user.findMany({
       where: {
         role: { in: ["TICKETER", "SUPERVISOR"] },
+        company_id: session.user.company_id,
         id: { notIn: activeUserIds },
       },
       select: {
@@ -55,7 +57,7 @@ export async function GET() {
     });
 
     const supervisors = await prisma.user.findMany({
-      where: { id: { in: Array.from(supervisorIds) } },
+      where: { id: { in: Array.from(supervisorIds) }, company_id: session.user.company_id },
       select: { id: true, first_name: true, last_name: true },
     });
 
@@ -108,6 +110,7 @@ export async function POST(req: Request) {
 
     const existingDevice = await prisma.pos_devices.findFirst({
       where: {
+        company_id: session.user.company_id,
         OR: [{ name }, { serial_number }],
       },
     });
@@ -121,6 +124,7 @@ export async function POST(req: Request) {
 
     const newDevice = await prisma.pos_devices.create({
       data: {
+        company_id: session.user.company_id,
         name,
         serial_number,
         status: status || "INACTIVE",

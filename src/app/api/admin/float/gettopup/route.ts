@@ -1,7 +1,7 @@
 // src/app/api/admin/float/gettopup/route.ts
 
 import { auth } from "@/auth";
-import { getTopUps } from "@/app/server/services/topup.service";
+import { getTopUps } from "@/server/services/topup.service";
 import { NextRequest } from "next/server"; // Import NextRequest
 
 export async function GET(req: NextRequest) {
@@ -11,15 +11,20 @@ export async function GET(req: NextRequest) {
         if (!session?.user) {
             return Response.json({error: "Unauthorized"}, {status: 401});
         }
+        if(!["ADMIN", "AUDITOR"].includes(session.user.role)){
+            return Response.json({error: "Unauthorized"}, {status: 401});
+        }
 
         const { searchParams } = new URL(req.url);
         const fromDate = searchParams.get("fromDate") || undefined;
         const toDate = searchParams.get("toDate") || undefined;
 
         const topUps = await getTopUps({
+            company_id: session.user.company_id,
+            query:{
             fromDate,
             toDate,
-        });
+        }});
         
         return Response.json({topUps});
     } catch(e) {

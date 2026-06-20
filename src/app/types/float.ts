@@ -3,12 +3,12 @@ import { Float_Status, Roles } from "@prisma/client";
 
 
 export type TopUpItem = {
-    id: string;
-    amount: number;
-    allocated_from: TopUpSource;
-    allocationNote: string | null;
-    status: string;
-    date_received: string;
+  id: string;
+  amount: number;
+  allocated_from: TopUpSource;
+  allocationNote: string | null;
+  status: string;
+  date_received: string;
 };
 export interface RoleFinancialSnapshot {
   success: boolean;
@@ -16,16 +16,19 @@ export interface RoleFinancialSnapshot {
   data: {
     role: string;
     companyBalance: number;
-    totalTopUp: number;
-    totalAllocated: number;
-    expectedRemittance: number;
+    totalTopUp?: number;
+    totalAllocated?: number;
+    expectedRemittance?: number;
+    circulatingFloat?: number;
+    supervisorCash?: number;
     ledgerReconciliation?: {
-      totalCredits: number;
-      totalDebits: number;
-      computedBalance: number;
-      drift: number;
-      isInSync: boolean;
+      totalCredits?: number;
+      totalDebits?: number;
+      computedBalance?: number;
+      drift?: number;
+      isInSync?: boolean;
     };
+    posSessionId?: string | null;
   };
 }
 
@@ -38,57 +41,58 @@ export interface RoleSalesSnapshot {
     totalRemitted: number;      // Sum of CONFIRMED Remittance
     pendingRemittance: number;  // Sum of PENDING Remittance
     salesCount: number;
+    companyRemitted?: number;
   };
 }
 export type GetTopUpsResponse = {
-    success: boolean;
-    message: string;
-    status: number;
-    topups: TopUpItem[];
-    nextCursor: string | null;
+  success: boolean;
+  message: string;
+  status: number;
+  topups: TopUpItem[];
+  nextCursor: string | null;
 };
 
 export type CompanyFloatSnapshot = {
-    success: boolean;
-    message: string;
-    status: number;
-    data: {
-        cachedBalance: number;
-        computedBalance: number;
-        totalTopUps: number;
-        totalAllocated: number;
-        drift: number;
-        isInSync: boolean;
-    } | null;
+  success: boolean;
+  message: string;
+  status: number;
+  data: {
+    cachedBalance: number;
+    computedBalance: number;
+    totalTopUps: number;
+    totalAllocated: number;
+    drift: number;
+    isInSync: boolean;
+  } | null;
 };
 
 export type TicketerPosSnapshot = {
-        success: boolean;
-        message: string;
-        status: number;
+  success: boolean;
+  message: string;
+  status: number;
 
-        data: {
-            pos_device_id: string;
+  data: {
+    pos_device_id: string;
 
-            closingBalance: number;
+    closingBalance: number;
 
-            totalTopUp: number;
+    totalTopUp: number;
 
-            effectiveOpening: number;
+    effectiveOpening: number;
 
-            expectedRemittance: number;
-            topUp: {
-                id: string;
-                amount_allocated: number;
-                pos_device_id: string;
-                status: Float_Status;
-                allocated_at: Date;
-                from_user_name: string;
-                from_user_role: Roles;
-                to_device_name: string;
-            }[];
+    expectedRemittance: number;
+    topUp: {
+      id: string;
+      amount_allocated: number;
+      pos_device_id: string;
+      status: Float_Status;
+      allocated_at: Date;
+      from_user_name: string;
+      from_user_role: Roles;
+      to_device_name: string;
+    }[];
 
-        } | null;
+  } | null;
 };
 
-export type TopUpSource= "COMPANY_RESERVE"|"GOVERNMENT_TOP_UP"|"EXTERNAL_OTHER_SOURCE"
+export type TopUpSource = "COMPANY_RESERVE" | "GOVERNMENT_TOP_UP" | "EXTERNAL_OTHER_SOURCE"

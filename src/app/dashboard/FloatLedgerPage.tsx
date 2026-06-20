@@ -13,8 +13,9 @@ import { Drawer } from '@/components/Drawer';
 import { toast } from 'react-toastify';
 import api from '@/app/lib/axios';
 import Calender from '@/components/Calender';
-import {  TopUpSource, TicketerPosSnapshot } from '@/types/float';
+import { TopUpSource, TicketerPosSnapshot } from '@/types/float';
 import { useDashboard } from '@/app/dashboard/layout';
+import axios from 'axios';
 
 interface ActiveSession {
   id: string;
@@ -53,7 +54,6 @@ export default function FloatLedgerPage({
   dateRange,
 }: FloatLedgerPageProps) {
 
-  console.log("ENTRIES", entries)
   const [q, setQ] = React.useState('');
   const prevQRef = React.useRef(q);
   const [reason, setReason] = React.useState<'ALL' | Float_Status>('ALL');
@@ -66,6 +66,7 @@ export default function FloatLedgerPage({
 
   // Refresh dashboard metrics
   const { refreshMetrics, metrics } = useDashboard();
+  
 
   // Tab switcher for Admin
   const [activeTab, setActiveTab] = useState<'COMPANY' | 'POS'>('POS');
@@ -74,6 +75,7 @@ export default function FloatLedgerPage({
   const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [reversingId, setReversingId] = useState<string | null>(null);
 
   const canAllocate = role === 'SUPERVISOR' || role === 'ADMIN';
   const topUpSources: TopUpSource[] = ['COMPANY_RESERVE', 'GOVERNMENT_TOP_UP', 'EXTERNAL_OTHER_SOURCE'];
@@ -82,7 +84,7 @@ export default function FloatLedgerPage({
     if (open && role === 'SUPERVISOR') {
       const fetchSessions = async () => {
         try {
-          const res = await api.get('/supervisor/topup');
+          const res = await api.get('/supervisor/floatallocation');
           if (res.data?.success) {
             setActiveSessions(res.data.sessions);
             if (res.data.sessions.length > 0) {
@@ -98,7 +100,7 @@ export default function FloatLedgerPage({
     }
   }, [open, role]);
 
- useEffect(() => {
+  useEffect(() => {
     // Revert calendar ONLY when the search input transitions from having text to being cleared
     if (q === '' && prevQRef.current !== '') {
       if (dateRange?.start !== null || dateRange?.end !== null) {
@@ -139,6 +141,25 @@ export default function FloatLedgerPage({
     { id: 'amount', header: 'Amount', align: 'center', sortValue: (r) => r?.amount_allocated, cell: (r) => <span className="text-white font-mono text-xs font-bold">{formatMoney(r?.amount_allocated || 0)}</span> },
     { id: 'status', header: 'Status', cell: (r) => <Badge variant="info">{r?.status}</Badge> },
     { id: 'created', header: 'Date', cell: (r) => <span className="text-slate-500 text-xs">{formatDateTime(r?.allocated_at)}</span>, sortValue: (r) => r?.allocated_at, align: 'left' },
+    ...((role === 'ADMIN' || role === 'SUPERVISOR') ? [{
+      id: 'actions',
+      header: 'Actions',
+      align: 'right' as const,
+      cell: (r?: Float_Alocation ) => (
+        <div className="flex justify-end gap-2">
+          {r?.status === 'SUCCESS' && (
+            <button
+              onClick={() => handleReverseAllocation(r?.id || '')}
+              disabled={reversingId === r?.id}
+              className="rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/20 disabled:opacity-50 transition-all"
+            >
+              {reversingId === r?.id ? 'Reversing...' : 'Reverse'}
+            </button>
+          )}
+        </div>
+      )
+    }] : [])
+
   ];
 
   const handleAdminTopUp = async () => {
@@ -149,14 +170,10 @@ export default function FloatLedgerPage({
 
     try {
       setIsSubmitting(true);
-      let source = allocatedSource as string;
-      if (allocatedSource === 'EXTERNAL_OTHER_SOURCE') {
-        source = floatSource;
-      }
 
       const res = await api.post("/admin/float/topup", {
         amount: Number(amount),
-        allocated_from: source,
+        allocated_from: allocatedSource,
         allocationNote: allocationNote,
       });
       toast.success(res.data.message);
@@ -168,8 +185,12 @@ export default function FloatLedgerPage({
       if (onRefresh) onRefresh();
       refreshMetrics();
     } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : "An error occurred";
-        toast.error(errorMessage); 
+      if(axios.isAxiosError(err)){
+        toast.error(err.response?.data.message);
+      }else{
+      const errorMessage = err instanceof Error ? err.message : "An error occurred";
+      toast.error(errorMessage);
+    }
     } finally {
       setIsSubmitting(false);
     }
@@ -194,12 +215,37 @@ export default function FloatLedgerPage({
       if (onRefresh) onRefresh();
       refreshMetrics();
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "An error occurred";
-      toast.error(errorMessage); 
+      if(axios.isAxiosError(err)){
+        toast.error(err.response?.data.message||err.response?.data.error||"An error occurred");
+      }
     } finally {
       setIsSubmitting(false);
     }
   };
+
+   const handleReverseAllocation = async (allocationId: string) => {
+    if (!window.confirm("Are you sure you want to reverse this float allocation? This will return the allocated amount to the company vault and deduct it from the ticketer's POS session.")) {
+      return;
+    }
+    try {
+      setReversingId(allocationId);
+      const res = await api.patch(`/supervisor/floatallocation/${allocationId}/reverse`);
+      if (res.data?.success) {
+        toast.success("Float allocation reversed successfully!");
+        if (onRefresh) onRefresh();
+        refreshMetrics();
+      } else {
+        toast.error(res.data?.message || "Failed to reverse allocation");
+      }
+    } catch (err) {
+      console.error(err);
+        if (axios.isAxiosError(err)) {
+        toast.error(err.response?.data?.error || err.response?.data?.message || err?.message || "An error occurred");
+        } } finally {
+      setReversingId(null);
+    }
+   
+  }
 
   if (isLoading) {
     return <div className="text-slate-400 p-8 font-medium">Loading ledger records...</div>;
@@ -235,7 +281,7 @@ export default function FloatLedgerPage({
             )}
           </div>
         }
-        kpis={
+                kpis={
           role === 'TICKETER' ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-2 gap-4">
               <StatCard title="Allocations Count" value={String(filteredPos?.length || 0)} icon={<ArrowRightLeft className="text-blue-300" />} iconBg="bg-blue-500/10" />
@@ -243,15 +289,34 @@ export default function FloatLedgerPage({
               <StatCard title="Opening Balance" value={formatMoney(ticketerSnapshot?.data?.closingBalance || 0)} icon={<Coins className="text-emerald-300" />} iconBg="bg-emerald-500/10" />
               <StatCard title="Expected Amount" value={formatMoney(ticketerSnapshot?.data?.expectedRemittance || 0)} icon={<Coins className="text-emerald-300" />} iconBg="bg-emerald-500/10" />
             </div>
+          ) : role === 'ADMIN' ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+              <StatCard title="Available Float (Vault)" value={formatMoney(metrics.availableFloat || 0)} icon={<Coins className="text-emerald-300" />} iconBg="bg-emerald-500/10" />
+              <StatCard title="Allocated (Today)" value={formatMoney(metrics.totalAllocated || 0)} icon={<Coins className="text-blue-300" />} iconBg="bg-blue-500/10" />
+              <StatCard title="Remitted (Today)" value={formatMoney(metrics.companyRemitted || 0)} icon={<Coins className="text-emerald-300" />} iconBg="bg-emerald-500/10" />
+              <StatCard title="Pos Total Float" value={formatMoney(metrics.circulatingFloat || 0)} icon={<Coins className="text-amber-300" />} iconBg="bg-amber-500/10" />
+              <StatCard title="Outstanding (Supervisors)" value={formatMoney(metrics.supervisorCash || 0)} icon={<Coins className="text-rose-300" />} iconBg="bg-rose-500/10" />
+              <StatCard
+                title="Ledger Sync Drift"
+                value={metrics.ledgerReconciliation?.isInSync ? "In Sync" : formatMoney(metrics.ledgerReconciliation?.drift || 0)}
+                icon={<ArrowRightLeft className={metrics.ledgerReconciliation?.isInSync ? "text-emerald-300" : "text-rose-400"} />}
+                iconBg={metrics.ledgerReconciliation?.isInSync ? "bg-emerald-500/10" : "bg-rose-500/10"}
+              />
+            </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-2 gap-4">
-              <StatCard title="Entries" value={String(role === 'ADMIN' ? (activeTab === 'COMPANY' ? filteredCompany?.length : filteredPos?.length) : filteredPos?.length)} icon={<ArrowRightLeft className="text-blue-300" />} iconBg="bg-blue-500/10" />
-              <StatCard title="Allocated" value={formatMoney(metrics.totalAllocated || 0)} icon={<Coins className="text-emerald-300" />} iconBg="bg-emerald-500/10" />
-              <StatCard title="Top Up Balance" value={formatMoney(metrics.availableFloat || 0)} icon={<Coins className="text-emerald-300" />} iconBg="bg-emerald-500/10" />
-              <StatCard title="Top Up Received" value={formatMoney(metrics.totalTopUps || 0)} icon={<Coins className="text-emerald-300" />} iconBg="bg-emerald-500/10" />
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+              <StatCard title="Available Float (Vault)" value={formatMoney(metrics.availableFloat || 0)} icon={<Coins className="text-emerald-300" />} iconBg="bg-emerald-500/10" />
+              <StatCard title="Allocated (Today)" value={formatMoney(metrics.totalAllocated || 0)} icon={<Coins className="text-blue-300" />} iconBg="bg-blue-500/10" />
+              <StatCard title="Pending Remittance" value={formatMoney(metrics.pendingRemittances || 0)} icon={<Coins className="text-amber-300" />} iconBg="bg-amber-500/10" />
+              <StatCard title="Outstanding (Ticketers)" value={formatMoney(metrics.circulatingFloat || 0)} icon={<Coins className="text-amber-300" />} iconBg="bg-amber-500/10" />
+              <StatCard title="Supervisor Cash (In Hand)" value={formatMoney(metrics.supervisorCash || 0)} icon={<Coins className="text-rose-300" />} iconBg="bg-rose-500/10" />
+              <StatCard title="Allocations Count" value={String(filteredPos?.length || 0)} icon={<ArrowRightLeft className="text-blue-300" />} iconBg="bg-blue-500/10" />
             </div>
           )
         }
+
+
       >
 
         {/* Admin Tab Switcher */}
@@ -418,20 +483,6 @@ export default function FloatLedgerPage({
                   </button>
                 ))}
               </div>
-              {allocatedSource === 'EXTERNAL_OTHER_SOURCE' && (
-                <div className="space-y-2 mt-2">
-                  <label className="text-sm font-medium text-slate-300 ">
-                    Enter Top Up Source
-                  </label>
-                  <input
-                    type="text"
-                    className="w-full rounded-2xl bg-white/5 border border-white/10 px-4 py-3 text-sm text-slate-300 focus:outline-none"
-                    placeholder="Enter Top Up Source"
-                    onChange={(e) => setFloatSource(e.target.value)}
-                    value={floatSource}
-                  />
-                </div>
-              )}
             </div>
 
             <div className="space-y-2">
@@ -468,7 +519,7 @@ export default function FloatLedgerPage({
             </div>
 
             <button
-              disabled={isSubmitting || !amount || !allocatedSource || (allocatedSource === 'EXTERNAL_OTHER_SOURCE' && !floatSource)}
+              disabled={isSubmitting || !amount || !allocatedSource}
               onClick={handleAdminTopUp}
               className="w-full rounded-2xl bg-blue-500 hover:bg-blue-400 disabled:bg-slate-700 disabled:text-slate-500 text-white font-semibold py-3 transition-all"
             >

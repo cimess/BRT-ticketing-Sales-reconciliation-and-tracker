@@ -1,14 +1,14 @@
 'use client'
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { Banknote, CheckCircle2, Clock, Plus, X, Ban } from 'lucide-react';
+import { Banknote, CheckCircle2, Clock, Coins, Plus } from 'lucide-react';
 import StatCard from '@/components/StatCard';
 import { Badge } from '@/components/Badge';
 import { DataTable, type ColumnDef } from '@/components/DataTable';
 import { Drawer } from '@/components/Drawer';
 import { FilterRow, Input, PageScaffold, Select } from '@/components/pageScaffold';
 import { formatDateTime, formatMoney } from '@/lib/utils';
-import { Remittance, User } from '../types/types';
+import { Remittance, User, User_Full_Audit } from '../types/types';
 import { toast } from 'react-toastify';
 import Calendar from '@/components/Calender';
 import { useDashboard } from '@/app/dashboard/layout'
@@ -26,12 +26,13 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
   const [sendingRequest, setSendingRequest] = useState(false);
   const [fromDate, setFromDate] = useState<Date | null>(null);
   const [toDate, setToDate] = useState<Date | null>(null);
-
+  const [posSession, setPosSession] = useState<string | null>(null);
+  const [totalOutstanding, setTotalOutstanding] = useState(0);
   // 💡 ROLES ENFORCEMENT
   const canSubmit = user === 'TICKETER' || user === 'SUPERVISOR';
   const canVerify = user === 'ADMIN';
 
-  const { refreshMetrics} = useDashboard();
+  const { metrics, refreshMetrics } = useDashboard();
 
   // --- API LOGIC --- //
   const fetchRemittances = useCallback(async () => {
@@ -48,13 +49,14 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
         toISO.setHours(23, 59, 59, 999);
         params.set('to', toISO.toISOString());
       }
-
       const queryString = params.toString();
       const url = `/api/remitance${queryString ? `?${queryString}` : ''}`;
-
       const res = await fetch(url);
       const data = await res.json();
-      if (data.success) setRows(data.data);
+      if (data.success) {
+        setRows(data.data);
+        setTotalOutstanding(data.totalOutstanding || 0); // Sets expectation tracking total
+      }
     } catch (error) {
       console.error(error);
       const errorMessage = error instanceof Error ? error.message : "An error occurred";
@@ -90,20 +92,25 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
   useEffect(() => {
     const fetchData = async () => {
       await fetchRemittances();
+      setPosSession(metrics?.posSessionId || null);
       await fetchUsers();
     }
 
     fetchData();
 
-  }, [fetchRemittances, fetchUsers]);
+  }, [fetchRemittances, fetchUsers, metrics?.posSessionId]);
 
   const submitRemittance = async (amount: number, method: 'CASH' | 'TRANSFER', ticketerId?: string, supervisorId?: string) => {
+    if (role == "TICKETER" && !posSession) {
+      toast.error("pos Session is required");
+      return;
+    }
     try {
       setSendingRequest(true);
       const res = await fetch('/api/remitance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount, method, remittance_date: new Date().toISOString(), ticketer_id: ticketerId, supervisor_id: supervisorId })
+        body: JSON.stringify({ amount, method, remittance_date: new Date().toISOString(), ticketer_id: ticketerId, supervisor_id: supervisorId, pos_id: posSession })
       });
       if (res.ok) {
         setOpenForm(false);
@@ -193,16 +200,22 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
   const filtered = rows.filter((r) => (status === 'ALL' ? true : r.status === status));
 
 
-    const columns: ColumnDef<Remittance>[] = [
+  // 1. Update columns definition around line 209:
+  const columns: ColumnDef<Remittance>[] = [
     { id: 'id', header: 'remit_id', cell: (r) => <span className="text-slate-200 font-mono text-xs">{r?.id?.slice(-6)}</span> },
     { id: 'method', header: 'method', cell: (r) => <Badge variant="info">{r?.method}</Badge>, sortValue: (r) => r.method },
     { id: 'amount', header: 'amount', align: 'right', sortValue: (r) => r.amount, cell: (r) => <span className="text-white font-mono text-xs font-bold">{formatMoney(r?.amount || 0)}</span> },
+    { id: 'submitted_by', header: 'ticketer', cell: (r) => <span className="text-slate-300 text-xs font-bold">{r?.submitted_by}</span> },
+    { id: 'pos_device', header: 'pos_device', cell: (r) => r?.pos_name ? <span className="text-slate-300 font-mono text-xs">{r.pos_name}</span> : <span className="text-slate-600 text-xs">—</span> },
+    {
+      id: 'ticketer_outstanding',
+      header: 'outstanding_debt',
+      align: 'right',
+      sortValue: (r) => r.ticketer_outstanding || 0,
+      cell: (r) => <span className="text-amber-400 font-mono text-xs font-semibold">{formatMoney(r?.ticketer_outstanding || 0)}</span>
+    },
     { id: 'status', header: 'status', align: 'center', sortValue: (r) => r.status, cell: (r) => <Badge variant={r?.status === 'CONFIRMED' ? 'success' : r?.status === 'PENDING' ? 'warning' : r?.status === 'REJECTED' ? 'danger' : 'info'}>{r?.status}</Badge> },
-    { id: 'submitted', header: 'submitted_at', cell: (r) => <span className="text-slate-500 text-xs">{formatDateTime(r?.remittance_date)}</span> },
-    { id: 'by', header: 'submitted_by', cell: (r) => <span className="text-slate-300 text-xs font-bold">{r?.submitted_by}</span> },
     { id: 'received_by', header: 'received_by', cell: (r) => r?.received_by_supervisor ? <span className="text-cyan-300 text-xs font-bold">{r.received_by_supervisor}</span> : <span className="text-slate-600 text-xs">—</span> },
-
-
     {
       id: 'actions',
       header: 'actions',
@@ -277,7 +290,7 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
           </div>
         }
         kpis={
-          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
             <StatCard
               title={`Confirmed (${dateLabel})`}
               value={formatMoney(totalConfirmed)}
@@ -289,6 +302,12 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
               value={formatMoney(totalPending)}
               icon={<Clock className="text-amber-300" />}
               iconBg="bg-amber-500/10"
+            />
+            <StatCard
+              title="Total Outstanding"
+              value={formatMoney(totalOutstanding)}
+              icon={<Coins className="text-rose-300" />}
+              iconBg="bg-rose-500/10"
             />
             <StatCard
               title="Cash Remitted"
@@ -310,6 +329,7 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
             />
           </div>
         }
+
 
       >
         <FilterRow>
@@ -338,14 +358,14 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
       </PageScaffold>
 
       <Drawer open={openForm} title="Submit Remittance" subtitle={user === 'SUPERVISOR' ? "Log a cash handover from a ticketer" : "Hand over your cash or log a transfer"} onClose={() => setOpenForm(false)}>
-        <RemitForm onSubmit={submitRemittance} role={user} team={team} supervisors={supervisors} />
+        <RemitForm onSubmit={submitRemittance} role={user} team={team} supervisors={supervisors} posSession={posSession} setposSession={setPosSession} />
       </Drawer>
     </>
   );
 }
 
 // 💡 The RemitForm must stay outside the main component!
-function RemitForm({ onSubmit, role, team, supervisors }: { onSubmit: (amount: number, method: 'CASH' | 'TRANSFER', ticketerId?: string, supervisorId?: string) => Promise<void> | void, role: string, team: User[], supervisors?: User[] }) {
+function RemitForm({ onSubmit, role, team, supervisors, posSession, setposSession }: { onSubmit: (amount: number, method: 'CASH' | 'TRANSFER', ticketerId?: string, supervisorId?: string) => Promise<void> | void, role: string, team: User[], supervisors?: User[], posSession?: string | null, setposSession?: (value: string) => void }) {
   const [amount, setAmount] = useState('');
   const [method, setMethod] = useState<'CASH' | 'TRANSFER'>('CASH');
   const [ticketerId, setTicketerId] = useState('');
@@ -385,11 +405,25 @@ function RemitForm({ onSubmit, role, team, supervisors }: { onSubmit: (amount: n
           <div className="mt-4">
             <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">Handed Cash To (Supervisor)</label>
             <select value={supervisorId} onChange={(e) => setSupervisorId(e.target.value)} className="mt-2 w-full rounded-xl bg-white/3 border border-white/10 px-4 py-2.5 text-sm text-white">
-              <option value="" disabled className="bg-black">Select Supervisor...</option>
-              {supervisors?.map(s => <option key={s.id} value={s.id} className="bg-black">{s.first_name} {s.last_name}</option>)}
+              <option key="default-select" value="" disabled className="bg-black">Select Supervisor...</option>
+              {supervisors?.map(s => {
+                const sId = s.id || s.user_id;
+                const name = s.username || s.fullname || `${s.first_name || ''} ${s.last_name || ''}`.trim();
+                return (
+                  <option key={sId} value={sId} className="bg-black">
+                    {name}
+                  </option>
+                );
+              })}
             </select>
           </div>
         )}
+
+        {role === 'TICKETER' &&
+          <div className="mb-4">
+            <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">pos_id</label>
+            <input value={posSession || ""} onChange={(e) => setposSession && setposSession(e.target.value)} placeholder="e.g. 50000" type="text" className="mt-2 w-full rounded-xl bg-white/3 border border-white/10 px-4 py-2.5 text-sm text-white outline-none" />
+          </div>}
 
         <label className="mt-4 block text-slate-500 text-[10px] font-bold uppercase tracking-widest">Amount (NGN)</label>
         <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="e.g. 50000" type="number" className="mt-2 w-full rounded-xl bg-white/3 border border-white/10 px-4 py-2.5 text-sm text-white outline-none" />
@@ -398,7 +432,7 @@ function RemitForm({ onSubmit, role, team, supervisors }: { onSubmit: (amount: n
       <button
         onClick={handleSubmit}
         suppressHydrationWarning
-        disabled={isSubmitting || (role === 'SUPERVISOR' && !ticketerId) || (role === 'TICKETER' && method === 'CASH' && !supervisorId)}
+        disabled={isSubmitting || (role === 'SUPERVISOR' && !ticketerId) || (role === 'TICKETER' && method === 'CASH' && !supervisorId) || (role === 'TICKETER' && !posSession)}
         className="w-full rounded-xl bg-linear-to-r from-cyan-400 to-blue-400 text-black py-3 text-sm font-bold tracking-tight active:scale-[0.99] disabled:opacity-50"
       >
         {isSubmitting ? "Submitting..." : "Submit remittance"}

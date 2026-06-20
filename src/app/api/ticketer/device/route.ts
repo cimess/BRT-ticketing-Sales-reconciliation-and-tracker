@@ -1,19 +1,17 @@
-// src/app/api/ticketer/device/route.ts
-import { NextResponse } from "next/server";
+import { NextResponse, NextRequest } from "next/server";
 import { auth } from "@/auth";
-import { prisma } from "@/app/lib/prisma";
+import { prisma } from "@/lib/prisma";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     const session = await auth();
-    if (!session?.user || session.user.role !== "TICKETER") {
+    if (!session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-
-    const userId = session.user.id;
+    const { company_id, id: userId } = session.user;
 
     const sessions = await prisma.posDeviceSession.findMany({
-      where: { user_id: userId },
+      where: { user_id: userId, company_id },
       include: {
         device: true,
         user: {
@@ -24,19 +22,20 @@ export async function GET() {
     });
 
     const dbLocations = await prisma.ticketer_Location_Assignment.findMany({
-      where: { user_id: userId },
+      where: { user_id: userId, company_id },
       include: { location: true },
       orderBy: { assigned_for: "desc" },
     });
 
     const locations = dbLocations.map((la) => ({
-      id: la.id,
+      id: la.location.id,
+      assignmentId: la.id,
       locationName: la.location.name,
       locationAddress: la.location.address,
       assignedFor: la.assigned_for.toISOString(),
     }));
 
-    // Collect all unique supervisor/assigner IDs (assigned_by / unassigned_by)
+    // Collect all unique supervisor/assigner IDs
     const supervisorIds = new Set<string>();
     sessions.forEach((s) => {
       if (s.assigned_by) supervisorIds.add(s.assigned_by);
@@ -44,7 +43,7 @@ export async function GET() {
     });
 
     const supervisors = await prisma.user.findMany({
-      where: { id: { in: Array.from(supervisorIds) } },
+      where: { id: { in: Array.from(supervisorIds) }, company_id },
       select: { id: true, first_name: true, last_name: true },
     });
 

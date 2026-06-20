@@ -2,7 +2,7 @@
 
 import { NextResponse, NextRequest } from "next/server";
 import { auth } from "@/auth";
-import { prisma } from "@/app/lib/prisma";
+import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 
 export async function GET(req: NextRequest) {
@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { role, id: userId } = session.user;
+    const { role, id: userId, company_id } = session.user;
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
     // 1. Role-based scoping
     if (role === "TICKETER") {
       const userSessions = await prisma.posDeviceSession.findMany({
-        where: { user_id: userId },
+        where: { user_id: userId ,company_id},
         select: { id: true }
       });
       const sessionIds = userSessions.map(s => s.id);
@@ -35,19 +35,19 @@ export async function GET(req: NextRequest) {
 
     } else if (role === "SUPERVISOR") {
       const teamTicketers = await prisma.user.findMany({
-        where: { supervisor_id: userId },
+        where: { supervisor_id: userId,company_id },
         select: { id: true }
       });
       const teamUserIds = teamTicketers.map(t => t.id);
 
       const teamSessions = await prisma.posDeviceSession.findMany({
-        where: { user_id: { in: teamUserIds } },
+        where: { user_id: { in: teamUserIds },company_id },
         select: { id: true }
       });
       const sessionIds = teamSessions.map(s => s.id);
 
       const supervisorAllocations = await prisma.float_allocations.findMany({
-        where: { from_user: userId },
+        where: { from_user: userId,company_id},
         select: { id: true }
       });
       const allocationIds = supervisorAllocations.map(a => a.id);
@@ -77,7 +77,7 @@ export async function GET(req: NextRequest) {
 
     // Fetch ledger logs
     const entries = await prisma.float_Ledger.findMany({
-      where,
+      where:{...where,company_id},
       orderBy: { created_at: "desc" },
       take: 100,
       include: {
@@ -120,7 +120,7 @@ export async function GET(req: NextRequest) {
       // Get all-time company ledger entries to audit balance
       const ledgerSummary = await prisma.float_Ledger.groupBy({
         by: ['entry_type'],
-        where: { account_type: 'COMPANY' },
+        where: { account_type: 'COMPANY',company_id },
         _sum: { amount: true }
       });
 
@@ -134,7 +134,7 @@ export async function GET(req: NextRequest) {
       const ledgerNet = totalCredits - totalDebits;
 
       const companyFloat = await prisma.companyFloat.findUnique({
-        where: { id: "COMPANY_ACCOUNT" }
+        where: { id: "COMPANY_ACCOUNT",company_id }
       });
       const actualBalance = companyFloat ? Number(companyFloat.available_balance) : 0;
       const drift = actualBalance - ledgerNet;
@@ -143,7 +143,7 @@ export async function GET(req: NextRequest) {
       const allocationsToday = await prisma.float_allocations.aggregate({
         where: {
           allocated_at: { gte: todayStart, lte: todayEnd },
-          status: 'SUCCESS'
+          status: 'SUCCESS',company_id
         },
         _sum: { amount_allocated: true }
       });
@@ -151,7 +151,7 @@ export async function GET(req: NextRequest) {
       const remittancesToday = await prisma.remittance.aggregate({
         where: {
           created_at: { gte: todayStart, lte: todayEnd },
-          status: 'CONFIRMED'
+          status: 'CONFIRMED',company_id
         },
         _sum: { amount: true }
       });
@@ -168,7 +168,7 @@ export async function GET(req: NextRequest) {
 
     } else if (role === "SUPERVISOR") {
       const ticketers = await prisma.user.findMany({
-        where: { supervisor_id: userId },
+        where: { supervisor_id: userId,company_id },
         select: { id: true }
       });
       const ticketerIds = ticketers.map(t => t.id);
@@ -178,7 +178,7 @@ export async function GET(req: NextRequest) {
         where: {
           from_user: userId,
           allocated_at: { gte: todayStart, lte: todayEnd },
-          status: 'SUCCESS'
+          status: 'SUCCESS',company_id
         },
         _sum: { amount_allocated: true }
       });
@@ -188,7 +188,7 @@ export async function GET(req: NextRequest) {
         where: {
           submitted_by: { in: ticketerIds },
           created_at: { gte: todayStart, lte: todayEnd },
-          status: 'CONFIRMED'
+          status: 'CONFIRMED',company_id
         },
         _sum: { amount: true }
       });
@@ -196,7 +196,7 @@ export async function GET(req: NextRequest) {
       const totalAllocations = await prisma.float_allocations.aggregate({
         where: {
           from_user: userId,
-          status: 'SUCCESS'
+          status: 'SUCCESS',company_id
         },
         _sum: { amount_allocated: true }
       });
@@ -213,7 +213,7 @@ export async function GET(req: NextRequest) {
 
     } else if (role === "TICKETER") {
       const activeSession = await prisma.posDeviceSession.findFirst({
-        where: { user_id: userId, status: 'ACTIVE' }
+        where: { user_id: userId, status: 'ACTIVE',company_id }
       });
       const activeFloat = activeSession ? Number(activeSession.pos_float) : 0;
 
@@ -222,7 +222,7 @@ export async function GET(req: NextRequest) {
         where: {
           pos_device: { user_id: userId },
           allocated_at: { gte: todayStart, lte: todayEnd },
-          status: 'SUCCESS'
+          status: 'SUCCESS',company_id
         },
         _sum: { amount_allocated: true }
       });
@@ -232,7 +232,7 @@ export async function GET(req: NextRequest) {
         where: {
           submitted_by: userId,
           created_at: { gte: todayStart, lte: todayEnd },
-          status: 'CONFIRMED'
+          status: 'CONFIRMED',company_id
         },
         _sum: { amount: true }
       });
@@ -240,7 +240,7 @@ export async function GET(req: NextRequest) {
       const totalAllocations = await prisma.float_allocations.aggregate({
         where: {
           pos_device: { user_id: userId },
-          status: 'SUCCESS'
+          status: 'SUCCESS',company_id
         },
         _sum: { amount_allocated: true }
       });

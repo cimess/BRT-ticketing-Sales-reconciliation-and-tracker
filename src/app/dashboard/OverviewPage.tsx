@@ -98,7 +98,7 @@ export default function OverviewPage() {
       ),
       sortValue: (r) => r.variance,
     },
-    { id: 'actor', header: 'actor', cell: (r) => <span className="text-slate-400 text-xs">{r?.actor}</span>, sortValue: (r) => r.actor },
+    { id: 'actor', header: 'actor', cell: (r) => <span className="text-slate-400 text-xs">{r?.actor}</span>,sortValue: (r) => r?.actor||"" },
     { id: 'date', header: 'date', cell: (r) => <span className="text-slate-400 text-xs">{r?.date}</span>, sortValue: (r) => r.date },
   ];
 
@@ -147,7 +147,7 @@ export default function OverviewPage() {
           onRowClick={(r) => setSelected(r)}
           searchValue={q}
           searchPredicate={(r, qq) =>
-            r.run_id.toLowerCase().includes(qq) || r.actor.toLowerCase().includes(qq) || r.scope.toLowerCase().includes(qq)
+            r.run_id.toLowerCase().includes(qq) || r?.actor?.toLowerCase().includes(qq) || r.scope.toLowerCase().includes(qq)
           }
         />
 

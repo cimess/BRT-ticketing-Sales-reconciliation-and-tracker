@@ -22,7 +22,7 @@ export async function POST(req: Request) {
     const result = await prisma.$transaction(async (tx) => {
       // a. Validate POS device exists and is inactive
       const device = await tx.pos_devices.findUnique({
-        where: { id: deviceId },
+        where: { id: deviceId, company_id: session.user.company_id },
       });
       if (!device) throw new ApiError(404, "POS device not found");
       if (device.status === "ACTIVE") throw new ApiError(400, "Device is already assigned to a session");
@@ -30,13 +30,13 @@ export async function POST(req: Request) {
 
       // b. Validate user has no other active assignments
       const activeUserSession = await tx.posDeviceSession.findFirst({
-        where: { user_id: userId, status: "ACTIVE" },
+        where: { user_id: userId, status: "ACTIVE", company_id: session.user.company_id },
       });
       if (activeUserSession) throw new ApiError(400, "This user is already active on another POS device");
 
       // c. Fetch remaining float from the device's last session (carry over / handover)
       const lastSession = await tx.posDeviceSession.findFirst({
-        where: { device_id: deviceId },
+        where: { device_id: deviceId, company_id: session.user.company_id },
         orderBy: { assigned_at: "desc" },
       });
 
@@ -50,12 +50,13 @@ export async function POST(req: Request) {
           pos_float: carriedOverFloat,
           assigned_by: session.user.id!,
           status: "ACTIVE",
+          company_id: session.user.company_id,
         },
       });
 
       // e. Update device status to ACTIVE
       await tx.pos_devices.update({
-        where: { id: deviceId },
+        where: { id: deviceId, company_id: session.user.company_id },
         data: { status: "ACTIVE" },
       });
 
@@ -63,6 +64,7 @@ export async function POST(req: Request) {
       if (carriedOverFloat.gt(0)) {
         await tx.float_Ledger.create({
           data: {
+            company_id: session.user.company_id,
             account_id: newSession.id,
             account_type: "POS_DEVICE",
             posSession: newSession.id,
@@ -74,6 +76,19 @@ export async function POST(req: Request) {
           },
         });
       }
+
+      // audit log for admin action
+     await prisma.auditLog.create({
+      data: {
+        company_id: session.user.company_id,  
+        user_id: userId,
+        action: "CREATE",
+        entity_type: "POS_DEVICE",
+        entity_id: newSession.id,
+        after_state: newSession,
+      }
+    });
+          
 
       return newSession;
     });
@@ -118,7 +133,7 @@ export async function PUT(req: Request) {
     const result = await prisma.$transaction(async (tx) => {
       // a. Fetch target assignment session
       const posSession = await tx.posDeviceSession.findUnique({
-        where: { id: sessionId },
+        where: { id: sessionId, company_id: session.user.company_id },
       });
       if (!posSession || posSession.status !== "ACTIVE") {
         throw new ApiError(404, "Active POS session not found or already closed");
@@ -126,20 +141,34 @@ export async function PUT(req: Request) {
 
       // b. Update session status to RETURNED (preserving the remaining pos_float value)
       const updatedSession = await tx.posDeviceSession.update({
-        where: { id: sessionId },
+        where: { id: sessionId, company_id: session.user.company_id },
         data: {
           status: "RETURNED",
           unassigned_at: new Date(),
           unassigned_by: session.user.id!,
           unassigned_reason: reason || "Device returned to office",
+          company_id: session.user.company_id,  
           // The pos_float is NOT reset to 0; we preserve it to carry over to the next user.
         },
       });
 
       // c. Release device back to INACTIVE status
       await tx.pos_devices.update({
-        where: { id: posSession.device_id },
+        where: { id: posSession.device_id, company_id: session.user.company_id },
         data: { status: "INACTIVE" },
+      });
+
+      // audit log for admin action
+      await tx.auditLog.create({
+        data: {
+          company_id: session.user.company_id,  
+          user_id: session.user.id!,
+          action: "UPDATE",
+          entity_type: "POS_DEVICE",
+          entity_id: updatedSession.id,
+          before_state: posSession,
+          after_state: updatedSession,
+        }
       });
 
       return updatedSession;

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { addTopUp } from "@/app/server/services/topup.service";
-import { addTopUpSchema } from "@/app/schemas/auth.schema";
+import { addTopUp } from "@/server/services/topup.service";
+import { addTopUpSchema } from "@/schemas/auth.schema";
 import { ApiError } from "@/lib/ApiError";
 import { ZodError } from "zod";
 import { auth } from "@/auth";
@@ -11,16 +11,19 @@ export async function POST(req: Request) {
 
     const session= await auth()
 
-    if(!session?.user?.id){
+    if(!session?.user?.id || !["ADMIN"].includes(session.user.role)){
       throw new ApiError(401,"Unauthorized" );
     }
+
     const user= session.user
+
     const body = await req.json();
     const meta = {
       ip: req.headers.get("x-forwarded-for") || "",
       user:{
         id:user.id||"",
-        role:user.role as string||"USER"
+        role:user.role as string||"USER",
+        company_id:user.company_id as string,
       },
     };
     // 1. Parse and destructure the validated data

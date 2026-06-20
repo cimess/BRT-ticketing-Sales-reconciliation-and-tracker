@@ -225,7 +225,7 @@ const handleReturnDevice = async (e: React.FormEvent) => {
     }
 
     try {
-      const res = await api.post('/supervisor/topup', {
+      const res = await api.post('/supervisor/floatallocation', {
         posSessionId: selectedSession.id,
         amount: Number(topupAmount),
       });

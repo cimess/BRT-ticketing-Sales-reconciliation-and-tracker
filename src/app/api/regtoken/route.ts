@@ -1,6 +1,6 @@
-import { createREGToken, getTokens } from "@/app/server/services/regtrationtokenGen.service";
+import { createREGToken, getTokens } from "@/server/services/regtrationtokenGen.service";
 import { ApiError } from "@/lib/ApiError";
-import { createREGTokenSchema, getTokensSchema } from "@/schemas/auth.schema";
+import { createREGTokenSchema } from "@/schemas/auth.schema";
 import { auth } from "@/auth";
 import { Roles } from "@prisma/client";
 
@@ -26,6 +26,7 @@ export async function POST(req: Request) {
     const result = await createREGToken({
       role,
       issued_by: session.user.id,
+      companyId:session.user.company_id
     });
 
     return Response.json({
@@ -57,6 +58,7 @@ export async function GET(req: Request) {
     const issued_by = searchParams.get("issued_by") ?? undefined;
 
     const result = await getTokens({
+      companyId:session.user.company_id,
       issued_by,
       requester_id: session.user.id,
       requester_role: session.user.role as Roles,

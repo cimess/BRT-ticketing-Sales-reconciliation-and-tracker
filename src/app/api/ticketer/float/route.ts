@@ -2,7 +2,7 @@
 
 import { NextResponse, NextRequest } from "next/server"; // Added NextRequest
 import { auth } from "@/auth";
-import { fetchTicketerPosSnapshot } from "@/app/server/services/getCompanyFloatSnapshot.service";
+import { fetchTicketerPosSnapshot } from "@/server/services/getCompanyFloatSnapshot.service";
 
 export async function GET(req: NextRequest) { // Updated signature
   try {
@@ -12,10 +12,10 @@ export async function GET(req: NextRequest) { // Updated signature
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    if (session.user.role !== "TICKETER" && !session.user.id) {
+    if (session.user.role !== "TICKETER") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
-
+    const { company_id } = session.user;
     const { searchParams } = new URL(req.url);
     const fromDateStr = searchParams.get("fromDate");
     const toDateStr = searchParams.get("toDate");
@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) { // Updated signature
     const fromDate = fromDateStr ? new Date(fromDateStr) : null;
     const toDate = toDateStr ? new Date(toDateStr) : null;
 
-    const snapshot = await fetchTicketerPosSnapshot(session.user.id!, fromDate, toDate);
+    const snapshot = await fetchTicketerPosSnapshot(session.user.id!, company_id, fromDate, toDate);
 
     if (!snapshot.success) {
       return NextResponse.json(

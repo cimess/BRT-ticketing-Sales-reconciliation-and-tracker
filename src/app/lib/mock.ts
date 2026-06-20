@@ -21,7 +21,7 @@ import { makeId} from './utils';
 const now = new Date();
 const iso  = now.toLocaleString("en-US", { month: "short" }) + now.getDate() + "/" + now.getFullYear();
 
-
+// 788893988iuiuie9894
 
 export const mockUsers: User[] = [
   {
@@ -668,7 +668,7 @@ export const mockFloatLedger: FloatLedgerEntry[] = [
 export const mockSalesRecords: Sales_Record[] = [
 
   {
-    id: "788893988iuiuie9894",
+    id: "788893988iuiu266ie9894",
     ticketer_id: mockUsers[0].user_id,
     user_name: mockUsers[0].fullname,
     pos_session_id: mockPosEvents[0].id,
@@ -681,7 +681,7 @@ export const mockSalesRecords: Sales_Record[] = [
     submitted_at: iso,
   },
   {
-    id: "788893988iuiuie9894",
+    id: "788893988iuiuie9929894",
     ticketer_id: mockUsers[1].user_id,
     user_name: mockUsers[1].fullname,
     pos_session_id: mockPosEvents[1].id,
@@ -694,7 +694,7 @@ export const mockSalesRecords: Sales_Record[] = [
     submitted_at: iso,
   },
   {
-    id: "788893988iuiuie9894",
+    id: "78889398001238iuiuie9894",
     ticketer_id: mockUsers[2].user_id,
     user_name: mockUsers[2].fullname,
     pos_session_id: mockPosEvents[2].id,
@@ -707,7 +707,7 @@ export const mockSalesRecords: Sales_Record[] = [
     submitted_at: iso,
   },
   {
-    id: "788893988iuiuie9894",
+    id: "788893988iui882uie9894",
     ticketer_id: mockUsers[3].user_id,
     user_name: mockUsers[3].fullname,
     pos_session_id: mockPosEvents[3].id,
@@ -720,7 +720,7 @@ export const mockSalesRecords: Sales_Record[] = [
     submitted_at: iso,
   },
   {
-    id: "788893988iuiuie9894",
+    id: "78889398800000iuiuie9894",
     ticketer_id: mockUsers[4].user_id,
     user_name: mockUsers[4].fullname,
     pos_session_id: mockPosEvents[4].id,
@@ -733,7 +733,7 @@ export const mockSalesRecords: Sales_Record[] = [
     submitted_at: iso,
   },
    {
-    id: "788893984488339894",
+    id: "788893984481118339894",
     ticketer_id: mockUsers[4].user_id,
     user_name: mockUsers[4].fullname,
     pos_session_id: mockPosEvents[4].id,
@@ -746,7 +746,7 @@ export const mockSalesRecords: Sales_Record[] = [
     submitted_at: iso,
   },
   {
-    id: "788893988iuiuie9894",
+    id: "788893988222iuiuie9894",
     ticketer_id: mockUsers[5].user_id,
     user_name: mockUsers[5].fullname,
     pos_session_id: mockPosEvents[5].id,
@@ -762,28 +762,28 @@ export const mockSalesRecords: Sales_Record[] = [
 
 export const mockCommisionRules: Commission_Rate[] = [
   {
-    id: "788893988iuiuie9894",
+    id: "788893988iuiu33ie9894",
     role: 'TICKETER',
     percentage: 0.006,
     fixed_amount: 0,
     created_at: iso,
   },
   {
-    id: "788893988iuiuie9894",
+    id: "788893988iuiui333e9894",
     role: 'SUPERVISOR',
     percentage: 0.004,
     fixed_amount: 0,
     created_at: iso,
   },
   {
-    id: "788893988iuiuie9894",
+    id: "788893988iuiui44444e9894",
     role: 'ADMIN',
     percentage: 0.02,
     fixed_amount: 0,
     created_at: iso,
   },
   {
-    id: "788893988iuiuie9894",
+    id: "788893988iuiu6666ie9894",
     role: 'AUDITOR',
     percentage: 0.001,
     fixed_amount: 0,
@@ -794,7 +794,7 @@ export const mockCommisionRules: Commission_Rate[] = [
 
 export const mockTicketer_Location_Assignments: Ticketer_Location_Assignment[] = [
   {
-    id: "788893988iuiuie9894",
+    id: "788893988iui2222111uie9894",
     user_id: mockUsers[0].user_id,
     location_id: mockLocations[0].id,
     assigned_for: iso,

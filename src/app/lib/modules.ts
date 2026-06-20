@@ -1,9 +1,8 @@
-import { Roles } from "@prisma/client";
-
 export type ModuleKey =
   | 'overview'
   | 'reconciliation'
   | 'float'
+  | 'sales'
   | 'transactions'
   | 'remittances'
   | 'commission'
@@ -11,7 +10,8 @@ export type ModuleKey =
   | 'audit'
   | 'reports'
   | 'admin_users'
-  | 'admin_roles';
+  | 'admin_roles'
+  | 'location';
 
 export type Role = 'ticketer' | 'supervisor' | 'admin' | 'auditor';
 
@@ -24,23 +24,30 @@ export interface ModuleItem {
 }
 
 export const MODULES: ModuleItem[] = [
-  { key: 'overview', label: 'Overview', path: '/', group: 'Operations', roles: ['ticketer', 'supervisor','admin', 'auditor'] },
+  { key: 'overview', label: 'Overview', path: '/', group: 'Operations', roles: ['ticketer', 'supervisor', 'admin', 'auditor'] },
 
-  { key: 'reconciliation', label: 'Reconciliation', path: 'reconciliation', group: 'Reconciliation', roles: ['ticketer', 'supervisor','admin', 'auditor'] },
+  { key: 'reconciliation', label: 'Reconciliation', path: 'reconciliation', group: 'Reconciliation', roles: ['ticketer', 'supervisor', 'admin', 'auditor'] },
 
   { key: 'float', label: 'Float Ledger', path: 'float', group: 'Operations', roles: ['ticketer', 'supervisor', 'admin', 'auditor'] },
-  { key: 'transactions', label: 'Transactions', path: 'transactions', group: 'Operations', roles: ['ticketer', 'supervisor','admin', 'auditor'] },
-  { key: 'remittances', label: 'Remittances', path: 'remittances', group: 'Operations', roles: ['ticketer', 'supervisor','admin', 'auditor'] },
 
-  { key: 'commission', label: 'Commission', path: 'commision', group: 'Earnings', roles: ['ticketer', 'supervisor','admin', 'auditor'] },
+  { key: 'sales', label: 'Sales', path: 'sales', group: 'Earnings', roles: ['ticketer', 'supervisor', 'admin'] },
 
-  { key: 'pos', label: 'POS Devices', path: 'devices', group: 'Devices', roles: ['supervisor','admin', 'auditor', 'ticketer'] },
+  { key: 'transactions', label: 'Transactions', path: 'transactions', group: 'Operations', roles: ['ticketer', 'supervisor', 'admin', 'auditor'] },
 
-  { key: 'audit', label: 'Audit Logs', path: 'audit', group: 'Audit', roles: ['supervisor','admin', 'auditor'] },
+  { key: 'remittances', label: 'Remittances', path: 'remittances', group: 'Operations', roles: ['ticketer', 'supervisor', 'admin', 'auditor'] },
 
-  { key: 'reports', label: 'Reports', path: 'reports', group: 'Reports', roles: ['supervisor','admin', 'auditor'] },
+  { key: 'commission', label: 'Commission', path: 'commision', group: 'Earnings', roles: ['ticketer', 'supervisor', 'admin', 'auditor'] },
+
+  { key: 'pos', label: 'POS Devices', path: 'devices', group: 'Devices', roles: ['supervisor', 'admin', 'auditor', 'ticketer'] },
+
+  { key: 'audit', label: 'Audit Logs', path: 'audit', group: 'Audit', roles: ['supervisor', 'admin', 'auditor'] },
+
+  { key: 'reports', label: 'Reports', path: 'reports', group: 'Reports', roles: ['supervisor', 'admin', 'auditor'] },
+  
+  { key: 'location', label: 'Locations', path: 'locations', group: 'Operations', roles: ['admin', 'supervisor', 'ticketer'] },
 
   { key: 'admin_users', label: 'Users', path: 'users', group: 'Admin', roles: ['admin'] },
+
   { key: 'admin_roles', label: 'Roles & Permissions', path: 'roles', group: 'Admin', roles: ['admin'] },
 ];
 

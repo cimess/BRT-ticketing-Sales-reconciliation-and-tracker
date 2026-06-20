@@ -9,12 +9,14 @@ import { AppError } from "./auth.service";
 export async function createREGToken({
   role,
   issued_by,
+  companyId
 }: {
   role: Roles;
   issued_by: string;
+  companyId:string
 }) {
   const issuer = await prisma.user.findUnique({
-    where: { id: issued_by },
+    where: { id: issued_by,company_id:companyId },
   });
 
   if (!issuer) throw new AppError("Issuer not found", 404);
@@ -34,6 +36,7 @@ export async function createREGToken({
     try {
       tokenRecord = await prisma.registrationToken.create({
         data: {
+          company_id:companyId,
           token,
           role,
           expires_at,
@@ -41,14 +44,6 @@ export async function createREGToken({
         },
       });
 
-      await prisma.registrationToken.deleteMany({
-        where: {
-          expires_at: {
-            lt: new Date(),
-          },
-          is_used: false,
-        },
-      })
     } catch (e) {
       // collision rare — retry
       tokenRecord = null;
@@ -65,6 +60,7 @@ export async function createREGToken({
 }
 
 export async function getTokens({
+  companyId,
   issued_by,
   requester_id,
   requester_role,
@@ -72,28 +68,28 @@ export async function getTokens({
   issued_by?: string;
   requester_id: string;
   requester_role: Roles;
+  companyId: string;
 }) {
   if (requester_role !== Roles.ADMIN && requester_role !== Roles.SUPERVISOR) {
     throw new AppError("Not authorized", 403);
   }
-
-  const targetUser = issued_by ?? requester_id;
-
+  if(!companyId){
+    throw new AppError("Company ID is required", 400);
+  }
   const tokens = await prisma.registrationToken.findMany({
     where: {
-      issued_by: targetUser,
+      company_id: companyId,
       is_used: false,
       expires_at: {
         gt: new Date(),
-      }
+      },
+      // 💡 Conditionally add issued_by filter if it is provided
+      ...(issued_by ? { issued_by } : {}),
     },
     orderBy: {
       created_at: "desc",
     },
   });
-
-
-
   return {
     success: true,
     message: "Tokens fetched successfully",

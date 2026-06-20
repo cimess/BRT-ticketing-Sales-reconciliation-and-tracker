@@ -2,6 +2,7 @@ import { z } from "zod";
 import { Roles } from "@prisma/client";
 import { TopUpSource } from "@prisma/client";
 
+
 export const registerSchema = z.object({
   firstName: z
     .string()
@@ -47,15 +48,26 @@ export const registerSchema = z.object({
     .string()
     .min(5, "Address is too short")
     .optional(),
+  
+  companyCode: z.string().min(3, "Company code must be at least 3 characters"),
+  
+  // 💡 Add companyName to allow Admins to name their companies
+  companyName: z
+    .string()
+    .min(2, "Company name must be at least 2 characters")
+    .optional(),
 });
+
 
 export const loginSchema = z.object({
   email: z.string().email("Invalid email format"),
   password: z.string().min(6, "Password must be at least 6 characters"),
+  companyCode: z.string().min(3, "Company code must be at least 3 characters"),
 });
 
 export const verifyTokenSchema = z.object({
   token: z.string().min(11, "Registration token is required"),
+  companyCode: z.string().min(3, "Company code must be at least 3 characters"),
 });
 
 export const createREGTokenSchema = z.object({

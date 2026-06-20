@@ -40,8 +40,9 @@ function getDateRangeFilter(
 export async function getRoleFinancialSnapshot(
   role: string,
   userId: string,
+  companyId: string,
   fromDate?: Date | null,
-  toDate?: Date | null
+  toDate?: Date | null,
 ): Promise<RoleFinancialSnapshot> {
   try {
     const isClientAdmin = role === "ADMIN" || role === "AUDITOR";
@@ -53,6 +54,9 @@ export async function getRoleFinancialSnapshot(
     let totalAllocated = 0;
     let expectedRemittance = 0;
     let reconciliationData;
+    let posSessionId;
+    let circulatingFloat = 0;
+    let supervisorCash = 0;
 
     // ─────────────────────────────────────────────────────
     // A. ADMIN & AUDITOR Snapshots (All-Time + Range Checks)
@@ -60,50 +64,104 @@ export async function getRoleFinancialSnapshot(
     if (isClientAdmin) {
       // 1. Get Cached/Current available balance
       const companyFloat = await prisma.companyFloat.findUnique({
-        where: { id: "COMPANY_ACCOUNT" },
+        where: { id: "COMPANY_ACCOUNT", company_id: companyId },
       });
       companyBalance = companyFloat ? Number(companyFloat.available_balance) : 0;
 
-      // 2. Total Top-ups (Credits to Company Account in range)
-      const ledgerTopUpAgg = await prisma.float_Ledger.aggregate({
-        where: {
-          account_id: "COMPANY_ACCOUNT",
-          entry_type: "CREDIT",
-          reference_type: "TOP_UP",
-          ...getDateRangeFilter(fromDate, toDate, "created_at"),
-        },
-        _sum: { amount: true },
-      });
-      totalTopUp = Number(ledgerTopUpAgg._sum.amount ?? 0);
+      // 2. Total Top-ups (Credits to Company Account in range minus cancel debits)
+      const [ledgerTopUpAgg, ledgerTopUpCancelAgg] = await prisma.$transaction([
+        prisma.float_Ledger.aggregate({
+          where: {
+            account_id: "COMPANY_ACCOUNT",
+            entry_type: "CREDIT",
+            reference_type: "TOP_UP",
+            ...getDateRangeFilter(fromDate, toDate, "created_at"),
+            company_id: companyId,
+          },
+          _sum: { amount: true },
+        }),
+        prisma.float_Ledger.aggregate({
+          where: {
+            account_id: "COMPANY_ACCOUNT",
+            entry_type: "DEBIT",
+            reference_type: "TOP_UP_CANCEL",
+            ...getDateRangeFilter(fromDate, toDate, "created_at"),
+            company_id: companyId,
+          },
+          _sum: { amount: true },
+        })
+      ]);
+      totalTopUp = Number(ledgerTopUpAgg._sum.amount ?? 0) - Number(ledgerTopUpCancelAgg._sum.amount ?? 0);
 
-      // 3. Total Allocated (Debits to Company Account in range)
-      const ledgerAllocAgg = await prisma.float_Ledger.aggregate({
+      // 3. Total Allocated (Debits to Company Account in range minus cancel credits)
+      const posAllocationsAgg = await prisma.float_allocations.aggregate({
         where: {
-          account_id: "COMPANY_ACCOUNT",
-          entry_type: "DEBIT",
-          ...getDateRangeFilter(fromDate, toDate, "created_at"),
+          status: "SUCCESS", // Excludes CANCELLED/REVERSED allocations
+          ...getDateRangeFilter(fromDate, toDate, "allocated_at"),
+          company_id: companyId,
         },
-        _sum: { amount: true },
+        _sum: { amount_allocated: true }
       });
-      totalAllocated = Number(ledgerAllocAgg._sum.amount ?? 0);
+
+      totalAllocated = Number(posAllocationsAgg._sum.amount_allocated ?? 0);
+
+
 
       // 4. Expected Remittances (Expectations due in range)
       const expectationAgg = await prisma.remittanceExpectation.aggregate({
         where: {
           ...getDateRangeFilter(fromDate, toDate, "due_date"),
+          company_id: companyId,
         },
         _sum: { expected_amount: true },
       });
       expectedRemittance = Number(expectationAgg._sum.expected_amount ?? 0);
 
+      // 6. Circulating POS Float (Sum of pos_float of all ACTIVE sessions)
+      const activeSessions = await prisma.posDeviceSession.findMany({
+        where: { status: "ACTIVE", company_id: companyId },
+        select: { pos_float: true }
+      });
+      circulatingFloat = activeSessions.reduce((sum, s) => sum + Number(s.pos_float), 0);
+
+      // 7. Supervisor Cash Holdings (Cash with Supervisors)
+      const collectedBySupervisorsAgg = await prisma.remittance.aggregate({
+        where: {
+          status: "CONFIRMED",
+          received_by_supervisor_id: { not: null },
+          company_id: companyId,
+        },
+        _sum: { amount: true },
+      });
+      const totalCollectedBySupervisors = Number(collectedBySupervisorsAgg._sum.amount ?? 0);
+
+      const supervisors = await prisma.user.findMany({
+        where: { role: "SUPERVISOR", company_id: companyId },
+        select: { id: true },
+      });
+      const supervisorIds = supervisors.map((u) => u.id);
+
+      const depositedBySupervisorsAgg = await prisma.remittance.aggregate({
+        where: {
+          status: "CONFIRMED",
+          submitted_by: { in: supervisorIds },
+          received_by_supervisor_id: null,
+          company_id: companyId,
+        },
+        _sum: { amount: true },
+      });
+      const totalDepositedBySupervisors = Number(depositedBySupervisorsAgg._sum.amount ?? 0);
+      supervisorCash = totalCollectedBySupervisors - totalDepositedBySupervisors;
+
+
       // 5. Ledger Reconciliations (All-Time Check to calculate Drift)
       const [allTimeCreditAgg, allTimeDebitAgg] = await prisma.$transaction([
         prisma.float_Ledger.aggregate({
-          where: { account_id: "COMPANY_ACCOUNT", entry_type: "CREDIT" },
+          where: { account_id: "COMPANY_ACCOUNT", entry_type: "CREDIT", company_id: companyId },
           _sum: { amount: true },
         }),
         prisma.float_Ledger.aggregate({
-          where: { account_id: "COMPANY_ACCOUNT", entry_type: "DEBIT" },
+          where: { account_id: "COMPANY_ACCOUNT", entry_type: "DEBIT", company_id: companyId },
           _sum: { amount: true },
         }),
       ]);
@@ -125,9 +183,46 @@ export async function getRoleFinancialSnapshot(
     // B. SUPERVISOR Snapshot (Subordinates Checks)
     // ─────────────────────────────────────────────────────
     else if (isClientSupervisor) {
+
+      // 5. Circulating POS Float under this Supervisor
+      const supervisorActiveSessions = await prisma.posDeviceSession.findMany({
+        where: {
+          status: "ACTIVE",
+          user: { supervisor_id: userId },
+          company_id: companyId,
+        },
+        select: { pos_float: true }
+      });
+      circulatingFloat = supervisorActiveSessions.reduce((sum, s) => sum + Number(s.pos_float), 0);
+
+      // 6. Supervisor Cash Holdings (Their own cash-in-hand)
+      const collectedBySupAgg = await prisma.remittance.aggregate({
+        where: {
+          status: "CONFIRMED",
+          received_by_supervisor_id: userId,
+          company_id: companyId,
+        },
+        _sum: { amount: true }
+      });
+      const totalCollectedBySup = Number(collectedBySupAgg._sum.amount ?? 0);
+
+      const depositedBySupAgg = await prisma.remittance.aggregate({
+        where: {
+          status: "CONFIRMED",
+          submitted_by: userId,
+          received_by_supervisor_id: null,
+          company_id: companyId,
+        },
+        _sum: { amount: true }
+      });
+      const totalDepositedBySup = Number(depositedBySupAgg._sum.amount ?? 0);
+      supervisorCash = totalCollectedBySup - totalDepositedBySup;
+
+
+
       // Available Company float (the pot they draw allocations from)
       const companyFloat = await prisma.companyFloat.findUnique({
-        where: { id: "COMPANY_ACCOUNT" },
+        where: { id: "COMPANY_ACCOUNT", company_id: companyId },
       });
       companyBalance = companyFloat ? Number(companyFloat.available_balance) : 0;
 
@@ -140,6 +235,7 @@ export async function getRoleFinancialSnapshot(
           from_user: userId,
           status: Float_Status.SUCCESS,
           ...getDateRangeFilter(fromDate, toDate, "allocated_at"),
+          company_id: companyId,
         },
         _sum: { amount_allocated: true },
       });
@@ -147,15 +243,16 @@ export async function getRoleFinancialSnapshot(
 
       // Expected Remittances from all Ticketers assigned to this Supervisor
       const ticketers = await prisma.user.findMany({
-        where: { supervisor_id: userId },
+        where: { supervisor_id: userId, company_id: companyId },
         select: { id: true },
       });
       const ticketerIds = ticketers.map((t) => t.id);
 
       const expectationAgg = await prisma.remittanceExpectation.aggregate({
         where: {
-          ticketer_id: { in: ticketerIds },
+          user_id: { in: ticketerIds },
           ...getDateRangeFilter(fromDate, toDate, "due_date"),
+          company_id: companyId,
         },
         _sum: { expected_amount: true },
       });
@@ -166,9 +263,11 @@ export async function getRoleFinancialSnapshot(
     // C. TICKETER Snapshot (Personal POS Session Checks)
     // ─────────────────────────────────────────────────────
     else if (isClientTicketer) {
+
       const activeSession = await prisma.posDeviceSession.findFirst({
-        where: { user_id: userId, status: "ACTIVE" },
+        where: { user_id: userId, status: "ACTIVE", company_id: companyId },
       });
+      posSessionId = activeSession?.id || null;
       companyBalance = activeSession ? Number(activeSession.pos_float) : 0;
 
       const activeSessionId = activeSession?.id || "";
@@ -179,6 +278,7 @@ export async function getRoleFinancialSnapshot(
           pos_device_id: activeSessionId,
           status: Float_Status.SUCCESS,
           ...getDateRangeFilter(fromDate, toDate, "allocated_at"),
+          company_id: companyId,
         },
         _sum: { amount_allocated: true },
       });
@@ -190,8 +290,9 @@ export async function getRoleFinancialSnapshot(
       // Expected Remittances in range
       const expectationAgg = await prisma.remittanceExpectation.aggregate({
         where: {
-          ticketer_id: userId,
+          user_id: userId,
           ...getDateRangeFilter(fromDate, toDate, "due_date"),
+          company_id: companyId,
         },
         _sum: { expected_amount: true },
       });
@@ -200,8 +301,9 @@ export async function getRoleFinancialSnapshot(
       // Fallback: If no expectations generated, expected = last closing balance + topup
       if (expectedRemittance === 0 && activeSession) {
         const lastReport = await prisma.salesReport.findFirst({
-          where: { ticketer_id: userId },
+          where: { ticketer_id: userId, company_id: companyId },
           orderBy: { report_date: "desc" },
+
         });
         const closingBalance = lastReport ? Number(lastReport.closing_balance) : 0;
         expectedRemittance = closingBalance + totalTopUp;
@@ -217,9 +319,13 @@ export async function getRoleFinancialSnapshot(
         totalTopUp,
         totalAllocated,
         expectedRemittance,
+        circulatingFloat,
+        supervisorCash,
         ...(reconciliationData && { ledgerReconciliation: reconciliationData }),
+        posSessionId,
       },
     };
+
   } catch (error) {
     console.error("getRoleFinancialSnapshot error:", error);
     throw error instanceof ApiError
@@ -233,8 +339,9 @@ export async function getRoleFinancialSnapshot(
 export async function getRoleSalesSnapshot(
   role: string,
   userId: string,
+  companyId:string,
   fromDate?: Date | null,
-  toDate?: Date | null
+  toDate?: Date | null,
 ): Promise<RoleSalesSnapshot> {
   try {
     const isClientAdmin = role === "ADMIN" || role === "AUDITOR";
@@ -245,7 +352,7 @@ export async function getRoleSalesSnapshot(
     // 1. Resolve which ticketers we care about based on role
     if (isClientSupervisor) {
       const ticketers = await prisma.user.findMany({
-        where: { supervisor_id: userId },
+        where: { supervisor_id: userId,company_id:companyId },
         select: { id: true },
       });
       const ticketerIds = ticketers.map((t) => t.id);
@@ -260,6 +367,7 @@ export async function getRoleSalesSnapshot(
       where: {
         ...ticketerFilter,
         ...getDateRangeFilter(fromDate, toDate, "report_date"),
+        company_id:companyId,
       },
       _sum: { total_sold: true },
       _count: { id: true },
@@ -271,15 +379,16 @@ export async function getRoleSalesSnapshot(
     const submittedByFilter = isClientAdmin
       ? {}
       : isClientSupervisor
-      ? { ticketer: { supervisor_id: userId } }
-      : { submitted_by: userId };
+        ? { ticketer: { supervisor_id: userId } }
+        : { submitted_by: userId };
 
-    const [confirmedAgg, pendingAgg] = await prisma.$transaction([
+    const [confirmedAgg, pendingAgg, companyConfirmedAgg] = await prisma.$transaction([
       prisma.remittance.aggregate({
         where: {
           ...submittedByFilter,
           status: RemittanceStatus.CONFIRMED,
           ...getDateRangeFilter(fromDate, toDate, "remittance_date"),
+          company_id:companyId,
         },
         _sum: { amount: true },
       }),
@@ -288,6 +397,17 @@ export async function getRoleSalesSnapshot(
           ...submittedByFilter,
           status: RemittanceStatus.PENDING,
           ...getDateRangeFilter(fromDate, toDate, "remittance_date"),
+          company_id:companyId,
+        },
+        _sum: { amount: true },
+      }),
+      prisma.remittance.aggregate({
+        where: {
+          ...submittedByFilter,
+          status: RemittanceStatus.CONFIRMED,
+          received_by_supervisor_id: null, // DIRECT TO BANK/COMPANY VAULT ONLY
+          ...getDateRangeFilter(fromDate, toDate, "remittance_date"),
+          company_id:companyId,
         },
         _sum: { amount: true },
       }),
@@ -295,6 +415,7 @@ export async function getRoleSalesSnapshot(
 
     const totalRemitted = Number(confirmedAgg._sum.amount ?? 0);
     const pendingRemittance = Number(pendingAgg._sum.amount ?? 0);
+    const companyRemitted = Number(companyConfirmedAgg._sum.amount ?? 0);
 
     return {
       success: true,
@@ -304,9 +425,11 @@ export async function getRoleSalesSnapshot(
         totalSales,
         totalRemitted,
         pendingRemittance,
+        companyRemitted,
         salesCount,
       },
     };
+
   } catch (error) {
     console.error("getRoleSalesSnapshot error:", error);
     throw error instanceof ApiError
@@ -341,12 +464,13 @@ export type TicketerPosSnapshot = {
 
 export async function fetchTicketerPosSnapshot(
   userId: string,
+  companyId:string,
   fromDate?: Date | null,
   toDate?: Date | null
 ): Promise<TicketerPosSnapshot> {
   try {
     const user = await prisma.user.findUnique({
-      where: { id: userId },
+      where: { id: userId,company_id:companyId },
       include: {
         pos_sessions: { where: { status: "ACTIVE" } },
       },
@@ -364,11 +488,11 @@ export async function fetchTicketerPosSnapshot(
       : {};
 
     const pos = await prisma.posDeviceSession.findUnique({
-      where: { id: pos_device_id },
+      where: { id: pos_device_id,company_id:companyId },
       include: {
         sales_reports: { orderBy: { report_date: "desc" }, take: 1 },
         allocations_given: {
-          where: { status: Float_Status.SUCCESS, ...dateFilter },
+          where: { status: Float_Status.SUCCESS, ...dateFilter,company_id:companyId },
           include: {
             supervisor: { select: { first_name: true, last_name: true, role: true } },
             pos_device: { include: { device: { select: { name: true } } } },
@@ -385,7 +509,7 @@ export async function fetchTicketerPosSnapshot(
     const closingBalance = Number(previousSalesReport?.closing_balance ?? 0);
 
     const topupAggregate = await prisma.float_allocations.aggregate({
-      where: { pos_device_id, status: Float_Status.SUCCESS, ...dateFilter },
+      where: { pos_device_id, status: Float_Status.SUCCESS, ...dateFilter,company_id:companyId },
       _sum: { amount_allocated: true },
     });
 
