@@ -5,122 +5,11 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { ApiError } from "@/lib/ApiError";
 
-// 1. Assign POS Device to a user (Creates a POS Device Session)
-export async function POST(req: Request) {
-  try {
-    const session = await auth();
-    if (!session?.user || session.user.role !== "ADMIN") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const { deviceId, userId } = await req.json();
-
-    if (!deviceId || !userId) {
-      return NextResponse.json({ error: "Device ID and User ID are required" }, { status: 400 });
-    }
-
-    const result = await prisma.$transaction(async (tx) => {
-      // a. Validate POS device exists and is inactive
-      const device = await tx.pos_devices.findUnique({
-        where: { id: deviceId, company_id: session.user.company_id },
-      });
-      if (!device) throw new ApiError(404, "POS device not found");
-      if (device.status === "ACTIVE") throw new ApiError(400, "Device is already assigned to a session");
-      if (device.status === "MAINTENANCE") throw new ApiError(400, "Device is currently in maintenance");
-
-      // b. Validate user has no other active assignments
-      const activeUserSession = await tx.posDeviceSession.findFirst({
-        where: { user_id: userId, status: "ACTIVE", company_id: session.user.company_id },
-      });
-      if (activeUserSession) throw new ApiError(400, "This user is already active on another POS device");
-
-      // c. Fetch remaining float from the device's last session (carry over / handover)
-      const lastSession = await tx.posDeviceSession.findFirst({
-        where: { device_id: deviceId, company_id: session.user.company_id },
-        orderBy: { assigned_at: "desc" },
-      });
-
-      const carriedOverFloat = lastSession ? lastSession.pos_float : new Prisma.Decimal(0);
-
-      // d. Create assignment session with the carried over float
-      const newSession = await tx.posDeviceSession.create({
-        data: {
-          device_id: deviceId,
-          user_id: userId,
-          pos_float: carriedOverFloat,
-          assigned_by: session.user.id!,
-          status: "ACTIVE",
-          company_id: session.user.company_id,
-        },
-      });
-
-      // e. Update device status to ACTIVE
-      await tx.pos_devices.update({
-        where: { id: deviceId, company_id: session.user.company_id },
-        data: { status: "ACTIVE" },
-      });
-
-      // f. Log the carried-over opening balance to the POS ledger for auditability
-      if (carriedOverFloat.gt(0)) {
-        await tx.float_Ledger.create({
-          data: {
-            company_id: session.user.company_id,
-            account_id: newSession.id,
-            account_type: "POS_DEVICE",
-            posSession: newSession.id,
-            amount: carriedOverFloat,
-            entry_type: "CREDIT",
-            reference_type: "SESSION_OPENING",
-            reference_id: newSession.id,
-            description: `Opening float balance carried over from previous session`,
-          },
-        });
-      }
-
-      // audit log for admin action
-     await prisma.auditLog.create({
-      data: {
-        company_id: session.user.company_id,  
-        user_id: userId,
-        action: "CREATE",
-        entity_type: "POS_DEVICE",
-        entity_id: newSession.id,
-        after_state: newSession,
-      }
-    });
-          
-
-      return newSession;
-    });
-
-    return NextResponse.json({
-      success: true,
-      message: "POS device assigned successfully",
-      session: {
-        id: result.id,
-        deviceId: result.device_id,
-        userId: result.user_id,
-        posFloat: Number(result.pos_float),
-        assignedAt: result.assigned_at,
-        status: result.status,
-      },
-    });
-  } catch (error) {
-    console.error("POST /api/admin/device/assign error:", error);
-
-    if (error instanceof ApiError) {
-      return NextResponse.json({ success: false, error: error.message }, { status: error.statusCode });
-    }
-
-    return NextResponse.json({ success: false, error: "Internal Server Error" }, { status: 400 });
-  }
-}
-
 // 2. Unassign / Return POS Device (Closes the POS Device Session)
 export async function PUT(req: Request) {
   try {
     const session = await auth();
-    if (!session?.user || session.user.role !== "ADMIN") {
+    if (!session?.user || session.user.role !== "ADMIN"||!session.user.company_id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -130,14 +19,51 @@ export async function PUT(req: Request) {
       return NextResponse.json({ error: "Session ID is required" }, { status: 400 });
     }
 
+    // Get company_id from session
+    const { company_id } = session.user;
+
     const result = await prisma.$transaction(async (tx) => {
       // a. Fetch target assignment session
       const posSession = await tx.posDeviceSession.findUnique({
-        where: { id: sessionId, company_id: session.user.company_id },
+        where: { id: sessionId, company_id: company_id },
       });
       if (!posSession || posSession.status !== "ACTIVE") {
         throw new ApiError(404, "Active POS session not found or already closed");
       }
+
+
+      // 1. Check for pending remittances on this session or by this user
+      const pendingRemittance = await tx.remittance.findFirst({
+        where: {
+          company_id,
+          pos_session_id: posSession.id,
+          status: "PENDING",
+        },
+      });
+
+      if (pendingRemittance) {
+        throw new ApiError(
+          400,
+          "Cannot return POS device: The ticketer has pending remittances for this session that must be verified first."
+        );
+      }
+
+      // 2. Check for unverified sales reports submitted for this session
+      const pendingSalesReport = await tx.salesReport.findFirst({
+        where: {
+          company_id,
+          pos_session_id: posSession.id,
+          status: "PENDING",
+        },
+      });
+
+      if (pendingSalesReport) {
+        throw new ApiError(
+          400,
+          "Cannot return POS device: There is a pending sales report for this session awaiting verification."
+        );
+      }
+
 
       // b. Update session status to RETURNED (preserving the remaining pos_float value)
       const updatedSession = await tx.posDeviceSession.update({
@@ -147,7 +73,7 @@ export async function PUT(req: Request) {
           unassigned_at: new Date(),
           unassigned_by: session.user.id!,
           unassigned_reason: reason || "Device returned to office",
-          company_id: session.user.company_id,  
+          company_id: session.user.company_id,
           // The pos_float is NOT reset to 0; we preserve it to carry over to the next user.
         },
       });
@@ -161,7 +87,7 @@ export async function PUT(req: Request) {
       // audit log for admin action
       await tx.auditLog.create({
         data: {
-          company_id: session.user.company_id,  
+          company_id: session.user.company_id,
           user_id: session.user.id!,
           action: "UPDATE",
           entity_type: "POS_DEVICE",

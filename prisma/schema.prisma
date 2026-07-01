@@ -120,8 +120,6 @@ model Float_allocations {
   company_id           String
   supervisor       User         @relation("AllocationFrom", fields: [from_user], references: [id])
   pos_device       PosDeviceSession       @relation("AllocationTo", fields: [pos_device_id], references: [id])
-  remittance_expectations RemittanceExpectation[]
-  remittances             Remittance[]
   company              Company             @relation(fields: [company_id], references: [id])
 }
 
@@ -137,8 +135,7 @@ model Remittance {
   status            RemittanceStatus  @default(PENDING)
   created_at        DateTime          @default(now())
   verified_at       DateTime?
-  allocation_id     String?
-
+  pos_session_id    String?
   received_by_supervisor_id String?
   company_id           String
   supervisor_receiver       User?   @relation("SupervisorRemittances", fields: [received_by_supervisor_id], references: [id])
@@ -147,8 +144,7 @@ model Remittance {
   ticketer          User              @relation(fields: [submitted_by], references: [id])
   company              Company             @relation(fields: [company_id], references: [id])
 
-
-  allocation        Float_allocations? @relation(fields: [allocation_id], references: [id])
+  pos_session       PosDeviceSession?  @relation(fields: [pos_session_id], references: [id])
 }
 model Reconciliation_reports {
   id                String       @id @default(cuid())
@@ -170,7 +166,7 @@ model RemittanceExpectation {
 
   user_id         String
 
-  allocation_id   String? @unique
+  pos_session_id  String? @unique
 
   source_remittance_id  String?
 
@@ -188,7 +184,7 @@ model RemittanceExpectation {
   company_id           String
   
   user              User              @relation(fields: [user_id], references: [id])
-  allocation        Float_allocations? @relation(fields: [allocation_id], references: [id])
+  pos_session       PosDeviceSession?  @relation(fields: [pos_session_id], references: [id])
   company              Company             @relation(fields: [company_id], references: [id])
 }
 
@@ -254,6 +250,8 @@ model PosDeviceSession {
   allocations_given    Float_allocations[] @relation("AllocationTo")
   float_ledger      Float_Ledger[]   @relation("PosDeviceLedger")
   company              Company             @relation(fields: [company_id], references: [id])
+  remittance_expectation RemittanceExpectation?
+  remittances            Remittance[]
 }
 
 model SalesReport {
@@ -307,7 +305,7 @@ model CommissionEarning {
 model Fine {
   id         String      @id @default(cuid())
   defaulter_id    String
-  amount     Float
+  amount     Float?
   reason     String
   issued_by  String
   status     fine_status @default(UNPAID)
@@ -342,6 +340,8 @@ model Location {
   id            String        @id @default(cuid())
   name          String
   address       String
+  opening_time  String?
+  closing_time  String?
   created_at    DateTime      @default(now())
   company_id           String
   sales_reports SalesReport[]
@@ -364,6 +364,7 @@ enum AuditAction {
   VERIFY
   REVERSE
   CANCELLED
+  DEPOSIT
 }
 
 enum TopUpSource {
@@ -383,6 +384,8 @@ enum AuditEntityType {
   SALES_REPORT
   LOCATION
   LOCATION_ASSIGNMENT
+  DEPOSIT_CASH
+  REMITTANCE_EXPECTATION
 }
 
 
@@ -423,10 +426,14 @@ enum Remittance_Method {
 }
 
 enum RemittanceStatus {
+  PENDING_SUPERVISOR_ACCEPTANCE
+  ACCEPTED_BY_SUPERVISOR
+  REJECTED_BY_SUPERVISOR
   PENDING
   CONFIRMED
   REJECTED
   CANCELLED
+  DEPOSITED
 }
 
 enum SalaryStatus {
@@ -450,6 +457,7 @@ enum Assignment_Status {
   ACTIVE
   SHARED
   RETURNED
+  CLOSED
 }
 
 enum ReconciliationScope {

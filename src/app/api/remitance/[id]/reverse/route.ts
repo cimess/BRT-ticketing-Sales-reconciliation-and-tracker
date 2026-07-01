@@ -29,26 +29,29 @@ export async function PATCH(
       // --- TICKETER CANCELLATION LOGIC ---
       if (role === "TICKETER") {
         if (remittance.submitted_by !== userId) throw new ApiError(401, "You can only cancel your own remittance.");
-        if (remittance.status !== "PENDING") throw new ApiError(400, "You cannot cancel a remittance that has already been processed by an Admin.");
+        if (!["PENDING", "PENDING_SUPERVISOR_ACCEPTANCE"].includes(remittance.status)) {
+          throw new ApiError(400, "You cannot cancel a remittance that has already been processed or accepted.");
+        }
+
         
         const cancelled = await tx.remittance.update({
           where: { id: remittanceId,company_id:companyId},
           data: { status: "CANCELLED" }
         });
 
-        // Restore expectation status dynamically when cancellation happens
-        if (remittance.allocation_id) {
+               // Restore expectation status dynamically when cancellation happens
+        if (remittance.pos_session_id) {
           const expectation = await tx.remittanceExpectation.findUnique({
-            where: { allocation_id: remittance.allocation_id,company_id:companyId }
+            where: { pos_session_id: remittance.pos_session_id, company_id: companyId }
           });
 
           if (expectation) {
             const pendingCount = await tx.remittance.count({
               where: {
-                allocation_id: remittance.allocation_id,
+                pos_session_id: remittance.pos_session_id,
                 id: { not: remittanceId },
                 status: "PENDING",
-                company_id:companyId,
+                company_id: companyId,
               }
             });
 
@@ -58,11 +61,12 @@ export async function PATCH(
               : (expectation.due_date < now ? "OVERDUE" : "PENDING");
 
             await tx.remittanceExpectation.update({
-              where: { id: expectation.id,company_id:companyId },
+              where: { id: expectation.id, company_id: companyId },
               data: { status: restoredStatus }
             });
           }
         }
+
 
         await tx.auditLog.create({
           data: { user_id: userId, action: "CANCELLED", entity_type: "REMITTANCE", entity_id: remittanceId, before_state: remittance, after_state: cancelled,company_id:companyId }
@@ -79,25 +83,21 @@ export async function PATCH(
 
       const previousStatus = remittance.status;
 
+            // Determine restored status based on remittance method
+      const restoredStatus = remittance.method === "CASH" ? "DEPOSITED" : "PENDING";
+
       const updatedRemittance = await tx.remittance.update({
-        where: { id: remittanceId,company_id:companyId },
-        data: { status: "PENDING", verified_by: null, verified_at: null }
+        where: { id: remittanceId, company_id: companyId },
+        data: { status: restoredStatus, verified_by: null, verified_at: null }
       });
 
-        if (previousStatus === "CONFIRMED") {
-        // Check who originally received the cash
-        const isSupervisorHoldingCash = remittance.received_by_supervisor_id !== null;
-        const targetAccount = isSupervisorHoldingCash
-          ? remittance.received_by_supervisor_id!
-          : "COMPANY_ACCOUNT";
-        const targetAccountType = isSupervisorHoldingCash ? "SUPERVISOR" : "COMPANY";
-
-        // A) Rollback the CREDIT that was given to the receiver (Company OR Supervisor)
+      if (previousStatus === "CONFIRMED") {
+        // A) Rollback the CREDIT on Company Account
         await tx.float_Ledger.create({
           data: {
-            company_id:companyId,
-            account_id: targetAccount,
-            account_type: targetAccountType,
+            company_id: companyId,
+            account_id: "COMPANY_ACCOUNT",
+            account_type: "COMPANY",
             amount: remittance.amount,
             entry_type: "DEBIT",
             reference_type: "REMITTANCE",
@@ -106,13 +106,12 @@ export async function PATCH(
           },
         });
 
-        // B) Only decrement CompanyFloat if the Company originally got the money!
-        if (!isSupervisorHoldingCash) {
-          await tx.companyFloat.update({
-            where: { id: "COMPANY_ACCOUNT",company_id:companyId },
-            data: { available_balance: { decrement: remittance.amount } },
-          });
-        }
+        // B) Decrement CompanyFloat balance
+        await tx.companyFloat.update({
+          where: { id: "COMPANY_ACCOUNT", company_id: companyId },
+          data: { available_balance: { decrement: remittance.amount } },
+        });
+
 
         // C) Rollback Ticketer's Ledger — restore their debt
         await tx.float_Ledger.create({
@@ -129,16 +128,13 @@ export async function PATCH(
         });
 
              // D) Revert expectation status dynamically when reversal happens
-        if (remittance.allocation_id) {
+        if (remittance.pos_session_id) {
           const expectation = await tx.remittanceExpectation.findUnique({
-            where: { allocation_id: remittance.allocation_id,company_id:companyId }
+            where: { pos_session_id: remittance.pos_session_id, company_id: companyId }
           });
 
           if (expectation) {
-            // Restore expected_amount by adding back the reversed remittance amount
-            const restoredAmount = expectation.expected_amount + Number(remittance.amount);
-            // If the due date has already passed → restore to OVERDUE
-            // If still within the deadline → restore to PENDING
+            const restoredShortage = expectation.shortage_amount + Number(remittance.amount);
             const now = new Date();
             const restoredStatus = expectation.due_date < now ? "OVERDUE" : "PENDING";
 
@@ -146,20 +142,11 @@ export async function PATCH(
               where: { id: expectation.id },
               data: { 
                 status: restoredStatus,
-                expected_amount: restoredAmount,
-                shortage_amount: 0
+                shortage_amount: restoredShortage
               }
             });
           }
         }
-
-        // E) Clean up any child expectations created because of this remittance
-        // (e.g. Supervisor cash holding expectations or Ticketer shortage expectations)
-        await tx.remittanceExpectation.deleteMany({
-          where: { source_remittance_id: remittanceId }
-        });
-
-
 
 
       await tx.auditLog.create({

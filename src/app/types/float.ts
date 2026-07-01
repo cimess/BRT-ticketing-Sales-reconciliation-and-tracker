@@ -66,6 +66,15 @@ export type CompanyFloatSnapshot = {
   } | null;
 };
 
+export type TicketerPosSessionSummary = {
+  id: string;
+  deviceName: string;
+  serialNumber: string;
+  status: string;
+  assignedAt: Date;
+  unassignedAt: Date | null;
+};
+
 export type TicketerPosSnapshot = {
   success: boolean;
   message: string;
@@ -73,14 +82,13 @@ export type TicketerPosSnapshot = {
 
   data: {
     pos_device_id: string;
-
+    sessionStatus: string;
+    deviceName: string;
     closingBalance: number;
-
     totalTopUp: number;
-
     effectiveOpening: number;
-
     expectedRemittance: number;
+    sessionsList: TicketerPosSessionSummary[];
     topUp: {
       id: string;
       amount_allocated: number;
@@ -91,8 +99,8 @@ export type TicketerPosSnapshot = {
       from_user_role: Roles;
       to_device_name: string;
     }[];
-
   } | null;
 };
+
 
 export type TopUpSource = "COMPANY_RESERVE" | "GOVERNMENT_TOP_UP" | "EXTERNAL_OTHER_SOURCE"

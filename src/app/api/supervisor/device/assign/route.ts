@@ -158,6 +158,39 @@ export async function PUT(req: Request) {
         throw new ApiError(403,"You can only unassign devices for ticketers under your supervision" );
       }
 
+            // 1. Check for pending remittances on this session or by this user
+      const pendingRemittance = await tx.remittance.findFirst({
+        where: {
+          company_id,
+          pos_session_id: posSession.id,
+          status: "PENDING",
+        },
+      });
+
+      if (pendingRemittance) {
+        throw new ApiError(
+          400,
+          "Cannot return POS device: The ticketer has pending remittances for this session that must be verified first."
+        );
+      }
+
+      // 2. Check for unverified sales reports submitted for this session
+      const pendingSalesReport = await tx.salesReport.findFirst({
+        where: {
+          company_id,
+          pos_session_id: posSession.id,
+          status: "PENDING",
+        },
+      });
+
+      if (pendingSalesReport) {
+        throw new ApiError(
+          400,
+          "Cannot return POS device: There is a pending sales report for this session awaiting verification."
+        );
+      }
+
+
       // c. Update session status to RETURNED (preserving the remaining pos_float value)
       const updatedSession = await tx.posDeviceSession.update({
         where: { id: sessionId ,company_id},

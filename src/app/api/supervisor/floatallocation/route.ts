@@ -157,17 +157,36 @@ export async function POST(req: Request) {
         }
       });
 
-      // 5.1 Create Remittance Expectation record
-      await tx.remittanceExpectation.create({
-        data: {
-          company_id,
-          user_id: posSession.user_id,
-          allocation_id: allocation.id,
-          expected_amount: Number(allocationAmount),
-          due_date: new Date(Date.now() + 24 * 60 * 60 * 1000),
-          status: "PENDING",
-        }
+      // 5.1 Create or Update the single Remittance Expectation for this POS Session
+      const existingExpectation = await tx.remittanceExpectation.findUnique({
+        where: { pos_session_id: posSessionId }
       });
+
+      if (!existingExpectation) {
+              // First allocation of the session: Create a new expectation
+        await tx.remittanceExpectation.create({
+          data: {
+            company_id,
+            user_id: posSession.user_id,
+            pos_session_id: posSessionId,
+            expected_amount: Number(allocationAmount),
+            shortage_amount: Number(allocationAmount), // Initialize shortage_amount with the float size
+            due_date: new Date(Date.now() + 24 * 60 * 60 * 1000),
+            status: "PENDING",
+          }
+        });
+      } else {
+        // Subsequent allocation (Top-up): Increment both expected and shortage amounts
+        await tx.remittanceExpectation.update({
+          where: { id: existingExpectation.id },
+          data: {
+            expected_amount: { increment: Number(allocationAmount) },
+            shortage_amount: { increment: Number(allocationAmount) }
+          }
+        });
+      }
+
+
 
       // 6. Create Debit entry in Company Ledger
       await tx.float_Ledger.create({

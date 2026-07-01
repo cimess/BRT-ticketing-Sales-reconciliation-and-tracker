@@ -11,7 +11,7 @@ export type ModuleKey =
   | 'reports'
   | 'admin_users'
   | 'admin_roles'
-  | 'location';
+  | 'locations';
 
 export type Role = 'ticketer' | 'supervisor' | 'admin' | 'auditor';
 
@@ -44,7 +44,7 @@ export const MODULES: ModuleItem[] = [
 
   { key: 'reports', label: 'Reports', path: 'reports', group: 'Reports', roles: ['supervisor', 'admin', 'auditor'] },
   
-  { key: 'location', label: 'Locations', path: 'locations', group: 'Operations', roles: ['admin', 'supervisor', 'ticketer'] },
+  { key: 'locations', label: 'Locations', path: 'locations', group: 'Operations', roles: ['admin', 'supervisor', 'ticketer'] },
 
   { key: 'admin_users', label: 'Users', path: 'users', group: 'Admin', roles: ['admin'] },
 

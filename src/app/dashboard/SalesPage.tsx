@@ -169,7 +169,7 @@ function TrendChart({
             Total top up
           </p>
           <p className="mt-1 text-sm font-semibold text-white">
-            {formatMoney(summary.totalTopUps)}
+            {formatMoney(summary.totalTopUps||0)}
           </p>
         </div>
         <div className="rounded-2xl border border-white/5 bg-black/20 p-3">
@@ -177,7 +177,7 @@ function TrendChart({
             Closing float
           </p>
           <p className="mt-1 text-sm font-semibold text-white">
-            {formatMoney(summary.totalClosing)}
+            {formatMoney(summary.totalClosing||0)}
           </p>
         </div>
         <div className="rounded-2xl border border-white/5 bg-black/20 p-3">
@@ -245,7 +245,7 @@ function PerformerList({
               </div>
 
               <div className="mt-2 flex items-center justify-between gap-3 text-xs text-slate-500">
-                <span>{formatMoney(item.total)}</span>
+                <span>{formatMoney(item.total||0)}</span>
                 <span>{item.share.toFixed(1)}% of visible sales</span>
               </div>
             </div>
@@ -272,6 +272,9 @@ export default function SalesPage({
   const [view, setView] = useState<SalesView>("LATEST");
   const [selected, setSelected] = useState<Sales_Record | null>(null);
   const [openForm, setOpenForm] = useState(false);
+  // State for result limit (defaults to 10 records when filtering)
+const [limit, setLimit] = useState<number | null>(10);
+
 
 
   // API loading states
@@ -454,64 +457,76 @@ export default function SalesPage({
     }
   };
 
-  const visibleRecords = useMemo(() => {
-    const query = search.trim().toLowerCase();
+const visibleRecords = useMemo(() => {
+  const query = search.trim().toLowerCase();
 
-    // Fallback to local salesRecords
-    const activeData = records ?? salesRecords;
+  // Fallback to local salesRecords
+  const activeData = records ?? salesRecords;
 
-    const filtered = activeData.filter((record) => {
-      if (!query) return true;
+  const filtered = activeData.filter((record) => {
+    if (!query) return true;
 
-      return [
-        record.id,
-        record.ticketer_id,
-        record.user_name,
-        record.pos_session_id,
-        record.location_id,
-        record.report_date,
-        record.submitted_at,
-        String(record.opening_balance),
-        String(record.top_up),
-        String(record.total_sold),
-        String(record.closing_balance),
-        record.status || "PENDING",
-      ].some((value) => value.toLowerCase().includes(query));
-    });
+    return [
+      record.id,
+      record.ticketer_id,
+      record.user_name,
+      record.pos_session_id,
+      record.location_id,
+      record.report_date,
+      record.submitted_at,
+      String(record.opening_balance),
+      String(record.top_up),
+      String(record.total_sold),
+      String(record.closing_balance),
+      record.status || "PENDING",
+    ].some((value) => value.toLowerCase().includes(query));
+  });
 
-    const sorted = [...filtered];
+  const sorted = [...filtered];
 
-    if (view === "TOP") {
-      sorted.sort((left, right) => right.total_sold - left.total_sold);
-      return sorted;
-    }
-
-    if (view === "BALANCED") {
-      sorted.sort(
-        (left, right) =>
-          Math.abs(left.top_up - left.total_sold) - Math.abs(right.top_up - right.total_sold)
-      );
-      return sorted;
-    }
-
+  if (view === "TOP") {
+    sorted.sort((left, right) => right.total_sold - left.total_sold);
+  } else if (view === "BALANCED") {
+    sorted.sort(
+      (left, right) =>
+        Math.abs(left.top_up - left.total_sold) - Math.abs(right.top_up - right.total_sold)
+    );
+  } else {
     sorted.sort(
       (left, right) =>
         new Date(right.submitted_at).getTime() - new Date(left.submitted_at).getTime()
     );
-    return sorted;
-  }, [records, salesRecords, search, view]);
+  }
+
+  // Apply limit ONLY when searching/filtering and limit is set
+  if (query && limit !== null) {
+    return sorted.slice(0, limit);
+  }
+
+  return sorted;
+}, [records, salesRecords, search, view, limit]);
+
+
+  
 
   const totals = useMemo(() => {
     const recordCount = visibleRecords.length;
-    const totalSales = visibleRecords.reduce((sum, record) => sum + record.total_sold, 0);
-    const totalTopUps = visibleRecords.reduce((sum, record) => sum + record.top_up, 0);
-    const totalOpening = visibleRecords.reduce((sum, record) => sum + record.opening_balance, 0);
-    const totalClosing = visibleRecords.reduce((sum, record) => sum + record.closing_balance, 0);
+    
+    // Exclude rejected/cancelled reports from financial sums
+    const validRecords = visibleRecords.filter(
+      (r) => r.status !== "REJECTED" && r.status !== "CANCELLED"
+    );
+
+    const totalSales = validRecords.reduce((sum, record) => sum + record.total_sold, 0);
+    const totalTopUps = validRecords.reduce((sum, record) => sum + record.top_up, 0);
+    const totalOpening = validRecords.reduce((sum, record) => sum + record.opening_balance, 0);
+    const totalClosing = validRecords.reduce((sum, record) => sum + record.closing_balance, 0);
+    
     const averageTicket = recordCount ? totalSales / recordCount : 0;
     const coverage = totalTopUps ? (totalSales / totalTopUps) * 100 : 0;
     const gap = totalTopUps - totalSales;
     const ticketerCount = new Set(visibleRecords.map((record) => record.user_name)).size;
-    const highestReport = [...visibleRecords].sort((left, right) => right.total_sold - left.total_sold)[0];
+    const highestReport = [...validRecords].sort((left, right) => right.total_sold - left.total_sold)[0];
 
     return {
       recordCount,
@@ -520,6 +535,7 @@ export default function SalesPage({
       totalOpening,
       totalClosing,
       averageTicket,
+      overrideHighestReport: highestReport, // Use only valid reports for highest report metric
       coverage,
       gap,
       ticketerCount,
@@ -529,8 +545,13 @@ export default function SalesPage({
 
   const performers = useMemo(() => {
     const aggregate = new Map<string, { name: string; total: number; records: number }>();
+    
+    // Exclude rejected/cancelled reports from performer volume
+    const validRecords = visibleRecords.filter(
+      (r) => r.status !== "REJECTED" && r.status !== "CANCELLED"
+    );
 
-    for (const record of visibleRecords) {
+    for (const record of validRecords) {
       const current = aggregate.get(record.user_name);
       if (current) {
         current.total += record.total_sold;
@@ -550,17 +571,32 @@ export default function SalesPage({
         ...item,
         share: totals.totalSales ? (item.total / totals.totalSales) * 100 : 0,
       }));
-  }, [totals.totalSales, visibleRecords]);
+  }, [totals, visibleRecords]);
 
-  const trendData = useMemo(() => {
-    const spread = [0.11, 0.13, 0.15, 0.17, 0.18, 0.14, 0.12];
+   const trendData = useMemo(() => {
     const labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    const dailySums = [0, 0, 0, 0, 0, 0, 0]; // Index: 0=Mon, 1=Tue, ..., 6=Sun
+
+    const validRecords = visibleRecords.filter(
+      (r) => r.status !== "REJECTED" && r.status !== "CANCELLED"
+    );
+
+    for (const record of validRecords) {
+      if (!record.submitted_at) continue;
+      const date = new Date(record.submitted_at);
+      // JS day index: 0 is Sunday, 1 is Monday, ..., 6 is Saturday
+      const jsDay = date.getDay();
+      // Map JS day to our labels: 0=Mon, 1=Tue, 2=Wed, 3=Thu, 4=Fri, 5=Sat, 6=Sun
+      const labelIndex = jsDay === 0 ? 6 : jsDay - 1;
+      dailySums[labelIndex] += record.total_sold || 0;
+    }
 
     return labels.map((label, index) => ({
       label,
-      sales: Math.round(totals.totalSales * spread[index]),
+      sales: dailySums[index],
     }));
-  }, [totals.totalSales]);
+  }, [visibleRecords]);
+
 
   const columns: ColumnDef<Sales_Record>[] = [
     {
@@ -707,29 +743,22 @@ export default function SalesPage({
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             <CompactMetric
               title="Gross Sales"
-              value={formatMoney(totals.totalSales)}
+              value={formatMoney(totals.totalSales||0)}
               note={`${totals.recordCount} visible report${totals.recordCount === 1 ? "" : "s"}`}
               icon={<Banknote className="size-4 text-emerald-300" strokeWidth={1.6} />}
               accentClass="bg-emerald-500/10"
             />
             <CompactMetric
-              title="Average Ticket"
-              value={formatMoney(totals.averageTicket)}
-              note={`${totals.ticketerCount} ticketer${totals.ticketerCount === 1 ? "" : "s"} in view`}
-              icon={<CircleDollarSign className="size-4 text-blue-300" strokeWidth={1.6} />}
-              accentClass="bg-blue-500/10"
-            />
-            <CompactMetric
               title="Float Coverage"
               value={`${totals.coverage.toFixed(1)}%`}
-              note={`Gap ${formatMoney(totals.gap)}`}
+              note={`Gap ${formatMoney(totals.gap||0)}`}
               icon={<ArrowUpRight className="size-4 text-amber-300" strokeWidth={1.6} />}
               accentClass="bg-amber-500/10"
             />
             <CompactMetric
               title="Closing Float"
-              value={formatMoney(totals.totalClosing)}
-              note={`Opening base ${formatMoney(totals.totalOpening)}`}
+              value={formatMoney(totals.totalClosing||0)}
+              note={`Opening base ${formatMoney(totals.totalOpening||0)}`}
               icon={<Layers3 className="size-4 text-purple-300" strokeWidth={1.6} />}
               accentClass="bg-purple-500/10"
             />
@@ -750,31 +779,61 @@ export default function SalesPage({
           <PerformerList items={performers.slice(0, 4)} />
         </section>
 
-        <FilterRow>
-          <div className="flex w-full flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="w-full lg:max-w-md">
-              <Input
-                value={search}
-                onChange={setSearch}
-                placeholder="Search report, ticketer, session, location..."
-              />
-            </div>
+      <FilterRow>
+  <div className="flex w-full flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+    <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center lg:max-w-xl">
+      <div className="w-full">
+        <Input
+          value={search}
+          onChange={setSearch}
+          placeholder="Search report, ticketer, session, location..."
+        />
+      </div>
 
-            <div className="flex items-center justify-between gap-3 rounded-2xl border border-white/5 bg-black/20 px-3 py-2">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">
-                  Visible reports
-                </p>
-                <p className="mt-1 text-sm font-semibold text-white">
-                  {visibleRecords.length}
-                </p>
-              </div>
-              <Badge variant={balanceTone(totals.gap)}>
-                {roleCopy.badge}
-              </Badge>
-            </div>
-          </div>
-        </FilterRow>
+      {/* Limit controls - ONLY visible when actively searching/filtering */}
+      {search.trim() !== "" && (
+        <div className="flex shrink-0 items-center gap-1.5 rounded-2xl border border-white/10 bg-white/[0.03] p-1.5 backdrop-blur-md animate-in fade-in slide-in-from-left-2 duration-200">
+          <span className="px-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            Limit:
+          </span>
+          {([10, 25, 50, null] as const).map((opt) => {
+            const isSelected = limit === opt;
+            const label = opt === null ? "All" : String(opt);
+            return (
+              <button
+                key={label}
+                type="button"
+                onClick={() => setLimit(opt)}
+                className={`rounded-xl px-2.5 py-1 text-[11px] font-bold transition-all ${
+                  isSelected
+                    ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shadow-sm"
+                    : "text-slate-400 hover:text-slate-200 hover:bg-white/5"
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+
+    <div className="flex items-center justify-between gap-3 rounded-2xl border border-white/5 bg-black/20 px-3 py-2">
+      <div>
+        <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">
+          Visible reports
+        </p>
+        <p className="mt-1 text-sm font-semibold text-white">
+          {visibleRecords.length}
+        </p>
+      </div>
+      <Badge variant={balanceTone(totals.gap)}>
+        {roleCopy.badge}
+      </Badge>
+    </div>
+  </div>
+</FilterRow>
+
 
         {isLoading && salesRecords.length === 0 ? (
           <div className="flex h-64 items-center justify-center">
@@ -820,13 +879,13 @@ export default function SalesPage({
               </Badge>
             }
             stats={[
-              { label: "Sales", value: formatMoney(selected.total_sold), tone: "success" },
-              { label: "Top up", value: formatMoney(selected.top_up), tone: "info" },
-              { label: "Opening", value: formatMoney(selected.opening_balance), tone: "default" },
+              { label: "Sales", value: formatMoney(selected.total_sold||0), tone: "success" },
+              { label: "Top up", value: formatMoney(selected.top_up||0), tone: "info" },
+              { label: "Opening", value: formatMoney(selected.opening_balance||0), tone: "default" },
               {
                 label: "Closing",
-                value: formatMoney(selected.closing_balance),
-                tone: selected.closing_balance > 0 ? "success" : "warning",
+                value: formatMoney(selected.closing_balance||0),
+                tone: (selected.closing_balance||0) > 0 ? "success" : "warning",
               },
             ]}
             fields={[
@@ -839,7 +898,7 @@ export default function SalesPage({
               { label: "Submitted At", value: formatDateTime(selected.submitted_at) },
               {
                 label: "Float Gap",
-                value: formatMoney(selected.top_up - selected.total_sold),
+                value: formatMoney((selected.top_up||0) - (selected.total_sold||0)),
               },
             ]}
             sections={[
@@ -852,7 +911,7 @@ export default function SalesPage({
                         Opening
                       </p>
                       <p className="mt-1 text-sm font-semibold text-white">
-                        {formatMoney(selected.opening_balance)}
+                        {formatMoney(selected.opening_balance||0)}
                       </p>
                     </div>
                     <div className="rounded-2xl border border-white/5 bg-black/20 p-3">
@@ -860,7 +919,7 @@ export default function SalesPage({
                         Top up
                       </p>
                       <p className="mt-1 text-sm font-semibold text-sky-300">
-                        {formatMoney(selected.top_up)}
+                        {formatMoney(selected.top_up||0)}
                       </p>
                     </div>
                     <div className="rounded-2xl border border-white/5 bg-black/20 p-3">
@@ -868,7 +927,7 @@ export default function SalesPage({
                         Sold
                       </p>
                       <p className="mt-1 text-sm font-semibold text-emerald-300">
-                        {formatMoney(selected.total_sold)}
+                        {formatMoney(selected.total_sold||0)}
                       </p>
                     </div>
                     <div className="rounded-2xl border border-white/5 bg-black/20 p-3">
@@ -876,7 +935,7 @@ export default function SalesPage({
                         Closing
                       </p>
                       <p className="mt-1 text-sm font-semibold text-white">
-                        {formatMoney(selected.closing_balance)}
+                        {formatMoney(selected.closing_balance||0)}
                       </p>
                     </div>
                   </div>
@@ -1094,10 +1153,31 @@ function SalesReportForm({
         const data: DeviceApiResponse = await res.json();
 
         if (active && data.success) {
-          // Filter to only display ACTIVE sessions for report submissions
+          // 1. Filter to only display ACTIVE sessions for report submissions
           const activeSessions = (data.sessions || []).filter((s) => s.status === "ACTIVE");
           setSessions(activeSessions);
           setLocations(data.locations || []);
+
+          // 2. Auto-select POS session if there is exactly one active session
+          if (activeSessions.length === 1) {
+            const singleSession = activeSessions[0];
+            setSelectedSession(singleSession.id);
+            setOpeningBalance(String(singleSession.posFloat || 0));
+          }
+
+          // 3. Auto-select location assigned for today
+          const todayStr = new Date().toLocaleDateString("en-CA"); // Gets YYYY-MM-DD in local time
+          const todayAssignment = (data.locations || []).find((la) => {
+            const datePart = la.assignedFor.split("T")[0];
+            return datePart === todayStr;
+          });
+
+          if (todayAssignment) {
+            setSelectedLocation(todayAssignment.id);
+          } else if (data.locations && data.locations.length > 0) {
+            // Fallback to the most recent assignment if no assignment for today is found
+            setSelectedLocation(data.locations[0].id);
+          }
         }
       } catch (err) {
         console.error("Failed to load ticketer details:", err);
@@ -1185,7 +1265,7 @@ function SalesReportForm({
               <option value="" className="bg-black">Select active session...</option>
               {sessions.map((s) => (
                 <option key={s.id} value={s.id} className="bg-black">
-                  {s.deviceName} ({s.deviceSerial}) - Float: {formatMoney(s.posFloat)}
+                  {s.deviceName} ({s.deviceSerial}) - Float: {formatMoney(s.posFloat||0)}
                 </option>
               ))}
             </>
@@ -1210,7 +1290,7 @@ function SalesReportForm({
             <>
               <option value="" className="bg-black">Select location...</option>
               {locations.map((la) => (
-                <option key={la.id} value={la.id} className="bg-black">
+                <option key={la.assignmentId} value={la.id} className="bg-black">
                   {la.locationName} ({la.locationAddress})
                 </option>
               ))}

@@ -99,7 +99,7 @@ export function OpsTopBar({
         return {
           float: "My Float",
           sales: "My Sales",
-          remit: "Unsubmitted Cash",
+          remit: "Pending Remittance",
         };
     }
   };

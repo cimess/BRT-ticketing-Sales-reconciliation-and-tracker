@@ -53,16 +53,26 @@ export async function GET(req: NextRequest) {
       }
       whereClause.report_date = dateFilter;
     }
+    // Parse query parameters
+    const pageParam = searchParams.get("page");
+    const limitParam = searchParams.get("limit");
+
+    const page = pageParam ? Math.max(1, parseInt(pageParam, 10)) : 1;
+    const limit = limitParam ? Math.min(100, Math.max(1, parseInt(limitParam, 10))) : 50; // Max 100, default 50
+    const skip = (page - 1) * limit;
 
     const reports = await prisma.salesReport.findMany({
-      where: whereClause,
+      where: { ...whereClause },
       orderBy: { submitted_at: "desc" },
+      skip,
+      take: limit,
       include: {
         location: { select: { name: true } },
         pos_device: { include: { device: { select: { name: true } } } },
         ticketer: { select: { first_name: true, last_name: true } }
       }
     });
+
 
     return NextResponse.json({
       success: true,
@@ -122,11 +132,64 @@ export async function POST(req: NextRequest) {
 
       // Check if report already exists
       const existingReport = await tx.salesReport.findFirst({
-        where: { pos_session_id: posSessionId, company_id }
+        where: { pos_session_id: posSessionId, company_id, status: { notIn: ["CANCELLED", "REJECTED"] } }
       });
       if (existingReport) throw new ApiError(400, "Report already submitted for this session");
 
-      // Create Sales Report as PENDING (no expectations modified until Admin verifies)
+      // 1. Verify caller has permission to submit for this ticketer
+      if (callerRole === "SUPERVISOR") {
+        const targetUser = await tx.user.findFirst({
+          where: { id: ticketerId, company_id, supervisor_id: callerId }
+        });
+        if (!targetUser) {
+          throw new ApiError(403, "You can only submit reports for ticketers you supervise");
+        }
+      }
+
+      // 2. Session Status Guard (Only allow active sessions to be reported)
+      if (sessionRecord.status !== "ACTIVE") {
+        throw new ApiError(400, "POS session must be active to submit a sales report");
+      }
+
+      // 3. Opening Balance Guard (Verify reported opening balance matches DB session float)
+      if (openVal !== Number(sessionRecord.pos_float)) {
+        throw new ApiError(
+          400,
+          `Opening balance (${openVal}) does not match the session's assigned float (${sessionRecord.pos_float})`
+        );
+      }
+
+      // 4. Mathematical Reconciliation Verification
+      // Formula: Opening Balance = Total Sold (Sales) + Closing Balance
+      // Note: Opening Balance (pos_float) already includes all top-ups
+      const expectedTotal = openVal;
+      const reportedTotal = soldVal + closeVal;
+
+      if (expectedTotal !== reportedTotal) {
+        throw new ApiError(
+          400,
+          `Reconciliation mismatch! (Opening Balance: ${openVal}) does not equal (Total Sold: ${soldVal} + Closing Balance: ${closeVal} = ${reportedTotal}). Please check your entries.`
+        );
+      }
+
+
+      // Fetch location hours for due date calculation
+      const location = await tx.location.findFirst({
+        where: { id: locationId, company_id }
+      });
+
+      // Calculate due date: 24h from operational closing hours of today
+      const closingDateTime = new Date();
+      if (location?.closing_time) {
+        const [hours, minutes] = location.closing_time.split(":").map(Number);
+        closingDateTime.setHours(hours, minutes, 0, 0);
+      } else {
+        // Fallback: 6:00 PM today
+        closingDateTime.setHours(18, 0, 0, 0);
+      }
+      const dueDate = new Date(closingDateTime.getTime() + 24 * 60 * 60 * 1000);
+
+      // Create Sales Report as PENDING
       const newReport = await tx.salesReport.create({
         data: {
           company_id,
@@ -141,6 +204,50 @@ export async function POST(req: NextRequest) {
           status: "PENDING"
         }
       });
+
+      // Sum all remittances submitted for this session (both pending and confirmed)
+      const remittances = await tx.remittance.aggregate({
+        where: {
+          company_id,
+          status: { in: ["CONFIRMED", "PENDING", "ACCEPTED_BY_SUPERVISOR", "PENDING_SUPERVISOR_ACCEPTANCE"] },
+          pos_session_id: posSessionId
+        },
+        _sum: { amount: true }
+      });
+      const totalRemitted = Number(remittances._sum.amount ?? 0);
+
+      const expectedCash = openVal - closeVal; // equivalent to soldVal
+      const shortageAmount = Math.max(0, expectedCash - totalRemitted);
+
+      // Create or Update Remittance Expectation immediately on report submission
+      const existingExpectation = await tx.remittanceExpectation.findUnique({
+        where: { pos_session_id: posSessionId }
+      });
+
+      if (existingExpectation) {
+        await tx.remittanceExpectation.update({
+          where: { id: existingExpectation.id },
+          data: {
+            expected_amount: expectedCash,
+            status: totalRemitted >= expectedCash ? "PAID" : "PENDING",
+            shortage_amount: shortageAmount,
+            due_date: dueDate
+          }
+        });
+      } else {
+        await tx.remittanceExpectation.create({
+          data: {
+            company_id,
+            user_id: ticketerId,
+            pos_session_id: posSessionId,
+            expected_amount: expectedCash,
+            due_date: dueDate,
+            status: totalRemitted >= expectedCash ? "PAID" : "PENDING",
+            shortage_amount: shortageAmount
+          }
+        });
+      }
+
 
       // Audit logging
       await tx.auditLog.create({
@@ -160,8 +267,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, report });
   } catch (error) {
     console.error("POST /api/sales error:", error);
-    return NextResponse.json({ 
-      error: error instanceof ApiError ? error.message : "Internal Server Error" 
+    return NextResponse.json({
+      error: error instanceof ApiError ? error.message : "Internal Server Error"
     }, { status: error instanceof ApiError ? error.statusCode : 500 });
   }
 }

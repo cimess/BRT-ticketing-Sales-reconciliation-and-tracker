@@ -11,6 +11,7 @@ import { toast } from 'react-toastify';
 import axios from 'axios';
 import { Device_Status } from '@prisma/client';
 import { formatDateTime } from '@/lib/utils';
+import { useDashboard } from './layout';
 
 export interface PosDevice {
   id: string;
@@ -34,7 +35,8 @@ export interface PosDeviceSession {
   assignedBy: string;
   unassignedBy: string | null;
   unassignedReason: string | null;
-  status: 'ACTIVE' | 'RETURNED';
+  status: 'ACTIVE' | 'RETURNED' | 'SHARED' | 'CLOSED'
+
 }
 
 export interface AvailableUser {
@@ -76,7 +78,7 @@ export default function PosDevicesPage({
   const [q, setQ] = useState('');
   
   // Filtering variables
-  const [actionFilter, setActionFilter] = useState<'ALL' | 'ACTIVE' | 'RETURNED'>('ALL');
+  const [actionFilter, setActionFilter] = useState<'ALL' | 'ACTIVE' | 'RETURNED' | 'SHARED' | 'CLOSED'>('ALL');
   const [activeActionFilter, setActiveActionFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE' | 'MAINTENANCE'>('ALL');
 
   // Drawers State
@@ -94,6 +96,8 @@ export default function PosDevicesPage({
   const [assignUserId, setAssignUserId] = useState('');
   const [returnReason, setReturnReason] = useState('');
   const [topupAmount, setTopupAmount] = useState('');
+
+    const { metrics, refreshMetrics } = useDashboard();
 
   // Filter Rows
   const filteredEvents = useMemo(() => {
@@ -166,7 +170,10 @@ export default function PosDevicesPage({
       return;
     }
     try {
-      const endpoint = role === 'SUPERVISOR' ? '/supervisor/device/assign' : '/admin/device/assign';
+      if(role!=='SUPERVISOR'){
+        return toast.error("You are not authorized to assign devices");
+      }
+      const endpoint = '/supervisor/device/assign'
       const res = await api.post(endpoint, {
         deviceId: selectedDevice.id,
         userId: assignUserId,
@@ -234,6 +241,7 @@ const handleReturnDevice = async (e: React.FormEvent) => {
         toast.success(res.data.message || "POS topped up successfully");
         setIsTopupOpen(false);
         setSelectedSession(null);
+        refreshMetrics()
         await onRefresh();
       }
     } catch (err) {
@@ -277,12 +285,33 @@ const handleReturnDevice = async (e: React.FormEvent) => {
       header: 'action', 
       align: 'center', 
       sortValue: (r) => r?.status, 
-      cell: (r) => <Badge variant={r?.status === 'ACTIVE' ? 'success' : 'warning'}>{r?.status}</Badge> 
+            cell: (r) => (
+        <Badge 
+          variant={
+            r?.status === 'ACTIVE' ? 'success' : 
+            r?.status === 'CLOSED' ? 'neutral' : 
+            r?.status === 'SHARED' ? 'info' : 
+            'warning'
+          }
+        >
+          {r?.status}
+        </Badge>
+      )
+
     },
     { 
       id: 'reason', 
       header: 'reason', 
-      cell: (r) => <span className="text-slate-500 text-xs">{r?.status === 'ACTIVE' ? `Active Assignment` : r?.unassignedReason || 'Returned'}</span> 
+            cell: (r) => (
+        <span className="text-slate-500 text-xs">
+          {r?.status === 'ACTIVE' 
+            ? 'Active Assignment' 
+            : r?.status === 'CLOSED' 
+              ? 'Shift Closed & Sales Verified' 
+              : r?.unassignedReason || 'Returned'}
+        </span>
+      )
+
     },
     { 
       id: 'date', 
@@ -348,7 +377,7 @@ const handleReturnDevice = async (e: React.FormEvent) => {
       header: 'actions',
       align: 'right',
       cell: (r) => (
-        role === 'ADMIN' || role === 'SUPERVISOR' ? (
+        role === 'SUPERVISOR' ? (
           <div className="flex gap-2 justify-end">
             {r?.status === 'INACTIVE' && (
               <button
@@ -505,15 +534,18 @@ const handleReturnDevice = async (e: React.FormEvent) => {
                 <Plus className="w-4 h-4" /> Add Device
               </button>
             )}
-            <Select
+                       <Select
               value={actionFilter}
               onChange={(v) => setActionFilter(v)}
               options={[
                 { value: 'ALL', label: 'All events' },
                 { value: 'ACTIVE', label: 'Assigned Only' },
                 { value: 'RETURNED', label: 'Returned Only' },
+                { value: 'SHARED', label: 'Shared Only' },
+                { value: 'CLOSED', label: 'Closed Only' },
               ]}
             />
+
           </div>
         }
         kpis={

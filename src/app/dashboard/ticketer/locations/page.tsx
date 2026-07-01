@@ -8,5 +8,5 @@ export default async function Page() {
     return null;
   }
 
-  return <LocationsPage role={session.user.role} />;
+  return <LocationsPage role={"TICKETER"} />;
 }

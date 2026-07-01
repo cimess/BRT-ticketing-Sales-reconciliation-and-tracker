@@ -54,17 +54,17 @@ export async function PATCH(
         );
       }
 
-      // 4. Verify no remittances have been submitted against this allocation
+           // 4. Verify no remittances have been submitted for this active session
       const remittanceCount = await tx.remittance.count({
         where: {
-          allocation_id: allocationId,
+          pos_session_id: allocation.pos_device_id,
           status: { in: ["PENDING", "CONFIRMED"] },
           company_id
         }
       });
 
       if (remittanceCount > 0) {
-        throw new ApiError(400, "Cannot reverse allocation: Remittance has already been submitted against this float.");
+        throw new ApiError(400, "Cannot reverse allocation: Remittance has already been submitted against this POS session.");
       }
 
       // 5. Update the allocation status to CANCELLED
@@ -93,10 +93,28 @@ export async function PATCH(
         }
       });
 
-      // 8. Delete the associated remittance expectation
-      await tx.remittanceExpectation.deleteMany({
-        where: { allocation_id: allocationId,company_id }
+      // 8. Adjust or delete the POS session expectation
+      const expectation = await tx.remittanceExpectation.findUnique({
+        where: { pos_session_id: allocation.pos_device_id }
       });
+      if (expectation) {
+        const newExpected = Math.max(0, expectation.expected_amount - Number(allocation.amount_allocated));
+        if (newExpected === 0) {
+          await tx.remittanceExpectation.delete({
+            where: { id: expectation.id }
+          });
+        } else {
+          await tx.remittanceExpectation.update({
+            where: { id: expectation.id },
+            data: {
+              expected_amount: newExpected,
+              shortage_amount: Math.max(0, expectation.shortage_amount - Number(allocation.amount_allocated)),
+              status: expectation.status === "PAID" ? "PAID" : "PENDING"
+            }
+          });
+        }
+      }
+
 
       // 9. Write sync entries to the Float Ledger
       // A) Debit entry on POS Device to deduct float

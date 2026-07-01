@@ -14,6 +14,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "/api/dashboard",
     "/api/remitance",      // 💡 Allow remittances routing
     "/api/transaction",    // 💡 Allow transactions routing
+    "/api/locations",
+    "/api/reconcile",   
   ],
   AUDITOR: [
     "/dashboard/admin",
@@ -24,7 +26,10 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "/api/ticketer",
     "/api/dashboard",
     "/api/remitance",      // 💡 Allow remittances routing
-    "/api/transaction",    // 💡 Allow transactions routing
+    "/api/transaction",
+    "/api/locations",      // 💡 Allow locations routing
+    "/api/sales", 
+    "/api/reconcile",   
   ],
   SUPERVISOR: [
     "/dashboard/supervisor",
@@ -34,7 +39,10 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "/api/dashboard/metrics",
     "/api/admin/user",
     "/api/remitance",      // 💡 Allow remittances routing
-    "/api/transaction",    // 💡 Allow transactions routing
+    "/api/transaction",
+    "/api/locations",      // 💡 Allow locations routing
+    "/api/sales",  
+    "/api/reconcile", 
   ],
   TICKETER: [
     "/dashboard/ticketer",
@@ -43,6 +51,9 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "/api/admin/user",
     "/api/remitance",      // 💡 Allow remittances routing
     "/api/transaction",    // 💡 Allow transactions routing
+    "/api/locations",      // 💡 Allow locations routing
+    "/api/sales",  
+    "/api/reconcile",   
   ],
 };
 

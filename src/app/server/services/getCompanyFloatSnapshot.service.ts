@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { Float_Status, RemittanceStatus } from "@prisma/client";
 import { RoleFinancialSnapshot, RoleSalesSnapshot } from "@/app/types/float";
 import { ApiError } from "@/app/lib/ApiError";
+import type { TicketerPosSnapshot, TicketerPosSessionSummary } from "@/app/types/float";
 
 // ─── TYPES & INTERFACES ──────────────────────────────────────────────────────
 
@@ -124,34 +125,15 @@ export async function getRoleFinancialSnapshot(
       });
       circulatingFloat = activeSessions.reduce((sum, s) => sum + Number(s.pos_float), 0);
 
-      // 7. Supervisor Cash Holdings (Cash with Supervisors)
-      const collectedBySupervisorsAgg = await prisma.remittance.aggregate({
+            // 7. Supervisor Cash Holdings (Physical Cash currently accepted & held by Supervisors)
+      const supervisorCashAgg = await prisma.remittance.aggregate({
         where: {
-          status: "CONFIRMED",
-          received_by_supervisor_id: { not: null },
+          status: "ACCEPTED_BY_SUPERVISOR",
           company_id: companyId,
         },
         _sum: { amount: true },
       });
-      const totalCollectedBySupervisors = Number(collectedBySupervisorsAgg._sum.amount ?? 0);
-
-      const supervisors = await prisma.user.findMany({
-        where: { role: "SUPERVISOR", company_id: companyId },
-        select: { id: true },
-      });
-      const supervisorIds = supervisors.map((u) => u.id);
-
-      const depositedBySupervisorsAgg = await prisma.remittance.aggregate({
-        where: {
-          status: "CONFIRMED",
-          submitted_by: { in: supervisorIds },
-          received_by_supervisor_id: null,
-          company_id: companyId,
-        },
-        _sum: { amount: true },
-      });
-      const totalDepositedBySupervisors = Number(depositedBySupervisorsAgg._sum.amount ?? 0);
-      supervisorCash = totalCollectedBySupervisors - totalDepositedBySupervisors;
+      supervisorCash = Number(supervisorCashAgg._sum.amount ?? 0);
 
 
       // 5. Ledger Reconciliations (All-Time Check to calculate Drift)
@@ -195,28 +177,17 @@ export async function getRoleFinancialSnapshot(
       });
       circulatingFloat = supervisorActiveSessions.reduce((sum, s) => sum + Number(s.pos_float), 0);
 
-      // 6. Supervisor Cash Holdings (Their own cash-in-hand)
-      const collectedBySupAgg = await prisma.remittance.aggregate({
+           // 6. Supervisor Cash Holdings (Cash currently accepted & held in hand)
+      const supervisorCashAgg = await prisma.remittance.aggregate({
         where: {
-          status: "CONFIRMED",
+          status: "ACCEPTED_BY_SUPERVISOR",
           received_by_supervisor_id: userId,
           company_id: companyId,
         },
         _sum: { amount: true }
       });
-      const totalCollectedBySup = Number(collectedBySupAgg._sum.amount ?? 0);
+      supervisorCash = Number(supervisorCashAgg._sum.amount ?? 0);
 
-      const depositedBySupAgg = await prisma.remittance.aggregate({
-        where: {
-          status: "CONFIRMED",
-          submitted_by: userId,
-          received_by_supervisor_id: null,
-          company_id: companyId,
-        },
-        _sum: { amount: true }
-      });
-      const totalDepositedBySup = Number(depositedBySupAgg._sum.amount ?? 0);
-      supervisorCash = totalCollectedBySup - totalDepositedBySup;
 
 
 
@@ -368,6 +339,7 @@ export async function getRoleSalesSnapshot(
         ...ticketerFilter,
         ...getDateRangeFilter(fromDate, toDate, "report_date"),
         company_id:companyId,
+        status: { notIn: ["REJECTED", "CANCELLED"] } 
       },
       _sum: { total_sold: true },
       _count: { id: true },
@@ -389,6 +361,7 @@ export async function getRoleSalesSnapshot(
           status: RemittanceStatus.CONFIRMED,
           ...getDateRangeFilter(fromDate, toDate, "remittance_date"),
           company_id:companyId,
+          
         },
         _sum: { amount: true },
       }),
@@ -439,60 +412,73 @@ export async function getRoleSalesSnapshot(
 }
 
 
-export type TicketerPosSnapshot = {
-  success: boolean;
-  message: string;
-  status: number;
-  data: {
-    pos_device_id: string;
-    closingBalance: number;
-    totalTopUp: number;
-    effectiveOpening: number;
-    expectedRemittance: number;
-    topUp: {
-      id: string;
-      amount_allocated: number;
-      pos_device_id: string;
-      status: Float_Status;
-      allocated_at: Date;
-      from_user_name: string;
-      from_user_role: string;
-      to_device_name: string;
-    }[];
-  } | null;
-};
+
 
 export async function fetchTicketerPosSnapshot(
   userId: string,
-  companyId:string,
+  companyId: string,
   fromDate?: Date | null,
-  toDate?: Date | null
+  toDate?: Date | null,
+  selectedSessionId?: string | null
 ): Promise<TicketerPosSnapshot> {
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: userId,company_id:companyId },
-      include: {
-        pos_sessions: { where: { status: "ACTIVE" } },
-      },
+    // 1. Fetch available POS sessions for this ticketer (Capped at top 20 most recent to prevent performance issues)
+    const availableSessions = await prisma.posDeviceSession.findMany({
+      where: { user_id: userId, company_id: companyId },
+      include: { device: { select: { name: true, serial_number: true } } },
+      orderBy: { assigned_at: "desc" },
+      take: 20,
     });
 
-    if (!user) throw new ApiError(404, "User not found");
-    if (!user.pos_sessions || user.pos_sessions.length === 0) {
-      throw new ApiError(404, "No active POS session assigned to this user");
+    const sessionsList: TicketerPosSessionSummary[] = availableSessions.map((s) => ({
+      id: s.id,
+      deviceName: s.device.name,
+      serialNumber: s.device.serial_number,
+      status: s.status,
+      assignedAt: s.assigned_at,
+      unassignedAt: s.unassigned_at,
+    }));
+
+    // 2. Fallback: User has no POS session history at all
+    if (sessionsList.length === 0) {
+      return {
+        success: true,
+        message: "No POS session history found for this user",
+        status: 200,
+        data: {
+          pos_device_id: "",
+          sessionStatus: "NONE",
+          deviceName: "N/A",
+          closingBalance: 0,
+          totalTopUp: 0,
+          effectiveOpening: 0,
+          expectedRemittance: 0,
+          sessionsList: [],
+          topUp: [],
+        },
+      };
     }
 
-    const pos_device_id = user.pos_sessions[0].id;
+    // 3. Resolve target session: requested sessionId OR default to active/most recent session
+    let targetSession = availableSessions.find((s) => s.id === selectedSessionId);
+    if (!targetSession) {
+      targetSession = availableSessions.find((s) => s.status === "ACTIVE") || availableSessions[0];
+    }
+
+    const pos_device_id = targetSession.id;
     const hasDateFilter = fromDate != null && toDate != null;
     const dateFilter = hasDateFilter
       ? { allocated_at: { gte: fromDate!, lte: toDate! } }
       : {};
 
+    // 4. Fetch session details with sales reports and allocations
     const pos = await prisma.posDeviceSession.findUnique({
-      where: { id: pos_device_id,company_id:companyId },
+      where: { id: pos_device_id, company_id: companyId },
       include: {
+        device: { select: { name: true } },
         sales_reports: { orderBy: { report_date: "desc" }, take: 1 },
         allocations_given: {
-          where: { status: Float_Status.SUCCESS, ...dateFilter,company_id:companyId },
+          where: { status: Float_Status.SUCCESS, ...dateFilter, company_id: companyId },
           include: {
             supervisor: { select: { first_name: true, last_name: true, role: true } },
             pos_device: { include: { device: { select: { name: true } } } },
@@ -509,7 +495,7 @@ export async function fetchTicketerPosSnapshot(
     const closingBalance = Number(previousSalesReport?.closing_balance ?? 0);
 
     const topupAggregate = await prisma.float_allocations.aggregate({
-      where: { pos_device_id, status: Float_Status.SUCCESS, ...dateFilter,company_id:companyId },
+      where: { pos_device_id, status: Float_Status.SUCCESS, ...dateFilter, company_id: companyId },
       _sum: { amount_allocated: true },
     });
 
@@ -534,10 +520,13 @@ export async function fetchTicketerPosSnapshot(
       status: 200,
       data: {
         pos_device_id,
+        sessionStatus: pos.status,
+        deviceName: pos.device.name,
         closingBalance,
         totalTopUp,
         effectiveOpening,
         expectedRemittance,
+        sessionsList,
         topUp,
       },
     };
@@ -546,3 +535,5 @@ export async function fetchTicketerPosSnapshot(
     throw error instanceof ApiError ? error : new ApiError(500, "Internal server error");
   }
 }
+
+

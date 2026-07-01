@@ -98,7 +98,7 @@ export interface Remittance {
   remit_id: string;
   method: 'CASH' | 'TRANSFER';
   amount: number;
-  status: 'PENDING' | 'CONFIRMED' | 'REJECTED' | 'CANCELLED';
+  status: 'PENDING' | 'CONFIRMED' | 'REJECTED' | 'CANCELLED' | 'PENDING_SUPERVISOR_ACCEPTANCE'| 'ACCEPTED_BY_SUPERVISOR'| 'REJECTED_BY_SUPERVISOR'| 'DEPOSITED';
   proof_ref?: string;
   submitted_at: string;
   verified_at?: string;
@@ -177,7 +177,8 @@ export interface PosDeviceEvent {
   assigned_by: string
   unassigned_by?: string
   unassigned_reason?: string
-  status: 'ACTIVE' | 'RETURNED'
+  status: 'ACTIVE' | 'RETURNED' | 'SHARED' | 'CLOSED'
+
 }
 
 
@@ -261,4 +262,63 @@ export interface supervisor_user {
   active_device?: string;
   total_sales: number;
   last_login: string;
+}
+
+
+export type RemittanceExpectationStatus = 'PENDING' | 'SUBMITTED' | 'OVERDUE' | 'VIOLATED' | 'PAID';
+export type ReconciliationMethod = 'CASH' | 'TRANSFER';
+export type RemittanceVerifyAction = 'VERIFY' | 'REJECT';
+
+export interface UserSummary {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  role: 'TICKETER' | 'SUPERVISOR' | 'ADMIN' | 'AUDITOR';
+}
+
+export interface PosSessionSummary {
+  id: string;
+  device?: {
+    name: string;
+  } | null;
+}
+
+export interface RemittanceExpectation {
+  id: string;
+  company_id: string;
+  user_id: string;
+  pos_session_id: string | null;
+  source_remittance_id: string | null;
+  expected_amount: number;
+  shortage_amount: number;
+  due_date: string;
+  status: RemittanceExpectationStatus;
+  created_at: string;
+  updated_at?: string;
+  user: UserSummary;
+  pos_session?: PosSessionSummary | null;
+}
+
+export interface ReconciliationRemittance {
+  id: string;
+  company_id: string;
+  submitted_by: string;
+  amount: number;
+  method: ReconciliationMethod;
+  payment_reference: string | null;
+  remittance_date: string;
+  status: 'PENDING' | 'CONFIRMED' | 'REJECTED' | 'PENDING_SUPERVISOR_ACCEPTANCE' | 'ACCEPTED_BY_SUPERVISOR' | 'REJECTED_BY_SUPERVISOR'
+  | 'DEPOSITED';
+  pos_session_id: string | null;
+  received_by_supervisor_id: string | null;
+  created_at: string;
+  ticketer: UserSummary;
+  pos_session?: PosSessionSummary | null;
+}
+
+export interface ReconcileApiResponse {
+  success: boolean;
+  expectations: RemittanceExpectation[];
+  remittances: ReconciliationRemittance[];
+  error?: string;
 }

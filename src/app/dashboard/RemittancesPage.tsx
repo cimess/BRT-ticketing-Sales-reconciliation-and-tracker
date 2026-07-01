@@ -12,6 +12,8 @@ import { Remittance, User, User_Full_Audit } from '../types/types';
 import { toast } from 'react-toastify';
 import Calendar from '@/components/Calender';
 import { useDashboard } from '@/app/dashboard/layout'
+import api from '../lib/axios';
+import axios from 'axios';
 
 export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }) {
   const user = (role?.toUpperCase() || 'TICKETER') as 'TICKETER' | 'SUPERVISOR' | 'ADMIN';
@@ -115,6 +117,7 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
       if (res.ok) {
         setOpenForm(false);
         fetchRemittances();
+        refreshMetrics();
         toast.success(`Remittance submitted successfully`);
       } else {
         const data = await res.json();
@@ -154,6 +157,37 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
       setSendingRequest(false);
     }
   };
+
+  // 1. Filter pending handovers requiring supervisor verification
+  const pendingHandovers = rows.filter(
+    (r) => r.status === 'PENDING_SUPERVISOR_ACCEPTANCE'
+  );
+
+  // 2. Handler function for supervisor cash count acceptance / dispute
+  const handleAccept = async (id: string, action: 'ACCEPT' | 'REJECT') => {
+    try {
+      setSendingRequest(true);
+      const res = await api.patch(`/remitance/${id}/accept`, {
+        action
+      });
+      if (res.data.success) {
+        fetchRemittances();
+        refreshMetrics();
+        toast.success(`Handover ${action === 'ACCEPT' ? 'accepted' : 'disputed'} successfully`);
+      } else {
+        toast.error(res.data.error || `Failed to process handover`);
+      }
+    } catch (err) {
+      if (err instanceof axios.AxiosError) {
+        toast.error(err.response?.data.message || err.response?.data.error || "An error occurred");
+      } else {
+        toast.error("An error occurred");
+      }
+    } finally {
+      setSendingRequest(false);
+    }
+  };
+
 
   const handleReverse = async (id: string) => {
     if (!confirm("Are you sure you want to reverse this? If Admin, logs will update. If Ticketer, this cancels your submission.")) return;
@@ -196,8 +230,13 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
     : fromDate
       ? `${fromDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} → ...`
       : "Today";
-  // 💡 RESTORED: This is needed by the DataTable component!
-  const filtered = rows.filter((r) => (status === 'ALL' ? true : r.status === status));
+  // 💡 Filter out accepted cash from supervisor's main table
+  const supervisorAcceptedCash = rows.filter((r) => r.status === 'ACCEPTED_BY_SUPERVISOR');
+  const tableSourceRows = user === 'SUPERVISOR'
+    ? rows.filter((r) => r.status !== 'ACCEPTED_BY_SUPERVISOR')
+    : rows;
+  const filtered = tableSourceRows.filter((r) => (status === 'ALL' ? true : r.status === status));
+
 
 
   // 1. Update columns definition around line 209:
@@ -223,8 +262,10 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
       cell: (r) => (
         <div className="flex justify-end gap-2">
 
-          {/* ADMIN VERIFY BUTTONS */}
-          {canVerify && r?.status === 'PENDING' && (
+          {/* ADMIN VERIFY BUTTONS: Admin only verifies DEPOSITED cash or PENDING transfers */}
+          {canVerify && (r?.status === 'PENDING' || r?.status === 'DEPOSITED') && (
+
+
             <>
               <button onClick={() => handleVerify(r?.id, 'CONFIRMED')} className="rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 transition-all">
                 Confirm
@@ -332,6 +373,107 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
 
 
       >
+
+        {/* 💡 SUPERVISOR CASH HANDOVER VERIFICATION BANNER */}
+        {user === 'SUPERVISOR' && pendingHandovers.length > 0 && (
+          <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4 mb-4 backdrop-blur-md">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-bold text-amber-300">
+                ⚡ Cash Handovers Awaiting Your Physical Count ({pendingHandovers.length})
+              </h4>
+              <span className="text-[10px] uppercase font-bold text-amber-400/80 tracking-widest">Action Required</span>
+            </div>
+            <div className="mt-3 space-y-2">
+              {pendingHandovers.map((item) => (
+                <div key={item.id} className="flex items-center justify-between bg-black/40 border border-white/5 p-3 rounded-xl">
+                  <div>
+                    <p className="text-xs font-semibold text-white">{item.submitted_by}</p>
+                    <p className="text-[10px] text-slate-400">Claimed Cash: <span className="text-emerald-400 font-mono font-bold">{formatMoney(item.amount)}</span></p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleAccept(item.id, 'ACCEPT')}
+                      disabled={sendingRequest}
+                      className="px-3 py-1.5 bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 text-xs font-bold rounded-lg border border-emerald-500/30 transition-all disabled:opacity-50"
+                    >
+                      Count & Accept
+                    </button>
+                    <button
+                      onClick={() => handleAccept(item.id, 'REJECT')}
+                      disabled={sendingRequest}
+                      className="px-3 py-1.5 bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 text-xs font-bold rounded-lg border border-rose-500/30 transition-all disabled:opacity-50"
+                    >
+                      Dispute Amount
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+               {/* 💡 SUPERVISOR TICKETER CASH HOLDINGS (AWAITING BANK DEPOSIT) */}
+        {user === 'SUPERVISOR' && supervisorAcceptedCash.length > 0 && (
+          <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/10 p-4 mb-4 backdrop-blur-md">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-sm font-bold text-cyan-300">
+                  💼 Ticketer Cash Holdings ({supervisorAcceptedCash.length})
+                </h4>
+                <p className="text-[10px] text-cyan-200/70">Total Cash Held: <span className="font-mono font-bold text-emerald-400">{formatMoney(supervisorAcceptedCash.reduce((sum, item) => sum + item.amount, 0))}</span></p>
+              </div>
+              <button
+                onClick={async () => {
+                  const ref = prompt("Enter Bank Deposit Reference / Teller ID for all cash holdings:");
+                  if (ref === null) return;
+                  try {
+                    setSendingRequest(true);
+                    const res = await api.post('/supervisor/deposit', { deposit_all: true, payment_reference: ref });
+                    if (res.data.success) {
+                      toast.success("All cash holdings marked as DEPOSITED to bank!");
+                      fetchRemittances();
+                    }
+                  } catch (err) { toast.error("Failed to submit bank deposit."); } finally { setSendingRequest(false); }
+                }}
+                disabled={sendingRequest}
+                className="px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-black text-xs font-extrabold rounded-xl shadow-lg shadow-cyan-500/20 transition-all disabled:opacity-50"
+              >
+                🏦 Deposit All to Bank
+              </button>
+            </div>
+            <div className="mt-3 space-y-2">
+              {supervisorAcceptedCash.map((item) => (
+                <div key={item.id} className="flex items-center justify-between bg-black/40 border border-white/5 p-3 rounded-xl">
+                  <div>
+                    <p className="text-xs font-semibold text-white">{item.submitted_by}</p>
+                    <p className="text-[10px] text-slate-400">Accepted Cash Held: <span className="text-emerald-400 font-mono font-bold">{formatMoney(item.amount)}</span></p>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      const ref = prompt(`Enter Bank Deposit Reference for ₦${item.amount}:`);
+                      if (ref === null) return;
+                      try {
+                        setSendingRequest(true);
+                        const res = await api.post('/supervisor/deposit', { remittance_ids: [item.id], payment_reference: ref });
+                        if (res.data.success) {
+                          toast.success("Deposit submitted for verification!");
+                          fetchRemittances();
+                        }
+                      } catch (err) { toast.error("Failed to submit deposit."); } finally { setSendingRequest(false); }
+                    }}
+                    disabled={sendingRequest}
+                    className="px-3 py-1.5 bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 text-xs font-bold rounded-lg border border-cyan-500/30 transition-all disabled:opacity-50"
+                  >
+                    Deposit Item
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+
+
         <FilterRow>
           <div className="flex flex-1 items-center gap-3 min-w-0">
             <div className="flex-1 max-w-md">
@@ -377,6 +519,9 @@ function RemitForm({ onSubmit, role, team, supervisors, posSession, setposSessio
     await onSubmit(Number(amount || 0), method, ticketerId, supervisorId);
     // If the modal doesn't close immediately, keep it disabled until it does
     setIsSubmitting(false);
+    setAmount('');
+    setSupervisorId('');
+    setMethod('CASH');
   };
 
   return (
@@ -423,7 +568,9 @@ function RemitForm({ onSubmit, role, team, supervisors, posSession, setposSessio
           <div className="mb-4">
             <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">pos_id</label>
             <input value={posSession || ""} onChange={(e) => setposSession && setposSession(e.target.value)} placeholder="e.g. 50000" type="text" className="mt-2 w-full rounded-xl bg-white/3 border border-white/10 px-4 py-2.5 text-sm text-white outline-none" />
-          </div>}
+          </div>
+        }
+
 
         <label className="mt-4 block text-slate-500 text-[10px] font-bold uppercase tracking-widest">Amount (NGN)</label>
         <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="e.g. 50000" type="number" className="mt-2 w-full rounded-xl bg-white/3 border border-white/10 px-4 py-2.5 text-sm text-white outline-none" />

@@ -27,28 +27,22 @@ export async function POST(req: NextRequest) {
       if (!sessionRecord) throw new ApiError(404, "POS session not found");
       if (sessionRecord.status !== "ACTIVE") throw new ApiError(400, "Session is already closed");
 
-      // 2. Fetch target expectation
-      const allocation = await tx.float_allocations.findFirst({
-        where: { pos_device_id: posSessionId, company_id, status: "SUCCESS" },
-        orderBy: { allocated_at: "desc" }
-      });
-      if (!allocation) throw new ApiError(404, "Allocation not found for session");
-
+           // 2. Fetch target expectation
       const expectation = await tx.remittanceExpectation.findUnique({
-        where: { allocation_id: allocation.id }
+        where: { pos_session_id: posSessionId }
       });
       if (!expectation) throw new ApiError(404, "Remittance expectation not found");
 
       // 3. Calculate discrepancy
       const topups = await tx.float_allocations.aggregate({
-        where: { pos_device_id: posSessionId, company_id, status: "SUCCESS", id: { not: allocation.id } },
+        where: { pos_device_id: posSessionId, company_id, status: "SUCCESS" },
         _sum: { amount_allocated: true }
       });
       const topupSum = Number(topups._sum.amount_allocated ?? 0);
       const expectedCash = (Number(sessionRecord.pos_float) - Number(finalPosFloat)) + topupSum;
 
       const remittances = await tx.remittance.aggregate({
-        where: { allocation_id: allocation.id, status: "CONFIRMED" },
+        where: { pos_session_id: posSessionId, status: "CONFIRMED" },
         _sum: { amount: true }
       });
       const actualRemitted = Number(remittances._sum.amount ?? 0);
@@ -72,7 +66,6 @@ export async function POST(req: NextRequest) {
         await tx.remittanceExpectation.update({
           where: { id: expectation.id },
           data: {
-            expected_amount: discrepancy,
             status: "VIOLATED",
             shortage_amount: discrepancy
           }
@@ -82,12 +75,12 @@ export async function POST(req: NextRequest) {
         await tx.remittanceExpectation.update({
           where: { id: expectation.id },
           data: {
-            expected_amount: 0,
             status: "PAID",
             shortage_amount: 0
           }
         });
       }
+
 
       // 4. Create an artificial Sales Report to reconcile history
       const forceReport = await tx.salesReport.create({
