@@ -234,7 +234,10 @@ export async function GET(req: NextRequest) {
         pos_session: { 
           select: { 
             id: true,
-            device: { select: { name: true } } 
+            device: { select: { name: true } } ,
+            remittance_expectation: {
+              select: { status: true }
+            }
           } 
         }
       }
@@ -300,6 +303,7 @@ export async function GET(req: NextRequest) {
       pos_name: r.pos_session?.device?.name || null,
 
       ticketer_outstanding: outstandingMap.get(r.submitted_by) || 0,
+      is_reconciliation: ["OVERDUE", "VIOLATED"].includes(r.pos_session?.remittance_expectation?.status || ""),
     }));
     return NextResponse.json({ 
       success: true, 

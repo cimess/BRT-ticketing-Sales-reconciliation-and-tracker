@@ -36,12 +36,14 @@ export async function GET(req: NextRequest) {
                 orderBy: { due_date: "asc" }
             });
 
-            const remittances = await prisma.remittance.findMany({
+           const remittances = await prisma.remittance.findMany({
                 where: {
                     company_id,
-                    status: { in: ["PENDING", "ACCEPTED_BY_SUPERVISOR", "DEPOSITED"] },
+                    status: { in: ["PENDING", "ACCEPTED_BY_SUPERVISOR", "DEPOSITED", "PENDING_SUPERVISOR_ACCEPTANCE"] },
                     pos_session: {
-                        status: { in: ["CLOSED", "RETURNED"] }
+                        remittance_expectation: {
+                            status: { in: ["OVERDUE", "VIOLATED", "SUBMITTED"] }
+                        }
                     }
                 },
                 include: {
@@ -84,7 +86,9 @@ export async function GET(req: NextRequest) {
                     company_id,
                     status: { in: ["PENDING", "ACCEPTED_BY_SUPERVISOR", "PENDING_SUPERVISOR_ACCEPTANCE", "DEPOSITED"] },
                     pos_session: {
-                        status: { in: ["CLOSED", "RETURNED"] }
+                        remittance_expectation: {
+                            status: { in: ["OVERDUE", "VIOLATED", "SUBMITTED"] }
+                        }
                     },
                     ticketer: {
                         supervisor_id: userId
@@ -127,9 +131,11 @@ export async function GET(req: NextRequest) {
                 where: {
                     company_id,
                     submitted_by: userId,
-                    status: { in: ["PENDING", "ACCEPTED_BY_SUPERVISOR", "PENDING_SUPERVISOR_ACCEPTANCE"] },
+                    status: { in: ["PENDING", "ACCEPTED_BY_SUPERVISOR", "PENDING_SUPERVISOR_ACCEPTANCE","CONFIRMED"] },
                     pos_session: {
-                        status: { in: ["CLOSED", "RETURNED"] }
+                        remittance_expectation: {
+                            status: { in: ["OVERDUE", "VIOLATED", "SUBMITTED","PAID"] }
+                        }
                     }
                 },
                 include: {

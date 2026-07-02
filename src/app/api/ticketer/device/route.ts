@@ -17,6 +17,12 @@ export async function GET(req: NextRequest) {
         user: {
           select: { id: true, first_name: true, last_name: true, email: true, role: true },
         },
+        sales_reports: {
+          where: { status: { notIn: ["CANCELLED", "REJECTED"] } },
+          orderBy: { submitted_at: "desc" },
+          take: 1,
+          select: { closing_balance: true }
+        }
       },
       orderBy: { assigned_at: "desc" },
     });
@@ -62,7 +68,7 @@ export async function GET(req: NextRequest) {
         userId: s.user_id,
         username: `${s.user.first_name} ${s.user.last_name}`.trim(),
         userRole: s.user.role,
-        posFloat: Number(s.pos_float),
+        posFloat: s.sales_reports[0] ? Number(s.sales_reports[0].closing_balance) : Number(s.pos_float),
         assignedAt: s.assigned_at,
         unassignedAt: s.unassigned_at,
         assignedBy: supervisorMap.get(s.assigned_by) || s.assigned_by,

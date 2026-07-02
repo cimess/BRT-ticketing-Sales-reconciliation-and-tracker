@@ -15,7 +15,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "/api/remitance",      // 💡 Allow remittances routing
     "/api/transaction",    // 💡 Allow transactions routing
     "/api/locations",
-    "/api/reconcile",   
+    "/api/reconcile",  
+    "/api/sales", 
   ],
   AUDITOR: [
     "/dashboard/admin",

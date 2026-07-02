@@ -141,11 +141,11 @@ function TrendChart({
       </div>
 
       <div className="mt-5 grid grid-cols-7 gap-2 sm:gap-3">
-        {data.map((point) => {
+        {data.map((point,index) => {
           const height = Math.max(16, (point.sales / maxValue) * 100);
 
           return (
-            <div key={point.label} className="min-w-0">
+            <div key={index} className="min-w-0">
               <div className="flex h-36 items-end rounded-2xl border border-white/5 bg-black/20 p-1.5 sm:h-44 sm:p-2">
                 <div
                   className={`w-full rounded-2xl bg-linear-to-t ${accentClass} shadow-lg shadow-black/20`}
@@ -252,6 +252,63 @@ function PerformerList({
           ))
         )}
       </div>
+    </div>
+  );
+}
+
+function HighestSalesCard({
+  highestReport,
+}: {
+  highestReport?: Sales_Record;
+}) {
+  return (
+    <div className="rounded-3xl border border-white/8 bg-white/[0.03] p-4 sm:p-5 flex flex-col justify-between h-full">
+      <div>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="premium-label text-emerald-400">Personal Milestone</p>
+            <h3 className="mt-1 text-base font-bold text-white sm:text-lg">
+              Highest Sales in View
+            </h3>
+          </div>
+          <Badge variant="success">Milestone</Badge>
+        </div>
+        {highestReport ? (
+          <div className="mt-6 space-y-4">
+            <div className="rounded-2xl border border-white/5 bg-black/20 p-4 text-center">
+              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">
+                Peak Sales Amount
+              </p>
+              <p className="mt-2 font-mono text-3xl font-extrabold text-emerald-400 tracking-tight">
+                {formatMoney(highestReport.total_sold || 0)}
+              </p>
+              <p className="mt-2 text-xs text-slate-400">
+                Achieved on <span className="font-semibold text-white">{formatShortDate(highestReport.submitted_at)}</span>
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div className="rounded-xl border border-white/5 bg-black/10 p-2.5">
+                <span className="block text-[9px] uppercase tracking-wider text-slate-500">Location</span>
+                <span className="font-semibold text-white truncate block">{highestReport.location_id}</span>
+              </div>
+              <div className="rounded-xl border border-white/5 bg-black/10 p-2.5">
+                <span className="block text-[9px] uppercase tracking-wider text-slate-500">Session ID</span>
+                <span className="font-semibold text-slate-300 font-mono truncate block">{highestReport.pos_session_id}</span>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-6 rounded-2xl border border-dashed border-white/10 bg-black/20 p-6 text-center text-sm text-slate-500">
+            No sales reports submitted in this view yet.
+          </div>
+        )}
+      </div>
+      
+      {highestReport && (
+        <div className="mt-6 border-t border-white/5 pt-4 text-[11px] text-slate-500 flex items-center justify-between">
+          <span>Keep pushing the volume! 🚀</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -573,14 +630,12 @@ const visibleRecords = useMemo(() => {
       }));
   }, [totals, visibleRecords]);
 
-   const trendData = useMemo(() => {
+const trendData = useMemo(() => {
     const labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
     const dailySums = [0, 0, 0, 0, 0, 0, 0]; // Index: 0=Mon, 1=Tue, ..., 6=Sun
-
     const validRecords = visibleRecords.filter(
       (r) => r.status !== "REJECTED" && r.status !== "CANCELLED"
     );
-
     for (const record of validRecords) {
       if (!record.submitted_at) continue;
       const date = new Date(record.submitted_at);
@@ -590,7 +645,6 @@ const visibleRecords = useMemo(() => {
       const labelIndex = jsDay === 0 ? 6 : jsDay - 1;
       dailySums[labelIndex] += record.total_sold || 0;
     }
-
     return labels.map((label, index) => ({
       label,
       sales: dailySums[index],
@@ -776,7 +830,11 @@ const visibleRecords = useMemo(() => {
             }}
           />
 
-          <PerformerList items={performers.slice(0, 4)} />
+          {role === "TICKETER" ? (
+            <HighestSalesCard highestReport={totals.highestReport} />
+          ) : (
+            <PerformerList items={performers.slice(0, 4)} />
+          )}
         </section>
 
       <FilterRow>

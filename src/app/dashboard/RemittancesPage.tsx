@@ -266,15 +266,18 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
           {canVerify && (r?.status === 'PENDING' || r?.status === 'DEPOSITED') && (
 
 
-            <>
-              <button onClick={() => handleVerify(r?.id, 'CONFIRMED')} className="rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 transition-all">
-                Confirm
-              </button>
-              <button onClick={() => handleVerify(r?.id, 'REJECTED')} className="rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/20 transition-all">
-                Reject
-              </button>
-            </>
+            !r?.is_reconciliation && (
+              <>
+                <button onClick={() => handleVerify(r?.id, 'CONFIRMED')} className="rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 transition-all">
+                  Confirm
+                </button>
+                <button onClick={() => handleVerify(r?.id, 'REJECTED')} className="rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/20 transition-all">
+                  Reject
+                </button>
+              </>
+            )
           )}
+        
 
           {/* ADMIN REVERSE BUTTON */}
 

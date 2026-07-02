@@ -122,10 +122,11 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       }else {
         // --- NORMAL SHIFT CLOSE / HANDBACK FLOW (B -> A or standard return) --
         // 1. Transition the current session status to a closed state (RETURNED)
-        await tx.posDeviceSession.update({
+         await tx.posDeviceSession.update({
           where: { id: report.pos_session_id },
           data: {
             status: "CLOSED",
+            pos_float: report.closing_balance, // Update pos_float to the remaining amount
             unassigned_at: new Date(),
             unassigned_by: verifierId,
             unassigned_reason: "Shift closed and sales verified"

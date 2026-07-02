@@ -46,7 +46,17 @@ export async function PATCH(
       if (remittance.method === "TRANSFER" && remittance.status !== "PENDING") {
         throw new ApiError(400, "Transfer remittance is already processed or invalid.");
       }
-
+        if (remittance.pos_session_id) {
+        const expectation = await tx.remittanceExpectation.findUnique({
+          where: { pos_session_id: remittance.pos_session_id }
+        });
+        if (expectation && ["OVERDUE", "VIOLATED"].includes(expectation.status)) {
+          throw new ApiError(
+            400,
+            "This payment is for an overdue/violated shortage and must be verified through the Reconciliation Page."
+          );
+        }
+      }
 
       // 1. Update Remittance Status
       const updatedRemittance = await tx.remittance.update({

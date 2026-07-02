@@ -68,7 +68,12 @@ export async function GET(req: NextRequest) {
       take: limit,
       include: {
         location: { select: { name: true } },
-        pos_device: { include: { device: { select: { name: true } } } },
+        pos_device: {
+          include: {
+            device: { select: { name: true } },
+            allocations_given: { select: { amount_allocated: true } }
+          }
+        },
         ticketer: { select: { first_name: true, last_name: true } }
       }
     });
@@ -76,19 +81,26 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      reports: reports.map(r => ({
-        id: r.id,
-        ticketer_id: r.ticketer_id,
-        user_name: `${r.ticketer.first_name} ${r.ticketer.last_name}`.trim(),
-        pos_session_id: r.pos_device.device.name,
-        location_id: r.location.name,
-        opening_balance: r.opening_balance,
-        closing_balance: r.closing_balance,
-        total_sold: r.total_sold,
-        submitted_at: r.submitted_at.toISOString(),
-        report_date: r.report_date.toISOString(),
-        status: r.status
-      }))
+     reports: reports.map(r => {
+        const topUp = r.pos_device.allocations_given.reduce(
+          (sum, alloc) => sum + Number(alloc.amount_allocated),
+          0
+        );
+        return {
+          id: r.id,
+          ticketer_id: r.ticketer_id,
+          user_name: `${r.ticketer.first_name} ${r.ticketer.last_name}`.trim(),
+          pos_session_id: r.pos_device.device.name,
+          location_id: r.location.name,
+          opening_balance: r.opening_balance,
+          closing_balance: r.closing_balance,
+          total_sold: r.total_sold,
+          top_up: topUp,
+          submitted_at: r.submitted_at.toISOString(),
+          report_date: r.report_date.toISOString(),
+          status: r.status
+        };
+      })
     });
   } catch (error) {
     console.error("GET /api/sales error:", error);

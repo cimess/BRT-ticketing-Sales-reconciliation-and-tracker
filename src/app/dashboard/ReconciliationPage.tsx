@@ -65,7 +65,7 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
 
   const [activeTab, setActiveTab] = useState<'EXPECTATIONS' | 'REMITTANCES' | 'HANDOVERS' | 'FINES'>('EXPECTATIONS');
   const [q, setQ] = useState<string>('');
-  const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [statusFilter, setStatusFilter] = useState<string>('VIOLATED');
 
   const [expectations, setExpectations] = useState<RemittanceExpectation[]>([]);
   const [remittances, setRemittances] = useState<ReconciliationRemittance[]>([]);
@@ -926,7 +926,7 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
                       </div>
                     )}
                     {(userRole === 'ADMIN' || userRole === 'AUDITOR') ? (
-                      (selectedRemittance.status === 'PENDING' || selectedRemittance.status === 'ACCEPTED_BY_SUPERVISOR') ? (
+                      (selectedRemittance.status === 'PENDING' || selectedRemittance.status === 'DEPOSITED') ? (
                         <div className="flex gap-3 pt-2">
                           <button
                             onClick={() => handleProcessRemittance('VERIFY')}

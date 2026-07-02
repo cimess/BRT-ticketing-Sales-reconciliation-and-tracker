@@ -110,6 +110,7 @@ export interface Remittance {
   remittance_date: string;
   created_at: string;
   ticketer_outstanding?: number;
+  is_reconciliation?: boolean;
 }
 
 export interface Sales_Record {

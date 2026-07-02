@@ -118,14 +118,35 @@ export async function getRoleFinancialSnapshot(
       });
       expectedRemittance = Number(expectationAgg._sum.expected_amount ?? 0);
 
-      // 6. Circulating POS Float (Sum of pos_float of all ACTIVE sessions)
-      const activeSessions = await prisma.posDeviceSession.findMany({
-        where: { status: "ACTIVE", company_id: companyId },
-        select: { pos_float: true }
+// 6. Circulating POS Float (Sum of remaining float of all POS devices)
+      const posDevices = await prisma.pos_devices.findMany({
+        where: { company_id: companyId },
+        select: {
+          device_assignment: {
+            orderBy: { assigned_at: "desc" },
+            take: 1,
+            select: {
+              pos_float: true,
+              sales_reports: {
+                where: { status: { notIn: ["CANCELLED", "REJECTED"] } },
+                orderBy: { submitted_at: "desc" },
+                take: 1,
+                select: { closing_balance: true }
+              }
+            }
+          }
+        }
       });
-      circulatingFloat = activeSessions.reduce((sum, s) => sum + Number(s.pos_float), 0);
-
-            // 7. Supervisor Cash Holdings (Physical Cash currently accepted & held by Supervisors)
+      circulatingFloat = posDevices.reduce((sum, d) => {
+        const latestSession = d.device_assignment[0];
+        if (latestSession) {
+          const latestReport = latestSession.sales_reports[0];
+          return sum + (latestReport ? Number(latestReport.closing_balance) : Number(latestSession.pos_float));
+        }
+        return sum;
+      }, 0);
+      
+      // 7. Supervisor Cash Holdings (Physical Cash currently accepted & held by Supervisors)
       const supervisorCashAgg = await prisma.remittance.aggregate({
         where: {
           status: "ACCEPTED_BY_SUPERVISOR",
@@ -166,17 +187,41 @@ export async function getRoleFinancialSnapshot(
     // ─────────────────────────────────────────────────────
     else if (isClientSupervisor) {
 
-      // 5. Circulating POS Float under this Supervisor
-      const supervisorActiveSessions = await prisma.posDeviceSession.findMany({
+     // 5. Circulating POS Float under this Supervisor (Sum of remaining float of POS devices assigned to this supervisor's ticketers)
+      const supervisorDevices = await prisma.pos_devices.findMany({
         where: {
-          status: "ACTIVE",
-          user: { supervisor_id: userId },
           company_id: companyId,
+          device_assignment: {
+            some: {
+              user: { supervisor_id: userId }
+            }
+          }
         },
-        select: { pos_float: true }
+        select: {
+          device_assignment: {
+            orderBy: { assigned_at: "desc" },
+            take: 1,
+            select: {
+              pos_float: true,
+              user: { select: { supervisor_id: true } },
+              sales_reports: {
+                where: { status: { notIn: ["CANCELLED", "REJECTED"] } },
+                orderBy: { submitted_at: "desc" },
+                take: 1,
+                select: { closing_balance: true }
+              }
+            }
+          }
+        }
       });
-      circulatingFloat = supervisorActiveSessions.reduce((sum, s) => sum + Number(s.pos_float), 0);
-
+      circulatingFloat = supervisorDevices.reduce((sum, d) => {
+        const latestSession = d.device_assignment[0];
+        if (latestSession && latestSession.user?.supervisor_id === userId) {
+          const latestReport = latestSession.sales_reports[0];
+          return sum + (latestReport ? Number(latestReport.closing_balance) : Number(latestSession.pos_float));
+        }
+        return sum;
+      }, 0);
            // 6. Supervisor Cash Holdings (Cash currently accepted & held in hand)
       const supervisorCashAgg = await prisma.remittance.aggregate({
         where: {
