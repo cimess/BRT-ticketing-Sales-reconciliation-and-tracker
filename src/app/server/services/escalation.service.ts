@@ -109,3 +109,88 @@ export async function checkAndEscalateExpectations(companyId: string) {
     }
   }
 }
+
+
+
+
+
+export async function checkSupervisorDepositViolations(companyId: string) {
+  const now = new Date();
+  // 24 hours threshold to deposit cash accepted from ticketers
+  const depositDeadlineMs = 24 * 60 * 60 * 1000; 
+
+  const pendingDeposits = await prisma.remittance.findMany({
+    where: {
+      company_id: companyId,
+      status: "ACCEPTED_BY_SUPERVISOR",
+      verified_at: {
+        not: null,
+      }
+    }
+  });
+
+  for (const remit of pendingDeposits) {
+    if (!remit.verified_at || !remit.received_by_supervisor_id) continue;
+
+    const acceptedAt = new Date(remit.verified_at);
+    const deadline = new Date(acceptedAt.getTime() + depositDeadlineMs);
+
+    if (now > deadline) {
+      await prisma.$transaction(async (tx) => {
+        const currentRemit = await tx.remittance.findUnique({
+          where: { id: remit.id }
+        });
+        
+        // Double-check it has not changed status since the initial check
+        if (!currentRemit || currentRemit.status !== "ACCEPTED_BY_SUPERVISOR") {
+          return;
+        }
+
+        const fineReason = `Late bank deposit violation for Remittance ${remit.id}`;
+
+        const existingFine = await tx.fine.findFirst({
+          where: {
+            company_id: companyId,
+            defaulter_id: remit.received_by_supervisor_id!,
+            reason: fineReason
+          }
+        });
+
+        if (!existingFine) {
+          const adminUser = await tx.user.findFirst({
+            where: { company_id: companyId, role: "ADMIN" }
+          });
+          const systemUserId = adminUser ? adminUser.id : remit.received_by_supervisor_id!;
+
+          // Create the Fine record for the supervisor (set amount to null for Admin adjustment)
+          await tx.fine.create({
+            data: {
+              company_id: companyId,
+              defaulter_id: remit.received_by_supervisor_id!,
+              issued_by: systemUserId,
+              amount: null,
+              reason: fineReason,
+              status: "UNPAID"
+            }
+          });
+
+          await tx.auditLog.create({
+            data: {
+              company_id: companyId,
+              user_id: systemUserId,
+              action: "CREATE",
+              entity_type: "FINE",
+              entity_id: remit.id,
+              after_state: {
+                reason: fineReason,
+                target_user: remit.received_by_supervisor_id,
+                message: `Automated deposit violation fine created for supervisor.`
+              }
+            }
+          });
+        }
+      });
+    }
+  }
+}
+

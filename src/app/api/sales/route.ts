@@ -4,6 +4,8 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { ApiError } from "@/lib/ApiError";
 import { Prisma } from "@prisma/client";
+import { rulesQueue } from "@/lib/queue";
+import { runRuleEvaluation } from "@/app/workers/rulesWorker";
 
 export async function GET(req: NextRequest) {
   try {
@@ -81,7 +83,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-     reports: reports.map(r => {
+      reports: reports.map(r => {
         const topUp = r.pos_device.allocations_given.reduce(
           (sum, alloc) => sum + Number(alloc.amount_allocated),
           0
@@ -190,18 +192,22 @@ export async function POST(req: NextRequest) {
         where: { id: locationId, company_id }
       });
 
-      // Calculate due date: 24h from operational closing hours of today
-      const closingDateTime = new Date();
+      // 1. Resolve true operational date from POS Device Session assignment
+      const sessionDate = new Date(sessionRecord.assigned_at);
+      const reportDay = new Date(sessionDate.getFullYear(), sessionDate.getMonth(), sessionDate.getDate());
+
+      // 2. Calculate due date: 24h from operational closing hours of the session assignment day
+      const closingDateTime = new Date(sessionDate);
       if (location?.closing_time) {
         const [hours, minutes] = location.closing_time.split(":").map(Number);
         closingDateTime.setHours(hours, minutes, 0, 0);
       } else {
-        // Fallback: 6:00 PM today
+        // Fallback: 6:00 PM on assignment day
         closingDateTime.setHours(18, 0, 0, 0);
       }
       const dueDate = new Date(closingDateTime.getTime() + 24 * 60 * 60 * 1000);
 
-      // Create Sales Report as PENDING
+      // 3. Create Sales Report anchored to the session assignment date
       const newReport = await tx.salesReport.create({
         data: {
           company_id,
@@ -211,8 +217,8 @@ export async function POST(req: NextRequest) {
           opening_balance: openVal,
           closing_balance: closeVal,
           total_sold: soldVal,
-          report_day: new Date(),
-          report_date: new Date(),
+          report_day: reportDay,
+          report_date: sessionRecord.assigned_at,
           status: "PENDING"
         }
       });
@@ -231,6 +237,15 @@ export async function POST(req: NextRequest) {
       const expectedCash = openVal - closeVal; // equivalent to soldVal
       const shortageAmount = Math.max(0, expectedCash - totalRemitted);
 
+      // 4. Determine status: if due date passed and cash is not fully remitted, mark as OVERDUE
+      const now = new Date();
+      let expectationStatus: "PAID" | "PENDING" | "OVERDUE" = "PENDING";
+      if (totalRemitted >= expectedCash) {
+        expectationStatus = "PAID";
+      } else if (dueDate < now) {
+        expectationStatus = "OVERDUE";
+      }
+
       // Create or Update Remittance Expectation immediately on report submission
       const existingExpectation = await tx.remittanceExpectation.findUnique({
         where: { pos_session_id: posSessionId }
@@ -241,7 +256,7 @@ export async function POST(req: NextRequest) {
           where: { id: existingExpectation.id },
           data: {
             expected_amount: expectedCash,
-            status: totalRemitted >= expectedCash ? "PAID" : "PENDING",
+            status: expectationStatus,
             shortage_amount: shortageAmount,
             due_date: dueDate
           }
@@ -254,12 +269,11 @@ export async function POST(req: NextRequest) {
             pos_session_id: posSessionId,
             expected_amount: expectedCash,
             due_date: dueDate,
-            status: totalRemitted >= expectedCash ? "PAID" : "PENDING",
+            status: expectationStatus,
             shortage_amount: shortageAmount
           }
         });
       }
-
 
       // Audit logging
       await tx.auditLog.create({
@@ -275,6 +289,19 @@ export async function POST(req: NextRequest) {
 
       return newReport;
     });
+
+        const jobPayload = {
+      event: "ON_REPORT_SUBMISSION",
+      reportId: report.id, 
+      companyId: company_id
+    };
+
+    if (rulesQueue) {
+      await rulesQueue.add("evaluate-rules", jobPayload);
+    } else {
+      // Synchronous fallback
+      await runRuleEvaluation(jobPayload);
+    }
 
     return NextResponse.json({ success: true, report });
   } catch (error) {

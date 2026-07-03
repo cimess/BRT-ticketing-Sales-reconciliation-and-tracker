@@ -35,7 +35,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       // 1. Fetch Sales Report & Session details
       const report = await tx.salesReport.findFirst({
         where: { id: reportId, company_id: companyId },
-        include: { pos_device: true }
+        include: { pos_device: true , ticketer: true}
       });
       if (!report) throw new ApiError(404, "Sales report not found");
       if (report.status !== "PENDING") throw new ApiError(400, "Report has already been processed");
@@ -174,6 +174,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
           verified_at: new Date()
         }
       });
+
 
       // Audit Log
       await tx.auditLog.create({

@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { ApiError } from "@/lib/ApiError";
 import { Prisma } from "@prisma/client";
 
-export async function POST(
+export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -43,7 +43,7 @@ export async function POST(
         throw new ApiError(404, "Remittance not found");
       }
       // Guard: Cash remittances must be DEPOSITED; Transfers must be PENDING
-      if (remittance.method === "CASH" && remittance.status !== "DEPOSITED") {
+      if (remittance.method === "CASH" && !["DEPOSITED"].includes(remittance.status)) {
         throw new ApiError(400, "Cash remittance must be deposited into the bank by the supervisor before Admin verification.");
       }
       if (remittance.method === "TRANSFER" && remittance.status !== "PENDING") {
@@ -115,11 +115,16 @@ export async function POST(
         }
       });
 
+      const sender = await tx.user.findUnique({
+        where: { id: remittance.submitted_by },
+        select: { role: true }
+      });
+      const accountType = sender?.role === "SUPERVISOR" ? "SUPERVISOR" : "TICKETER";
       await tx.float_Ledger.create({
         data: {
           company_id,
           account_id: remittance.submitted_by,
-          account_type: "TICKETER",
+          account_type: accountType,
           amount: remittance.amount,
           entry_type: "CREDIT",
           reference_type: "REMITTANCE",
@@ -127,7 +132,6 @@ export async function POST(
           description: `Reconciliation remittance verified. Shortage reduced.`,
         }
       });
-
       // D) Increment Company Float available balance
       await tx.companyFloat.upsert({
         where: { id: "COMPANY_ACCOUNT", company_id },
@@ -141,7 +145,7 @@ export async function POST(
 
     return NextResponse.json({ success: true, result });
   } catch (error) {
-    console.error("POST /api/reconcile/[id]/verify error:", error);
+    console.error("PATCH /api/reconcile/[id]/verify error:", error);
     return NextResponse.json({
       error: error instanceof ApiError ? error.message : "Internal Server Error"
     }, { status: error instanceof ApiError ? error.statusCode : 500 });

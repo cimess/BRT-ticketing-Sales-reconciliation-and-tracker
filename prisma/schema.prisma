@@ -34,6 +34,7 @@ model Company {
   pos_device_sessions     PosDeviceSession[]
   commission_rules        Commission_rules[]
   ticketer_location_assignments Ticketer_Location_Assignment[]
+  company_rules           CompanyRule[]
   
 }
 
@@ -266,6 +267,7 @@ model SalesReport {
   report_date  DateTime
   submitted_at DateTime         @default(now())
   status          SalesReportStatus @default(PENDING)
+  commission_earned Float   @default(0) 
   verified_by     String?
   verified_at     DateTime?
   rejection_reason String?
@@ -279,12 +281,37 @@ model SalesReport {
 model Commission_rules {
   id           String   @id @default(cuid())
   role         Roles
-  percentage   Float
-  fixed_amount Decimal  @db.Decimal(18, 2)
+  percentage   Float?
+  fixed_amount Decimal?  @db.Decimal(18, 2)
+  is_active    Boolean   @default(true)
   created_at   DateTime @default(now())
   company_id           String
   company              Company             @relation(fields: [company_id], references: [id])
 }
+
+model CompanyRule {
+  id                String   @id @default(cuid())
+  name              String   // E.g., "Late Remittance Fine"
+  description       String?
+  
+  // The event context when this rule is checked
+  trigger           String   // E.g., "ON_REPORT_SUBMISSION", "ON_SHIFT_VERIFICATION"
+  
+  // The rule condition details
+  target_field      String   // E.g., "shortage_amount", "hours_late_submitting", "total_sold"
+  operator          String   // E.g., ">", ">=", "<", "=="
+  comparison_value  Float    // The threshold (e.g., 1000 for Naira, 24 for hours)
+  
+  // The penalty
+  fine_amount       Float    // The automatic fine to issue
+  
+  is_active         Boolean  @default(true)
+  created_at        DateTime @default(now())
+  
+  company_id        String
+  company           Company  @relation(fields: [company_id], references: [id])
+}
+
 
 model CommissionEarning {
   id                String       @id @default(cuid())
@@ -294,6 +321,7 @@ model CommissionEarning {
   total_sales       Float
   commission_amount Float
   fines_deducted    Float
+  shortage_deducted  Float        @default(0)
   net_pay           Float
   status            SalaryStatus @default(PENDING)
   created_at        DateTime     @default(now())
@@ -403,6 +431,7 @@ enum Entry_Type {
 
 enum fine_status {
   UNPAID
+  PENDING
   PAID
   WAIVED
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Sigma, ArrowDownUp, AlertCircle, RefreshCw, CheckCircle, XCircle } from 'lucide-react';
+import { Sigma, ArrowDownUp, AlertCircle, RefreshCw, CheckCircle, XCircle, Plus } from 'lucide-react';
 import StatCard from '@/components/StatCard';
 import { Badge } from '@/components/Badge';
 import { DataTable, type ColumnDef } from '@/components/DataTable';
@@ -29,7 +29,7 @@ export interface FineRecord {
   amount: number | null;
   reason: string;
   issued_by: string;
-  status: 'UNPAID' | 'PAID' | 'WAIVED';
+  status: 'UNPAID' | 'PAID' | 'WAIVED' | 'PENDING';
   created_at: string;
   defaulter: {
     first_name: string | null;
@@ -90,6 +90,15 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
 
   const [fines, setFines] = useState<FineRecord[]>([]);
   const { data: session } = useSession();
+
+  // Manual Fine States
+  const [fineUsers, setFineUsers] = useState<{ id: string; name: string }[]>([]);
+  const [openIssueFineDrawer, setOpenIssueFineDrawer] = useState(false);
+  const [fineTargetUser, setFineTargetUser] = useState('');
+  const [fineAmount, setFineAmount] = useState('');
+  const [fineReason, setFineReason] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
 
   // Place with your other useState declarations in ReconciliationPage.tsx
   const [supervisorHandovers, setSupervisorHandovers] = useState<ReconciliationRemittance[]>([]);
@@ -195,16 +204,78 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
     return () => { isMounted = false; };
   }, [userRole]);
 
+  // Load candidate users who can receive fines (typed explicitly)
+  const loadFineUsers = useCallback(async () => {
+    try {
+      if (userRole === 'ADMIN') {
+        const res = await api.get('/admin/user');
+        if (res.data?.success) {
+          setFineUsers(res.data.data.map((u: { user_id: string; username: string; role: string }) => ({
+            id: u.user_id,
+            name: `${u.username} (${u.role})`
+          })));
+        }
+      } else if (userRole === 'SUPERVISOR') {
+        const res = await api.get('/supervisor/user');
+        if (res.data?.success) {
+          setFineUsers(res.data.data.map((u: { id: string; first_name: string; last_name: string }) => ({
+            id: u.id,
+            name: `${u.first_name} ${u.last_name} (TICKETER)`
+          })));
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load users for fine dropdown', err);
+    }
+  }, [userRole]);
+
+
+  // Issue fine submission handler
+  const handleIssueFine = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!fineTargetUser || !fineReason) {
+      return toast.error("Please select a user and provide a reason");
+    }
+    if (!fineAmount || isNaN(parseFloat(fineAmount)) || parseFloat(fineAmount) <= 0) {
+      return toast.error("Please enter a valid fine amount");
+    }
+
+    setSubmitting(true);
+    try {
+      const res = await api.post('/fines', {
+        defaulterId: fineTargetUser,
+        amount: parseFloat(fineAmount),
+        reason: fineReason
+      });
+
+      if (res.data?.success) {
+        toast.success("Fine issued successfully!");
+        setFineTargetUser('');
+        setFineAmount('');
+        setFineReason('');
+        setOpenIssueFineDrawer(false);
+        fetchFines();
+      } else {
+        toast.error(res.data?.error || "Failed to issue fine");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Error issuing fine");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
 
   const handleSubmitPayment = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!selectedExpectation) return;
 
-    if (!["TICKETER"].includes(userRole)) {
+    if (userRole !== "TICKETER" && !(userRole === "SUPERVISOR" && selectedExpectation?.user_id === session?.user?.id)) {
       setActionError('Unauthorized');
       return;
     }
+
 
     const numAmount = parseFloat(payAmount);
     if (isNaN(numAmount) || numAmount <= 0) {
@@ -222,8 +293,9 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
         amount: numAmount,
         method: payMethod,
         payment_reference: payRef || undefined,
-        supervisor_id: payMethod === 'CASH' ? paySupervisorId : undefined,
+        supervisor_id: (payMethod === 'CASH' && userRole === 'TICKETER') ? paySupervisorId : undefined,
       });
+
 
       if (!res.data.success) {
         throw new Error(res.data.error || 'Failed to submit reconciliation payment');
@@ -236,7 +308,7 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
         fetchReconciliationData();
       }, 1500);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'An error occurred during submission';
+      const message = err instanceof axios.AxiosError ? err.response?.data.message : 'An error occurred during submission';
       setActionError(message);
     } finally {
       setActionLoading(false);
@@ -272,7 +344,7 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
         refreshMetrics()
       }, 1500);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'An error occurred during verification';
+      const message = err instanceof axios.AxiosError ? err.response?.data.message : 'An error occurred during verification';
       setActionError(message);
     } finally {
       setActionLoading(false);
@@ -304,24 +376,85 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
     }
   };
 
+
+
   const handlePayFine = async (fineId: string) => {
-    if (!confirm("Are you sure you want to settle this fine in full?")) return;
+    if (!confirm("Are you sure you want to declare this fine as paid? Admin will verify the cash collection.")) return;
     try {
       setActionLoading(true);
-      const res = await api.patch(`/fines/${fineId}`, { action: "PAY" });
+      const res = await api.patch(`/fines/${fineId}`, { action: "DECLARE_PAID" });
       if (res.data.success) {
-        toast.success("Fine paid successfully!");
+        toast.success("Declared as paid! Awaiting admin verification.");
         fetchFines();
         refreshMetrics();
       } else {
-        toast.error(res.data.error || "Failed to settle fine");
+        toast.error(res.data.error || "Failed to declare fine paid");
       }
     } catch (err) {
-      toast.error("Error settling fine");
+      toast.error("Error declaring fine paid");
     } finally {
       setActionLoading(false);
     }
   };
+
+  const handleVerifyFine = async (fineId: string) => {
+    if (!confirm("Confirm that you have received this cash payment and wish to settle the fine?")) return;
+    try {
+      setActionLoading(true);
+      const res = await api.patch(`/fines/${fineId}`, { action: "VERIFY_PAYMENT" });
+      if (res.data.success) {
+        toast.success("Fine payment verified and ledger updated!");
+        fetchFines();
+        refreshMetrics();
+      } else {
+        toast.error(res.data.error || "Failed to verify fine");
+      }
+    } catch (err) {
+      toast.error("Error verifying fine");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleReverseFine = async (fineId: string) => {
+    if (!confirm("Are you sure you want to reverse this fine payment? This will restore the user's debt and adjust the balance ledgers.")) return;
+    try {
+      setActionLoading(true);
+      const res = await api.patch(`/fines/${fineId}`, { action: "REVERSE" });
+      if (res.data.success) {
+        toast.success("Fine payment reversed successfully!");
+        fetchFines();
+        refreshMetrics();
+      } else {
+        toast.error(res.data.error || "Failed to reverse fine payment");
+      }
+    } catch (err) {
+      toast.error("Error reversing fine payment");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+
+
+  const handleUpdateFineAmount = async (fineId: string, amount: number) => {
+    try {
+      setActionLoading(true);
+      const res = await api.patch(`/fines/${fineId}`, { action: "UPDATE_AMOUNT", amount });
+      if (res.data.success) {
+        toast.success("Fine amount updated successfully!");
+        fetchFines();
+        refreshMetrics();
+      } else {
+        toast.error(res.data.error || "Failed to update fine amount");
+      }
+    } catch (err) {
+      toast.error("Error updating fine amount");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
 
   const handleVoidFine = async (fineId: string) => {
     if (!confirm("Are you sure you want to waive/void this fine?")) return;
@@ -576,6 +709,7 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
         if (row?.status === 'PAID') variant = 'success';
         if (row?.status === 'WAIVED') variant = 'info';
         if (row?.status === 'UNPAID') variant = 'danger';
+        if (row?.status === 'PENDING') variant = 'warning';
         return <Badge variant={variant}>{row?.status}</Badge>;
       },
     },
@@ -584,16 +718,22 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
       header: 'Issued Date',
       cell: (row) => <span className="text-slate-400">{row?.created_at && new Date(row.created_at).toLocaleDateString()}</span>,
     },
-    {
+       {
       id: 'actions',
       header: 'Actions',
       cell: (row) => {
         const isUnpaid = row?.status === 'UNPAID';
-        if (!isUnpaid) return <span className="text-slate-500 text-xs">No Actions</span>;
+        const isPending = row?.status === 'PENDING';
+        const isPaid = row?.status === 'PAID';
+
+        if (!isUnpaid && !isPending && !isPaid) {
+          return <span className="text-slate-500 text-xs">No Actions</span>;
+        }
 
         return (
           <div className="flex gap-2">
-            {(userRole === 'TICKETER' || userRole === 'ADMIN') && row.amount !== null && (
+            {/* Pay Button: Only shown to the offender/defaulter if unpaid */}
+            {isUnpaid && row.defaulter_id === session?.user?.id && row.amount !== null && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -605,7 +745,59 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
                 Pay
               </button>
             )}
-            {(userRole === 'ADMIN' || (userRole === 'SUPERVISOR' && row.issued_by === session?.user?.id)) && (
+
+            {/* Verify Button: Only shown to ADMIN when fine is PENDING verification */}
+            {isPending && userRole === 'ADMIN' && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleVerifyFine(row.id);
+                }}
+                disabled={actionLoading}
+                className="px-2.5 py-1 rounded bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 text-xs font-semibold transition"
+              >
+                Verify
+              </button>
+            )}
+
+            {/* Reverse Button: Only shown to ADMIN when fine is PAID */}
+            {isPaid && userRole === 'ADMIN' && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleReverseFine(row.id);
+                }}
+                disabled={actionLoading}
+                className="px-2.5 py-1 rounded bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 text-xs font-semibold transition"
+              >
+                Reverse
+              </button>
+            )}
+
+            {/* Set Amount Button: Admin/Issuer supervisor when amount is null */}
+            {isUnpaid && (userRole === 'ADMIN' || (userRole === 'SUPERVISOR' && row.issued_by === session?.user?.id)) && row.amount === null && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const amt = prompt("Enter fine amount:");
+                  if (amt) {
+                    const parsed = parseFloat(amt);
+                    if (!isNaN(parsed) && parsed > 0) {
+                      handleUpdateFineAmount(row.id, parsed);
+                    } else {
+                      alert("Please enter a valid positive number");
+                    }
+                  }
+                }}
+                disabled={actionLoading}
+                className="px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 text-xs font-semibold transition"
+              >
+                Set Amount
+              </button>
+            )}
+
+            {/* Waive Button: Admin/Issuer supervisor on unpaid or pending fine */}
+            {(isUnpaid || isPending) && (userRole === 'ADMIN' || (userRole === 'SUPERVISOR' && row.issued_by === session?.user?.id)) && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -620,7 +812,10 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
           </div>
         );
       },
-    },
+    }
+
+
+
   ];
 
 
@@ -637,6 +832,17 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
             </button>
+
+            {/* Added: Manual "Issue Fine" button for Admins and Supervisors when viewing the Fines tab */}
+            {activeTab === 'FINES' && (userRole === 'ADMIN' || userRole === 'SUPERVISOR') && (
+              <button
+                onClick={() => { loadFineUsers(); setOpenIssueFineDrawer(true) }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-400 text-xs font-semibold transition border border-red-500/30"
+              >
+                <Plus className="w-3.5 h-3.5" /> Issue Fine
+              </button>
+            )}
+
             <Select
               value={activeTab}
               onChange={(v) => setActiveTab(v as 'EXPECTATIONS' | 'REMITTANCES' | 'HANDOVERS' | 'FINES')}
@@ -647,10 +853,9 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
                 { value: 'FINES', label: userRole === 'TICKETER' ? 'My Fines' : 'Fines & Penalties' }
               ]}
             />
-
-
           </div>
         }
+
         kpis={
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             <StatCard
@@ -788,8 +993,9 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
             sections={[
               {
                 title: 'Payment Details',
-                content: userRole === 'TICKETER' ? (
+                content: (userRole === 'TICKETER' || (userRole === 'SUPERVISOR' && selectedExpectation.user_id === session?.user?.id)) ? (
                   <form onSubmit={handleSubmitPayment} className="space-y-4 pt-2">
+
                     {actionError && (
                       <div className="p-3 rounded-xl border border-red-500/20 bg-red-500/10 text-red-300 text-xs">
                         {actionError}
@@ -827,9 +1033,10 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
                         <option value="TRANSFER">BANK TRANSFER</option>
                       </select>
                     </div>
-                    {payMethod === 'CASH' && (
+                    {payMethod === 'CASH' && userRole === 'TICKETER' && (
                       <div>
                         <label className="block text-xs font-medium text-slate-400 mb-1">Handed Cash To (Supervisor)</label>
+
                         <select
                           value={paySupervisorId}
                           onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setPaySupervisorId(e.target.value)}
@@ -925,34 +1132,21 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
                         {actionSuccess}
                       </div>
                     )}
+
                     {(userRole === 'ADMIN' || userRole === 'AUDITOR') ? (
-                      (selectedRemittance.status === 'PENDING' || selectedRemittance.status === 'DEPOSITED') ? (
-                        <div className="flex gap-3 pt-2">
-                          <button
-                            onClick={() => handleProcessRemittance('VERIFY')}
-                            disabled={actionLoading}
-                            className="flex-1 flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-2.5 rounded-xl text-sm transition disabled:opacity-50"
-                          >
-                            <CheckCircle className="w-4 h-4" /> Verify & Confirm
-                          </button>
-                          <button
-                            onClick={() => handleProcessRemittance('REJECT')}
-                            disabled={actionLoading}
-                            className="flex-1 flex items-center justify-center gap-2 bg-red-600 hover:bg-red-500 text-white font-medium py-2.5 rounded-xl text-sm transition disabled:opacity-50"
-                          >
-                            <XCircle className="w-4 h-4" /> Reject
-                          </button>
-                        </div>
-                      ) : (
-                        <p className="text-xs text-slate-400 italic">This remittance has already been processed.</p>
-                      )
+                      <div className="pt-2">
+                        <p className="text-xs text-slate-400 italic">
+                          Please verify or reject this remittance from the main Remittances page.
+                        </p>
+                      </div>
                     ) : (
                       <p className="text-xs text-slate-400 italic">
                         {selectedRemittance.status === 'CONFIRMED'
                           ? 'This payment has been verified by Admin.'
-                          : 'Awaiting final verification by Admin.'}
+                          : 'Pending Admin verification.'}
                       </p>
                     )}
+
                   </div>
                 ),
               },
@@ -960,6 +1154,74 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
           />
         )}
       </Drawer>
+
+
+      {/* Issue Fine Drawer (Admin / Supervisor Only) */}
+      <Drawer
+        open={openIssueFineDrawer}
+        title="Issue Manual Fine"
+        subtitle="Manually issue a fine or penalty to a user"
+        onClose={() => {
+          setOpenIssueFineDrawer(false);
+          setFineTargetUser('');
+          setFineAmount('');
+          setFineReason('');
+        }}
+      >
+        <form onSubmit={handleIssueFine} className="space-y-4">
+          <div>
+            <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">Select User</label>
+            <select
+              required
+              value={fineTargetUser}
+              onChange={(e) => setFineTargetUser(e.target.value)}
+              className="mt-2 w-full rounded-xl bg-white/3 border border-white/10 px-4 py-2.5 text-sm text-white focus:outline-none"
+            >
+              <option value="" className="bg-black">Select user to fine...</option>
+              {fineUsers.map((u) => (
+                <option key={u.id} value={u.id} className="bg-black">
+                  {u.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">Fine Amount</label>
+            <input
+              type="number"
+              required
+              min="0.01"
+              step="any"
+              placeholder="e.g. 5000"
+              value={fineAmount}
+              onChange={(e) => setFineAmount(e.target.value)}
+              className="mt-2 w-full rounded-xl bg-white/3 border border-white/10 px-4 py-2.5 text-sm text-white focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">Reason / Violation</label>
+            <textarea
+              required
+              rows={3}
+              placeholder="Provide detail about why this fine is being issued..."
+              value={fineReason}
+              onChange={(e) => setFineReason(e.target.value)}
+              className="mt-2 w-full rounded-xl bg-white/3 border border-white/10 px-4 py-2.5 text-sm text-white focus:outline-none resize-none"
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={submitting}
+            className="w-full rounded-xl bg-linear-to-r from-red-500 to-rose-500 text-white py-3 text-sm font-bold tracking-tight active:scale-[0.99] disabled:opacity-50 transition-all mt-4"
+          >
+            {submitting ? 'Issuing...' : 'Issue Fine'}
+          </button>
+        </form>
+      </Drawer>
+
     </>
   );
 }

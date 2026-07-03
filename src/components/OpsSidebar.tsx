@@ -1,5 +1,5 @@
 "use client"
-import { Activity, BookOpen, ClipboardList, Coins, FileText, LayoutDashboard, ShieldCheck, Smartphone } from 'lucide-react';
+import { Activity, BookOpen, ClipboardList, Coins, FileText, LayoutDashboard, ShieldCheck, Smartphone, Bell } from 'lucide-react';
 import { moduleHref, modulesForRole, } from '../app/lib/modules';
 import type { ModuleItem } from '../app/lib/modules';
 import { useRouter, usePathname, redirect } from "next/navigation";
@@ -16,6 +16,7 @@ const groupIcon: Record<ModuleItem['group'], React.ReactNode> = {
   Audit: <ShieldCheck className="w-4 h-4" strokeWidth={1.5} />,
   Reports: <FileText className="w-4 h-4" strokeWidth={1.5} />,
   Admin: <BookOpen className="w-4 h-4" strokeWidth={1.5} />,
+  Notifications: <Bell className="w-4 h-4" strokeWidth={1.5} />,
 };
 
 

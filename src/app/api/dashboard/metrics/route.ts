@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { getRoleFinancialSnapshot, getRoleSalesSnapshot } from "@/server/services/getCompanyFloatSnapshot.service";
-import { checkAndEscalateExpectations } from "@/app/server/services/escalation.service";
+import { checkAndEscalateExpectations, checkSupervisorDepositViolations } from "@/server/services/escalation.service";
 
 export async function GET() {
   try {
@@ -14,6 +14,8 @@ export async function GET() {
 
     const { id: userId, role,company_id:companyId } = session.user;
     await checkAndEscalateExpectations(companyId);
+    await checkSupervisorDepositViolations(companyId);
+
 
     // 1. Financial snapshot (company balance, topups, allocations, expected remittance)
     const financialSnapshot = await getRoleFinancialSnapshot(role, userId,companyId);
@@ -29,13 +31,25 @@ export async function GET() {
       shortageCount = await prisma.remittanceExpectation.count({
         where: { company_id: companyId, status: { in: ["OVERDUE", "VIOLATED"] } }
       });
-    } else if (role === "SUPERVISOR") {
-      alertCount = await prisma.fine.count({ where: { issued_by: userId, company_id: companyId, status: "UNPAID" } });
+    }   
+      else if (role === "SUPERVISOR") {
+      // Count both fines issued BY them and fines issued TO them
+      alertCount = await prisma.fine.count({ 
+        where: { 
+          company_id: companyId, 
+          status: "UNPAID",
+          OR: [
+            { issued_by: userId },
+            { defaulter_id: userId }
+          ]
+        } 
+      });
       const supervisedUsers = await prisma.user.findMany({
         where: { supervisor_id: userId, company_id: companyId },
         select: { id: true }
       });
       const supervisedIds = supervisedUsers.map(u => u.id);
+      supervisedIds.push(userId); // Include supervisor's own shortages
       shortageCount = await prisma.remittanceExpectation.count({
         where: {
           company_id: companyId,
@@ -43,7 +57,8 @@ export async function GET() {
           status: { in: ["OVERDUE", "VIOLATED"] }
         }
       });
-    } else if (role === "TICKETER") {
+    }
+ else if (role === "TICKETER") {
       alertCount = await prisma.fine.count({ where: { defaulter_id: userId, company_id: companyId, status: "UNPAID" } });
       shortageCount = await prisma.remittanceExpectation.count({
         where: {

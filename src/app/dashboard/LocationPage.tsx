@@ -92,6 +92,15 @@ export default function LocationsPage({ role = 'TICKETER' }: { role?: string }) 
   const [editTicketer, setEditTicketer] = useState('');
   const [editLocation, setEditLocation] = useState('');
 
+    // Edit Location States
+  const [selectedEditLocation, setSelectedEditLocation] = useState<Location | null>(null);
+  const [openEditLocationDrawer, setOpenEditLocationDrawer] = useState(false);
+  const [editLocName, setEditLocName] = useState('');
+  const [editLocAddress, setEditLocAddress] = useState('');
+  const [editLocOpeningTime, setEditLocOpeningTime] = useState('');
+  const [editLocClosingTime, setEditLocClosingTime] = useState('');
+
+
   // Query Filters state
   const [scope, setScope] = useState<'personal' | 'team'>(userRole === 'TICKETER' ? 'personal' : 'team');
   const [selectedFilterUserId, setSelectedFilterUserId] = useState<string>('');
@@ -274,6 +283,43 @@ export default function LocationsPage({ role = 'TICKETER' }: { role?: string }) 
       setSubmitting(false);
     }
   };
+
+    // Edit Location (Admin Only)
+  const handleEditLocation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedEditLocation || !editLocName || !editLocAddress) {
+      return toast.error('Please input a location name and address');
+    }
+    setSubmitting(true);
+    try {
+      const res = await api.patch('/locations', {
+        id: selectedEditLocation.id,
+        name: editLocName,
+        address: editLocAddress,
+        opening_time: editLocOpeningTime || null,
+        closing_time: editLocClosingTime || null,
+      });
+
+      if (res.status === 200 && res.data.success) {
+        toast.success('Location updated successfully');
+        setSelectedEditLocation(null);
+        setOpenEditLocationDrawer(false);
+        fetchLocations();
+      } else {
+        toast.error(res?.data?.message || 'Failed to update location');
+      }
+    } catch (err) {
+      console.error(err);
+      if (err instanceof axios.AxiosError) {
+        toast.error(err?.response?.data?.error || err?.response?.data?.message || 'Network error updating location');
+      } else {
+        toast.error('An unexpected error occurred');
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
 
   // Reassign / Update Assignment (Supervisor Only)
   const handleUpdateAssignment = async (e: React.FormEvent) => {
@@ -525,6 +571,7 @@ export default function LocationsPage({ role = 'TICKETER' }: { role?: string }) 
   ];
 
 
+
   const locationColumns: ColumnDef<Location>[] = [
     {
       id: 'name',
@@ -537,8 +584,7 @@ export default function LocationsPage({ role = 'TICKETER' }: { role?: string }) 
       header: 'Physical Address',
       cell: (row) => <span className="text-slate-300">{row?.address}</span>,
     },
-
-        {
+    {
       id: 'opening_time',
       header: 'Opening Time',
       cell: (row) => <span className="text-slate-400">{row?.opening_time || 'N/A'}</span>,
@@ -548,8 +594,37 @@ export default function LocationsPage({ role = 'TICKETER' }: { role?: string }) 
       header: 'Closing Time',
       cell: (row) => <span className="text-slate-400">{row?.closing_time || 'N/A'}</span>,
     },
-
+    // Add this actions section here:
+    ...(userRole === 'ADMIN'
+      ? [
+        {
+          id: 'actions',
+          header: 'Actions',
+          cell: (row?: Location) => (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  if (row) {
+                    setSelectedEditLocation(row);
+                    setEditLocName(row.name);
+                    setEditLocAddress(row.address);
+                    setEditLocOpeningTime(row.opening_time || '');
+                    setEditLocClosingTime(row.closing_time || '');
+                    setOpenEditLocationDrawer(true);
+                  }
+                }}
+                className="p-2 text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 rounded-xl transition-all"
+                title="Edit Location"
+              >
+                <Edit className="size-4" />
+              </button>
+            </div>
+          ),
+        },
+      ]
+      : []),
   ];
+
 
   return (
     <>
@@ -810,7 +885,8 @@ export default function LocationsPage({ role = 'TICKETER' }: { role?: string }) 
 
       </PageScaffold>
 
-      {/* ADMIN: Add Location Drawer */}
+
+            {/* ADMIN: Add Location Drawer */}
       <Drawer
         open={openLocationDrawer}
         title="Add Terminal Location"
@@ -842,7 +918,7 @@ export default function LocationsPage({ role = 'TICKETER' }: { role?: string }) 
             />
           </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">Opening Time</label>
               <input
@@ -863,17 +939,80 @@ export default function LocationsPage({ role = 'TICKETER' }: { role?: string }) 
             </div>
           </div>
 
-
           <button
             type="submit"
             disabled={submitting}
             className="w-full rounded-xl bg-linear-to-r from-emerald-400 to-teal-400 py-3 text-sm font-bold tracking-tight active:scale-[0.99] disabled:opacity-50 transition-all mt-4"
-
           >
             {submitting ? 'Registering...' : 'Add Location'}
           </button>
         </form>
       </Drawer>
+
+
+      {/* ADMIN: Edit Location Drawer */}
+      <Drawer
+        open={openEditLocationDrawer}
+        title="Edit Terminal Location"
+        subtitle="Update registered terminal location details"
+        onClose={() => setOpenEditLocationDrawer(false)}
+      >
+        <form onSubmit={handleEditLocation} className="space-y-4">
+          <div>
+            <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">Location Name</label>
+            <input
+              type="text"
+              required
+              placeholder="e.g. Iyana Ipaja Bus-Stop"
+              value={editLocName}
+              onChange={(e) => setEditLocName(e.target.value)}
+              className="mt-2 w-full rounded-xl bg-white/3 border border-white/10 px-4 py-2.5 text-sm text-white focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">Physical Address</label>
+            <input
+              type="text"
+              required
+              placeholder="e.g. 45 Abeokuta Expressway, Lagos"
+              value={editLocAddress}
+              onChange={(e) => setEditLocAddress(e.target.value)}
+              className="mt-2 w-full rounded-xl bg-white/3 border border-white/10 px-4 py-2.5 text-sm text-white focus:outline-none"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">Opening Time</label>
+              <input
+                type="time"
+                value={editLocOpeningTime}
+                onChange={(e) => setEditLocOpeningTime(e.target.value)}
+                className="mt-2 w-full rounded-xl bg-white/3 border border-white/10 px-4 py-2.5 text-sm text-white focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">Closing Time</label>
+              <input
+                type="time"
+                value={editLocClosingTime}
+                onChange={(e) => setEditLocClosingTime(e.target.value)}
+                className="mt-2 w-full rounded-xl bg-white/3 border border-white/10 px-4 py-2.5 text-sm text-white focus:outline-none"
+              />
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            disabled={submitting}
+            className="w-full rounded-xl bg-linear-to-r from-emerald-400 to-teal-400 py-3 text-sm font-bold tracking-tight active:scale-[0.99] disabled:opacity-50 transition-all mt-4"
+          >
+            {submitting ? 'Updating...' : 'Save Changes'}
+          </button>
+        </form>
+      </Drawer>
+
 
 
       {/* supperversor Assign/unassign Location */}

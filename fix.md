@@ -146,4 +146,3 @@ model Fine {
 
 
 
-new fix the sales bug where if user did their sales report the next day it get added to the next day sales account and not the previous one  and how do we even know or detect it since this might happen often where both admin and supervisor did not notice the sales record not been submitted or may be they did not have the chance to do so and how do we update sales report on the pos terminal that it for the previous day

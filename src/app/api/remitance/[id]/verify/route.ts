@@ -36,7 +36,7 @@ export async function PATCH(
       if (!remittance) throw new ApiError(404, "Remittance not found");
 
       // Strict Guard: Admin can ONLY verify items that have reached DEPOSITED state (for cash) or PENDING (for transfers)
-      if (remittance.method === "CASH" && remittance.status !== "DEPOSITED") {
+         if (remittance.method === "CASH" && !["DEPOSITED"].includes(remittance.status)) {
         throw new ApiError(
           400,
           "Cannot verify cash remittance. The supervisor must deposit the cash into the bank first."
@@ -46,17 +46,7 @@ export async function PATCH(
       if (remittance.method === "TRANSFER" && remittance.status !== "PENDING") {
         throw new ApiError(400, "Transfer remittance is already processed or invalid.");
       }
-        if (remittance.pos_session_id) {
-        const expectation = await tx.remittanceExpectation.findUnique({
-          where: { pos_session_id: remittance.pos_session_id }
-        });
-        if (expectation && ["OVERDUE", "VIOLATED"].includes(expectation.status)) {
-          throw new ApiError(
-            400,
-            "This payment is for an overdue/violated shortage and must be verified through the Reconciliation Page."
-          );
-        }
-      }
+       
 
       // 1. Update Remittance Status
       const updatedRemittance = await tx.remittance.update({
@@ -111,33 +101,88 @@ export async function PATCH(
 
         const paidAmount = Number(remittance.amount);
 
-        if (sender?.role === "TICKETER" && remittance.pos_session_id) {
-          const expectation = await tx.remittanceExpectation.findUnique({
+
+
+            // Find expectation by pos_session_id or find the oldest unresolved expectation for the user (e.g. supervisors)
+        let expectation = null;
+        if (remittance.pos_session_id) {
+          expectation = await tx.remittanceExpectation.findUnique({
             where: { pos_session_id: remittance.pos_session_id }
           });
+        } else {
+          expectation = await tx.remittanceExpectation.findFirst({
+            where: {
+              user_id: remittance.submitted_by,
+              pos_session_id: null,
+              status: { in: ["PENDING", "OVERDUE", "VIOLATED", "SUBMITTED"] }
+            },
+            orderBy: { created_at: "asc" }
+          });
+        }
 
-          if (expectation) {
-            const confirmedRemittances = await tx.remittance.aggregate({
-              where: {
-                company_id,
-                pos_session_id: remittance.pos_session_id,
-                status: "CONFIRMED"
-              },
-              _sum: { amount: true }
-            });
-            const totalRemitted = Number(confirmedRemittances._sum.amount ?? 0);
-            const remainingOwed = Math.max(0, expectation.expected_amount - totalRemitted);
+        if (expectation) {
+          // Deduct directly from the current outstanding shortage
+          const remainingOwed = Math.max(0, Number(expectation.shortage_amount) - paidAmount);
+
+          // Keep status as OVERDUE or VIOLATED if there is still a shortage remaining
+          const newStatus = remainingOwed <= 0 
+            ? "PAID" 
+            : (["OVERDUE", "VIOLATED"].includes(expectation.status) ? expectation.status : "SUBMITTED");
+
+          await tx.remittanceExpectation.update({
+            where: { id: expectation.id },
+            data: {
+              status: newStatus,
+              shortage_amount: remainingOwed,
+            }
+          });
+        }
+
+
+
+      }else if (status === "REJECTED") {
+        // If rejected, restore expectation status back to PENDING/OVERDUE/VIOLATED if no other pending remittances exist
+        let expectation = null;
+        if (remittance.pos_session_id) {
+          expectation = await tx.remittanceExpectation.findUnique({
+            where: { pos_session_id: remittance.pos_session_id }
+          });
+        } else {
+          expectation = await tx.remittanceExpectation.findFirst({
+            where: {
+              user_id: remittance.submitted_by,
+              pos_session_id: null,
+              status: { in: ["PENDING", "OVERDUE", "VIOLATED", "SUBMITTED"] }
+            },
+            orderBy: { created_at: "asc" }
+          });
+        }
+
+        if (expectation) {
+          const pendingCount = await tx.remittance.count({
+            where: {
+              pos_session_id: remittance.pos_session_id,
+              submitted_by: remittance.submitted_by,
+              id: { not: remittanceId },
+              status: { in: ["PENDING", "PENDING_SUPERVISOR_ACCEPTANCE", "DEPOSITED"] },
+              company_id
+            }
+          });
+
+          if (pendingCount === 0) {
+            const now = new Date();
+            const targetStatus = now > expectation.due_date 
+              ? (now.getTime() > expectation.due_date.getTime() + 24 * 60 * 60 * 1000 ? "VIOLATED" : "OVERDUE")
+              : "PENDING";
 
             await tx.remittanceExpectation.update({
               where: { id: expectation.id },
-              data: {
-                status: remainingOwed <= 0 ? "PAID" : "SUBMITTED",
-                shortage_amount: remainingOwed,
-              }
+              data: { status: targetStatus }
             });
           }
         }
       }
+
 
       await tx.auditLog.create({
         data: {

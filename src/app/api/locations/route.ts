@@ -67,3 +67,60 @@ export async function POST(req: NextRequest) {
   }
 }
 
+
+
+export async function PATCH(req: NextRequest) {
+  try {
+    const session = await auth();
+    if (!session?.user || session.user.role !== "ADMIN" || !session?.user.id) {
+      return NextResponse.json({ error: "Unauthorized. Admin access required." }, { status: 403 });
+    }
+    const { company_id } = session.user;
+    const body = await req.json();
+    const { id, name, address, opening_time, closing_time } = body;
+
+    if (!id) {
+      return NextResponse.json({ error: "Location ID is required" }, { status: 400 });
+    }
+
+    if (!name || !address) {
+      return NextResponse.json({ error: "Location Name and Address are required" }, { status: 400 });
+    }
+
+    const location = await prisma.location.findFirst({
+      where: { id, company_id }
+    });
+
+    if (!location) {
+      return NextResponse.json({ error: "Location not found" }, { status: 404 });
+    }
+
+    const updatedLocation = await prisma.location.update({
+      where: { id },
+      data: {
+        name,
+        address,
+        opening_time: opening_time || null,
+        closing_time: closing_time || null,
+      },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        user_id: session.user.id,
+        action: "UPDATE",
+        entity_type: "LOCATION",
+        entity_id: id,
+        before_state: JSON.stringify(location),
+        after_state: JSON.stringify(updatedLocation),
+        company_id,
+      },
+    });
+
+    return NextResponse.json({ success: true, data: updatedLocation });
+  } catch (error) {
+    console.error("PATCH /api/locations error:", error);
+    return NextResponse.json({ error: "Failed to update location" }, { status: 500 });
+  }
+}
+

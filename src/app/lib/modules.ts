@@ -11,7 +11,8 @@ export type ModuleKey =
   | 'reports'
   | 'admin_users'
   | 'admin_roles'
-  | 'locations';
+  | 'locations'
+  | 'notifications';
 
 export type Role = 'ticketer' | 'supervisor' | 'admin' | 'auditor';
 
@@ -19,7 +20,7 @@ export interface ModuleItem {
   key: ModuleKey;
   label: string;
   path: string; // path part after /dashboard/:role/
-  group: 'Operations' | 'Reconciliation' | 'Earnings' | 'Devices' | 'Audit' | 'Reports' | 'Admin';
+  group: 'Operations' | 'Reconciliation' | 'Earnings' | 'Devices' | 'Audit' | 'Reports' | 'Admin' | 'Notifications';
   roles: Role[];
 }
 
@@ -45,7 +46,8 @@ export const MODULES: ModuleItem[] = [
   { key: 'reports', label: 'Reports', path: 'reports', group: 'Reports', roles: ['supervisor', 'admin', 'auditor'] },
   
   { key: 'locations', label: 'Locations', path: 'locations', group: 'Operations', roles: ['admin', 'supervisor', 'ticketer'] },
-
+  
+{ key: 'notifications', label: 'Notifications', path: 'notifications', group: 'Notifications', roles: ['admin', 'supervisor', 'ticketer'] },
   { key: 'admin_users', label: 'Users', path: 'users', group: 'Admin', roles: ['admin'] },
 
   { key: 'admin_roles', label: 'Roles & Permissions', path: 'roles', group: 'Admin', roles: ['admin'] },

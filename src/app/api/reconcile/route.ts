@@ -4,7 +4,8 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { ApiError } from "@/lib/ApiError";
-import { checkAndEscalateExpectations } from "@/server/services/escalation.service";
+import { checkAndEscalateExpectations, checkSupervisorDepositViolations } from "@/server/services/escalation.service";
+
 
 export async function GET(req: NextRequest) {
     try {
@@ -18,6 +19,7 @@ export async function GET(req: NextRequest) {
         const { id: userId, role, company_id } = session.user;
 
         await checkAndEscalateExpectations(company_id);
+        await checkSupervisorDepositViolations(company_id);
 
         if (role === "ADMIN" || role === "AUDITOR") {
             const expectations = await prisma.remittanceExpectation.findMany({
@@ -81,7 +83,7 @@ export async function GET(req: NextRequest) {
                 orderBy: { due_date: "asc" }
             });
 
-            const remittances = await prisma.remittance.findMany({
+                       const remittances = await prisma.remittance.findMany({
                 where: {
                     company_id,
                     status: { in: ["PENDING", "ACCEPTED_BY_SUPERVISOR", "PENDING_SUPERVISOR_ACCEPTANCE", "DEPOSITED"] },
@@ -90,9 +92,10 @@ export async function GET(req: NextRequest) {
                             status: { in: ["OVERDUE", "VIOLATED", "SUBMITTED"] }
                         }
                     },
-                    ticketer: {
-                        supervisor_id: userId
-                    }
+                    OR: [
+                        { ticketer: { supervisor_id: userId } },
+                        { submitted_by: userId } // Include supervisor's own remittances
+                    ]
                 },
                 include: {
                     ticketer: { select: { id: true, first_name: true, last_name: true, role: true } },
@@ -104,6 +107,7 @@ export async function GET(req: NextRequest) {
                 },
                 orderBy: { created_at: "desc" }
             });
+
 
 
             return NextResponse.json({ success: true, expectations, remittances });
@@ -169,10 +173,10 @@ export async function POST(req: NextRequest) {
 
         const { id: callerId, role, company_id } = session.user;
 
-        // 🔒 Strictly restrict reconciliation payment submission to TICKETERS
-        if (role !== "TICKETER") {
+        // 🔒 Strictly restrict reconciliation payment submission to TICKETERS and SUPERVISORS
+        if (role !== "TICKETER" && role !== "SUPERVISOR") {
             return NextResponse.json({ 
-                error: "Unauthorized. Only ticketers can submit reconciliation payments for their expectations." 
+                error: "Unauthorized. Only ticketers and supervisors can submit reconciliation payments for their expectations." 
             }, { status: 403 });
         }
 
@@ -227,17 +231,23 @@ export async function POST(req: NextRequest) {
                 );
             }
 
-            let receivedBySupId: string | null = null;
-            let initialStatus: "PENDING" | "PENDING_SUPERVISOR_ACCEPTANCE" = "PENDING";
-
+             let receivedBySupId: string | null = null;
+            // 1. Add "DEPOSITED" to the allowed type here:
+            let initialStatus: "PENDING" | "PENDING_SUPERVISOR_ACCEPTANCE" | "DEPOSITED" = "PENDING";
             if (method === "CASH") {
-                initialStatus = "PENDING_SUPERVISOR_ACCEPTANCE";
-                receivedBySupId = supervisor_id || null;
-                
-                if (!receivedBySupId) {
-                    throw new ApiError(400, "Please select a supervisor to hand physical cash to.");
+                if (role === "TICKETER") {
+                    initialStatus = "PENDING_SUPERVISOR_ACCEPTANCE";
+                    receivedBySupId = supervisor_id || null;
+                    if (!receivedBySupId) {
+                        throw new ApiError(400, "Please select a supervisor to hand physical cash to.");
+                    }
+                } else {
+                    // 2. For Supervisors paying by cash, status goes directly to DEPOSITED so the admin can verify it
+                    initialStatus = "DEPOSITED";
+                    receivedBySupId = null;
                 }
             }
+
 
             const newRemittance = await tx.remittance.create({
                 data: {

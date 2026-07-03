@@ -12,11 +12,15 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "/api/supervisor",
     "/api/ticketer",
     "/api/dashboard",
-    "/api/remitance",      // 💡 Allow remittances routing
-    "/api/transaction",    // 💡 Allow transactions routing
+    "/api/remitance",
+    "/api/transaction",
     "/api/locations",
     "/api/reconcile",  
     "/api/sales", 
+    "/api/commision",
+    "/api/admin/commision-earnings",
+    "/api/admin/commision-rules",
+    "/api/fines",
   ],
   AUDITOR: [
     "/dashboard/admin",
@@ -26,11 +30,12 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "/api/supervisor",
     "/api/ticketer",
     "/api/dashboard",
-    "/api/remitance",      // 💡 Allow remittances routing
+    "/api/remitance",
     "/api/transaction",
-    "/api/locations",      // 💡 Allow locations routing
+    "/api/locations",
     "/api/sales", 
-    "/api/reconcile",   
+    "/api/reconcile",  
+    "/api/admin/commision-earnings", 
   ],
   SUPERVISOR: [
     "/dashboard/supervisor",
@@ -39,24 +44,29 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "/api/ticketer",
     "/api/dashboard/metrics",
     "/api/admin/user",
-    "/api/remitance",      // 💡 Allow remittances routing
+    "/api/remitance",
     "/api/transaction",
-    "/api/locations",      // 💡 Allow locations routing
+    "/api/locations",
     "/api/sales",  
     "/api/reconcile", 
+    "/api/admin/commision-earnings",
+    "/api/fines"
   ],
   TICKETER: [
     "/dashboard/ticketer",
     "/api/ticketer",
     "/api/dashboard/metrics",
     "/api/admin/user",
-    "/api/remitance",      // 💡 Allow remittances routing
-    "/api/transaction",    // 💡 Allow transactions routing
-    "/api/locations",      // 💡 Allow locations routing
+    "/api/remitance",
+    "/api/transaction",
+    "/api/locations",
     "/api/sales",  
-    "/api/reconcile",   
+    "/api/reconcile",  
+    "/api/admin/commision-earnings",
+    "/api/fines"
   ],
 };
+
 
 export async function proxy(req: NextRequest) {
   const token = await getToken({ 

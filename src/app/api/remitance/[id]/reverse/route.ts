@@ -16,7 +16,7 @@ export async function PATCH(
     const role = session.user.role;
     const companyId = session.user.company_id;
 
-    if (role !== "ADMIN" && role !== "AUDITOR" && role !== "TICKETER") {
+    if (role !== "ADMIN" && role !== "AUDITOR" && role !== "TICKETER"&& role !== "SUPERVISOR") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
 
@@ -27,12 +27,11 @@ export async function PATCH(
       if (!remittance) throw new ApiError(404, "Remittance not found");
 
       // --- TICKETER CANCELLATION LOGIC ---
-      if (role === "TICKETER") {
+      if (role === "TICKETER" || role === "SUPERVISOR") {
         if (remittance.submitted_by !== userId) throw new ApiError(401, "You can only cancel your own remittance.");
-        if (!["PENDING", "PENDING_SUPERVISOR_ACCEPTANCE"].includes(remittance.status)) {
+        if (!["PENDING", "PENDING_SUPERVISOR_ACCEPTANCE", "DEPOSITED"].includes(remittance.status)) {
           throw new ApiError(400, "You cannot cancel a remittance that has already been processed or accepted.");
         }
-
         
         const cancelled = await tx.remittance.update({
           where: { id: remittanceId,company_id:companyId},
@@ -40,32 +39,45 @@ export async function PATCH(
         });
 
                // Restore expectation status dynamically when cancellation happens
+               let expectation = null;
         if (remittance.pos_session_id) {
-          const expectation = await tx.remittanceExpectation.findUnique({
+          expectation = await tx.remittanceExpectation.findUnique({
             where: { pos_session_id: remittance.pos_session_id, company_id: companyId }
           });
-
-          if (expectation) {
-            const pendingCount = await tx.remittance.count({
-              where: {
-                pos_session_id: remittance.pos_session_id,
-                id: { not: remittanceId },
-                status: "PENDING",
-                company_id: companyId,
-              }
-            });
-
-            const now = new Date();
-            const restoredStatus = pendingCount > 0 
-              ? (expectation.due_date < now ? "OVERDUE" : "SUBMITTED") 
-              : (expectation.due_date < now ? "OVERDUE" : "PENDING");
-
-            await tx.remittanceExpectation.update({
-              where: { id: expectation.id, company_id: companyId },
-              data: { status: restoredStatus }
-            });
-          }
+        } else {
+          expectation = await tx.remittanceExpectation.findFirst({
+            where: {
+              user_id: remittance.submitted_by,
+              pos_session_id: null,
+              status: { in: ["PENDING", "OVERDUE", "VIOLATED", "SUBMITTED"] },
+              company_id: companyId,
+            },
+            orderBy: { created_at: "asc" }
+          });
         }
+
+        if (expectation) {
+          const pendingCount = await tx.remittance.count({
+            where: {
+              pos_session_id: remittance.pos_session_id,
+              submitted_by: remittance.submitted_by,
+              id: { not: remittanceId },
+              status: { in: ["PENDING", "PENDING_SUPERVISOR_ACCEPTANCE", "DEPOSITED"] },
+              company_id: companyId,
+            }
+          });
+
+          const now = new Date();
+          const restoredStatus = pendingCount > 0 
+            ? (expectation.due_date < now ? "OVERDUE" : "SUBMITTED") 
+            : (expectation.due_date < now ? "OVERDUE" : "PENDING");
+
+          await tx.remittanceExpectation.update({
+            where: { id: expectation.id, company_id: companyId },
+            data: { status: restoredStatus }
+          });
+        }
+
 
 
         await tx.auditLog.create({
@@ -113,12 +125,16 @@ export async function PATCH(
         });
 
 
-        // C) Rollback Ticketer's Ledger — restore their debt
+     const sender = await tx.user.findUnique({
+          where: { id: remittance.submitted_by },
+          select: { role: true }
+        });
+        const accountType = sender?.role === "SUPERVISOR" ? "SUPERVISOR" : "TICKETER";
         await tx.float_Ledger.create({
           data: {
-            company_id:companyId,
+            company_id: companyId,
             account_id: remittance.submitted_by,
-            account_type: "TICKETER",
+            account_type: accountType,
             amount: remittance.amount,
             entry_type: "DEBIT",
             reference_type: "REMITTANCE",
@@ -128,25 +144,37 @@ export async function PATCH(
         });
 
              // D) Revert expectation status dynamically when reversal happens
+               let expectation = null;
         if (remittance.pos_session_id) {
-          const expectation = await tx.remittanceExpectation.findUnique({
+          expectation = await tx.remittanceExpectation.findUnique({
             where: { pos_session_id: remittance.pos_session_id, company_id: companyId }
           });
-
-          if (expectation) {
-            const restoredShortage = expectation.shortage_amount + Number(remittance.amount);
-            const now = new Date();
-            const restoredStatus = expectation.due_date < now ? "OVERDUE" : "PENDING";
-
-            await tx.remittanceExpectation.update({
-              where: { id: expectation.id },
-              data: { 
-                status: restoredStatus,
-                shortage_amount: restoredShortage
-              }
-            });
-          }
+        } else {
+          expectation = await tx.remittanceExpectation.findFirst({
+            where: {
+              user_id: remittance.submitted_by,
+              pos_session_id: null,
+              company_id: companyId,
+              status: { in: ["PAID", "PENDING", "OVERDUE", "VIOLATED", "SUBMITTED"] }
+            },
+            orderBy: { created_at: "asc" }
+          });
         }
+
+        if (expectation) {
+          const restoredShortage = Number(expectation.shortage_amount) + Number(remittance.amount);
+          const now = new Date();
+          const restoredStatus = expectation.due_date < now ? "OVERDUE" : "PENDING";
+
+          await tx.remittanceExpectation.update({
+            where: { id: expectation.id },
+            data: { 
+              status: restoredStatus,
+              shortage_amount: restoredShortage
+            }
+          });
+        }
+
 
 
       await tx.auditLog.create({
