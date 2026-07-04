@@ -1,17 +1,18 @@
+// src/app/dashboard/RemittancesPage.tsx
+
 'use client'
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { Banknote, CheckCircle2, Clock, Coins, Plus } from 'lucide-react';
+import { Banknote, CheckCircle2, Clock, Coins, Plus, ChevronRight } from 'lucide-react';
 import StatCard from '@/components/StatCard';
 import { Badge } from '@/components/Badge';
-import { DataTable, type ColumnDef } from '@/components/DataTable';
 import { Drawer } from '@/components/Drawer';
 import { FilterRow, Input, PageScaffold, Select } from '@/components/pageScaffold';
-import { formatDateTime, formatMoney } from '@/lib/utils';
-import { Remittance, User, User_Full_Audit } from '../types/types';
+import { formatMoney } from '@/lib/utils';
+import { Remittance, User } from '../types/types';
 import { toast } from 'react-toastify';
 import Calendar from '@/components/Calender';
-import { useDashboard } from '@/app/dashboard/layout'
+import { useDashboard } from '@/app/dashboard/layout';
 import api from '../lib/axios';
 import axios from 'axios';
 
@@ -19,7 +20,7 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
   const user = (role?.toUpperCase() || 'TICKETER') as 'TICKETER' | 'SUPERVISOR' | 'ADMIN';
 
   const [q, setQ] = useState('');
-  const [status, setStatus] = useState<'ALL' | 'PENDING' | 'CONFIRMED' | 'REJECTED' | 'CANCELLED'>('ALL');
+  const [status, setStatus] = useState<'ALL' | 'PENDING' | 'CONFIRMED' | 'REJECTED' | 'CANCELLED' | 'DEPOSITED'>('ALL');
   const [rows, setRows] = useState<Remittance[]>([]);
   const [team, setTeam] = useState<User[]>([]);
   const [supervisors, setSupervisors] = useState<User[]>([]);
@@ -30,6 +31,8 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
   const [toDate, setToDate] = useState<Date | null>(null);
   const [posSession, setPosSession] = useState<string | null>(null);
   const [totalOutstanding, setTotalOutstanding] = useState(0);
+  const [selectedRemittance, setSelectedRemittance] = useState<Remittance | null>(null);
+
   // 💡 ROLES ENFORCEMENT
   const canSubmit = user === 'TICKETER' || user === 'SUPERVISOR';
   const canVerify = user === 'ADMIN';
@@ -57,17 +60,16 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
       const data = await res.json();
       if (data.success) {
         setRows(data.data);
-        setTotalOutstanding(data.totalOutstanding || 0); // Sets expectation tracking total
+        setTotalOutstanding(data.totalOutstanding || 0);
       }
     } catch (error) {
       console.error(error);
       const errorMessage = error instanceof Error ? error.message : "An error occurred";
       toast.error(errorMessage);
+    } finally {
+      setLoading(false);
     }
-    finally { setLoading(false); }
   }, [fromDate, toDate]);
-
-
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -88,23 +90,27 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
       const errorMessage = e instanceof Error ? e.message : "An error occurred";
       toast.error(errorMessage);
     }
-  }, [user]); // Re-create function only if `user` prop/state changes
-
+  }, [user]);
 
   useEffect(() => {
-    const fetchData = async () => {
-      await fetchRemittances();
-      setPosSession(metrics?.posSessionId || null);
-      await fetchUsers();
-    }
+    let active = true;
+    const timer = setTimeout(() => {
+      if (active) {
+        fetchRemittances();
+        setPosSession(metrics?.posSessionId || null);
+        fetchUsers();
+      }
+    }, 0);
 
-    fetchData();
-
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
   }, [fetchRemittances, fetchUsers, metrics?.posSessionId]);
 
   const submitRemittance = async (amount: number, method: 'CASH' | 'TRANSFER', ticketerId?: string, supervisorId?: string) => {
-    if (role == "TICKETER" && !posSession) {
-      toast.error("pos Session is required");
+    if (role === "TICKETER" && !posSession) {
+      toast.error("POS Session is required");
       return;
     }
     try {
@@ -142,6 +148,7 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
         body: JSON.stringify({ status: actionStatus })
       });
       if (res.ok) {
+        setSelectedRemittance(null);
         fetchRemittances();
         refreshMetrics();
         toast.success(`Remittance ${actionStatus.toLowerCase()} successfully`);
@@ -158,18 +165,15 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
     }
   };
 
-  // 1. Filter pending handovers requiring supervisor verification
+  // Filter pending handovers requiring supervisor verification
   const pendingHandovers = rows.filter(
     (r) => r.status === 'PENDING_SUPERVISOR_ACCEPTANCE'
   );
 
-  // 2. Handler function for supervisor cash count acceptance / dispute
   const handleAccept = async (id: string, action: 'ACCEPT' | 'REJECT') => {
     try {
       setSendingRequest(true);
-      const res = await api.patch(`/remitance/${id}/accept`, {
-        action
-      });
+      const res = await api.patch(`/remitance/${id}/accept`, { action });
       if (res.data.success) {
         fetchRemittances();
         refreshMetrics();
@@ -188,7 +192,6 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
     }
   };
 
-
   const handleReverse = async (id: string) => {
     if (!confirm("Are you sure you want to reverse this? If Admin, logs will update. If Ticketer, this cancels your submission.")) return;
     try {
@@ -198,6 +201,7 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
         headers: { 'Content-Type': 'application/json' }
       });
       if (res.ok) {
+        setSelectedRemittance(null);
         fetchRemittances();
         refreshMetrics();
         toast.success(`Remittance reversed successfully`);
@@ -218,95 +222,30 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
   const totalConfirmed = rows.reduce((acc, r) => r.status === 'CONFIRMED' ? acc + r.amount : acc, 0);
   const totalPending = rows.reduce((acc, r) => r.status === 'PENDING' ? acc + r.amount : acc, 0);
 
-  // Cash vs Transfer breakdown
   const cashTotal = rows.filter(r => r.method === 'CASH' && r.status === 'CONFIRMED')
     .reduce((acc, r) => acc + r.amount, 0);
   const transferTotal = rows.filter(r => r.method === 'TRANSFER' && r.status === 'CONFIRMED')
     .reduce((acc, r) => acc + r.amount, 0);
 
-  // Date label for stat cards
   const dateLabel = (fromDate && toDate)
     ? `${fromDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} → ${toDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}`
     : fromDate
       ? `${fromDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} → ...`
       : "Today";
-  // 💡 Filter out accepted cash from supervisor's main table
+
   const supervisorAcceptedCash = rows.filter((r) => r.status === 'ACCEPTED_BY_SUPERVISOR');
   const tableSourceRows = user === 'SUPERVISOR'
     ? rows.filter((r) => r.status !== 'ACCEPTED_BY_SUPERVISOR')
     : rows;
-  const filtered = tableSourceRows.filter((r) => (status === 'ALL' ? true : r.status === status));
 
-
-
-  // 1. Update columns definition around line 209:
-  const columns: ColumnDef<Remittance>[] = [
-    { id: 'id', header: 'remit_id', cell: (r) => <span className="text-slate-200 font-mono text-xs">{r?.id?.slice(-6)}</span> },
-    { id: 'method', header: 'method', cell: (r) => <Badge variant="info">{r?.method}</Badge>, sortValue: (r) => r.method },
-    { id: 'amount', header: 'amount', align: 'right', sortValue: (r) => r.amount, cell: (r) => <span className="text-white font-mono text-xs font-bold">{formatMoney(r?.amount || 0)}</span> },
-    { id: 'submitted_by', header: 'ticketer', cell: (r) => <span className="text-slate-300 text-xs font-bold">{r?.submitted_by}</span> },
-    { id: 'pos_device', header: 'pos_device', cell: (r) => r?.pos_name ? <span className="text-slate-300 font-mono text-xs">{r.pos_name}</span> : <span className="text-slate-600 text-xs">—</span> },
-    {
-      id: 'ticketer_outstanding',
-      header: 'outstanding_debt',
-      align: 'right',
-      sortValue: (r) => r.ticketer_outstanding || 0,
-      cell: (r) => <span className="text-amber-400 font-mono text-xs font-semibold">{formatMoney(r?.ticketer_outstanding || 0)}</span>
-    },
-    { id: 'status', header: 'status', align: 'center', sortValue: (r) => r.status, cell: (r) => <Badge variant={r?.status === 'CONFIRMED' ? 'success' : r?.status === 'PENDING' ? 'warning' : r?.status === 'REJECTED' ? 'danger' : 'info'}>{r?.status}</Badge> },
-    { id: 'received_by', header: 'received_by', cell: (r) => r?.received_by_supervisor ? <span className="text-cyan-300 text-xs font-bold">{r.received_by_supervisor}</span> : <span className="text-slate-600 text-xs">—</span> },
-    {
-      id: 'actions',
-      header: 'actions',
-      align: 'right',
-      cell: (r) => (
-        <div className="flex justify-end gap-2">
-
-          {/* ADMIN VERIFY BUTTONS: Admin only verifies DEPOSITED cash or PENDING transfers */}
-          {canVerify && (r?.status === 'PENDING' || r?.status === 'DEPOSITED') && (
-
-
-            !r?.is_reconciliation && (
-              <>
-                <button onClick={() => handleVerify(r?.id, 'CONFIRMED')} className="rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 transition-all">
-                  Confirm
-                </button>
-                <button onClick={() => handleVerify(r?.id, 'REJECTED')} className="rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/20 transition-all">
-                  Reject
-                </button>
-              </>
-            )
-          )}
-        
-
-          {/* ADMIN REVERSE BUTTON */}
-
-          {user === 'ADMIN' && (r?.status === 'CONFIRMED' || r?.status === 'REJECTED') && (
-
-            <button
-              onClick={() => handleReverse(r?.id || '')}
-              disabled={sendingRequest}
-              className="rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 border border-amber-500/20 transition-all">
-
-              Reverse
-
-            </button>
-
-          )}
-
-          {/* TICKETER CANCEL BUTTON */}
-          {user === 'TICKETER' && r?.status === 'PENDING' && (
-            <button
-              onClick={() => handleReverse(r?.id || '')}
-              disabled={sendingRequest}
-              className="rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/20 transition-all">
-              Cancel
-            </button>
-          )}
-        </div>
-      )
-    },
-  ];
+  const filtered = tableSourceRows.filter((r) => {
+    const matchesStatus = status === 'ALL' ? true : r.status === status;
+    const matchesSearch = q === '' ? true : (
+      r.id.toLowerCase().includes(q.toLowerCase()) ||
+      r?.submitted_by?.toLowerCase().includes(q.toLowerCase())
+    );
+    return matchesStatus && matchesSearch;
+  });
 
   return (
     <>
@@ -324,6 +263,7 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
                 { value: 'CONFIRMED', label: 'Confirmed' },
                 { value: 'REJECTED', label: 'Rejected' },
                 { value: 'CANCELLED', label: 'Cancelled' },
+                { value: 'DEPOSITED', label: 'Deposited' },
               ]}
             />
             {canSubmit && (
@@ -373,10 +313,7 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
             />
           </div>
         }
-
-
       >
-
         {/* 💡 SUPERVISOR CASH HANDOVER VERIFICATION BANNER */}
         {user === 'SUPERVISOR' && pendingHandovers.length > 0 && (
           <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4 mb-4 backdrop-blur-md">
@@ -415,7 +352,7 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
           </div>
         )}
 
-               {/* 💡 SUPERVISOR TICKETER CASH HOLDINGS (AWAITING BANK DEPOSIT) */}
+        {/* 💡 SUPERVISOR TICKETER CASH HOLDINGS (AWAITING BANK DEPOSIT) */}
         {user === 'SUPERVISOR' && supervisorAcceptedCash.length > 0 && (
           <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/10 p-4 mb-4 backdrop-blur-md">
             <div className="flex items-center justify-between">
@@ -475,8 +412,6 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
           </div>
         )}
 
-
-
         <FilterRow>
           <div className="flex flex-1 items-center gap-3 min-w-0">
             <div className="flex-1 max-w-md">
@@ -499,11 +434,213 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
           </div>
         </FilterRow>
 
-        <DataTable rows={filtered} columns={columns} getRowId={(r) => r.id} searchValue={q} searchPredicate={(r, qq) => r.id.toLowerCase().includes(qq) || r?.submitted_by?.toLowerCase().includes(qq) || false} emptyLabel="No remittance records found." />
+        {loading ? (
+          <div className="text-slate-400 p-8 font-medium">Loading remittance records...</div>
+        ) : filtered.length === 0 ? (
+          <div className="text-center py-10 text-slate-600 text-xs italic">No remittance records found.</div>
+        ) : (
+          <div className="space-y-2">
+            {filtered.map((item: Remittance) => {
+              // 💡 If DEPOSITED, display supervisor who deposited it, otherwise display the ticketer
+              const remitterName = item.status === 'DEPOSITED' && item.received_by_supervisor
+                ? item.received_by_supervisor
+                : item.submitted_by;
+
+              return (
+                <div
+                  key={item.id}
+                  onClick={() => setSelectedRemittance(item)}
+                  className="flex items-center justify-between p-3.5 rounded-2xl bg-white/3 border border-white/5 hover:border-white/10 hover:bg-white/5 transition-all cursor-pointer"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 rounded-xl bg-white/5 border border-white/10">
+                      <Banknote className="size-4 text-cyan-400" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                        {remitterName}
+                        {user === 'ADMIN' && (
+                          <span className="text-[9px] font-mono text-slate-500 font-normal">
+                            #{item.id.slice(-6)}
+                          </span>
+                        )}
+                      </h4>
+                      <p className="text-[10px] text-slate-500 mt-0.5">
+                        {item.created_at ? new Date(item.created_at).toLocaleString() : ''}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <span className="text-xs font-black text-white font-mono">
+                        {formatMoney(item.amount || 0)}
+                      </span>
+                      <span className="block mt-0.5">
+                        <Badge variant={
+                          item.status === 'CONFIRMED' || item.status === 'ACCEPTED_BY_SUPERVISOR'
+                            ? 'success'
+                            : item.status === 'PENDING' || item.status === 'PENDING_SUPERVISOR_ACCEPTANCE'
+                            ? 'warning'
+                            : item.status === 'REJECTED' || item.status === 'REJECTED_BY_SUPERVISOR'
+                            ? 'danger'
+                            : 'info'
+                        }>
+                          {item.status}
+                        </Badge>
+                      </span>
+                    </div>
+                    <ChevronRight className="size-4 text-slate-600" />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </PageScaffold>
 
       <Drawer open={openForm} title="Submit Remittance" subtitle={user === 'SUPERVISOR' ? "Log a cash handover from a ticketer" : "Hand over your cash or log a transfer"} onClose={() => setOpenForm(false)}>
         <RemitForm onSubmit={submitRemittance} role={user} team={team} supervisors={supervisors} posSession={posSession} setposSession={setPosSession} />
+      </Drawer>
+
+      {/* DRAWER: Remittance Details */}
+      <Drawer
+        open={!!selectedRemittance}
+        title="Remittance Details"
+        subtitle="Receipt and status verification"
+        onClose={() => setSelectedRemittance(null)}
+      >
+        {selectedRemittance && (
+          <div className="space-y-6">
+            <div className="p-4 rounded-xl bg-white/3 border border-white/5 space-y-4">
+              <div className="flex justify-between items-center border-b border-white/5 pb-3">
+                <div>
+                  <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest block">Amount</label>
+                  <span className="text-lg font-black text-white font-mono mt-1 block">
+                    {formatMoney(selectedRemittance.amount || 0)}
+                  </span>
+                </div>
+                <Badge variant={
+                  selectedRemittance.status === 'CONFIRMED' || selectedRemittance.status === 'ACCEPTED_BY_SUPERVISOR'
+                    ? 'success'
+                    : selectedRemittance.status === 'PENDING' || selectedRemittance.status === 'PENDING_SUPERVISOR_ACCEPTANCE'
+                    ? 'warning'
+                    : selectedRemittance.status === 'REJECTED' || selectedRemittance.status === 'REJECTED_BY_SUPERVISOR'
+                    ? 'danger'
+                    : 'info'
+                }>
+                  {selectedRemittance.status}
+                </Badge>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest block">Submitted By</label>
+                  <span className="text-xs font-semibold text-slate-200 mt-1 block">{selectedRemittance.submitted_by}</span>
+                </div>
+                <div>
+                  <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest block">Method</label>
+                  <span className="text-xs font-semibold text-slate-200 mt-1 block">{selectedRemittance.method}</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 pt-2 border-t border-white/5">
+                <div>
+                  <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest block">Supervisor Receiver</label>
+                  <span className="text-xs text-slate-300 mt-1 block">
+                    {selectedRemittance.received_by_supervisor || '—'}
+                  </span>
+                </div>
+                <div>
+                  <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest block">POS Device Session</label>
+                  <span className="text-xs text-slate-300 mt-1 block font-mono">
+                    {selectedRemittance.pos_name || '—'}
+                  </span>
+                </div>
+              </div>
+
+              {selectedRemittance.ticketer_outstanding !== undefined && (
+                <div className="grid grid-cols-2 gap-4 pt-2 border-t border-white/5">
+                  <div>
+                    <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest block">Outstanding Debt</label>
+                    <span className="text-xs text-amber-400 font-mono font-bold mt-1 block">
+                      {formatMoney(selectedRemittance.ticketer_outstanding)}
+                    </span>
+                  </div>
+                  <div>
+                    <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest block">Payment Reference</label>
+                    <span className="text-xs text-slate-300 mt-1 block font-mono break-all">
+                      {selectedRemittance.proof_ref || '—'}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-4 pt-2 border-t border-white/5">
+                <div>
+                  <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest block">Submitted At</label>
+                  <span className="text-xs text-slate-400 mt-1 block">
+                    {selectedRemittance.created_at ? new Date(selectedRemittance.created_at).toLocaleString() : ''}
+                  </span>
+                </div>
+                {user === 'ADMIN' && (
+                  <div>
+                    <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest block">Remittance ID</label>
+                    <span className="text-[10px] font-mono text-slate-400 mt-1 block break-all">
+                      {selectedRemittance.id}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* ACTION BUTTONS */}
+            <div className="flex flex-col gap-2 pt-2">
+              {/* ADMIN VERIFY BUTTONS */}
+              {canVerify && (selectedRemittance.status === 'PENDING' || selectedRemittance.status === 'DEPOSITED') && (
+                !selectedRemittance.is_reconciliation && (
+                  <div className="flex gap-2 w-full">
+                    <button
+                      onClick={() => handleVerify(selectedRemittance.id, 'CONFIRMED')}
+                      disabled={sendingRequest}
+                      className="flex-1 rounded-xl py-3 text-xs font-bold uppercase tracking-widest bg-emerald-500 text-black hover:bg-emerald-400 active:scale-[0.99] transition-all disabled:opacity-50"
+                    >
+                      Confirm Remittance
+                    </button>
+                    <button
+                      onClick={() => handleVerify(selectedRemittance.id, 'REJECTED')}
+                      disabled={sendingRequest}
+                      className="flex-1 rounded-xl py-3 text-xs font-bold uppercase tracking-widest bg-rose-500 text-white hover:bg-rose-400 active:scale-[0.99] transition-all disabled:opacity-50"
+                    >
+                      Reject Remittance
+                    </button>
+                  </div>
+                )
+              )}
+
+              {/* ADMIN REVERSE BUTTON */}
+              {user === 'ADMIN' && (selectedRemittance.status === 'CONFIRMED' || selectedRemittance.status === 'REJECTED') && (
+                <button
+                  onClick={() => handleReverse(selectedRemittance.id)}
+                  disabled={sendingRequest}
+                  className="w-full rounded-xl py-3 text-xs font-bold uppercase tracking-widest bg-amber-500 text-black hover:bg-amber-400 active:scale-[0.99] transition-all disabled:opacity-50"
+                >
+                  Reverse Transaction
+                </button>
+              )}
+
+              {/* TICKETER CANCEL BUTTON */}
+              {user === 'TICKETER' && selectedRemittance.status === 'PENDING' && (
+                <button
+                  onClick={() => handleReverse(selectedRemittance.id)}
+                  disabled={sendingRequest}
+                  className="w-full rounded-xl py-3 text-xs font-bold uppercase tracking-widest bg-rose-500 text-white hover:bg-rose-400 active:scale-[0.99] transition-all disabled:opacity-50"
+                >
+                  Cancel Submission
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </Drawer>
     </>
   );
@@ -515,12 +652,11 @@ function RemitForm({ onSubmit, role, team, supervisors, posSession, setposSessio
   const [method, setMethod] = useState<'CASH' | 'TRANSFER'>('CASH');
   const [ticketerId, setTicketerId] = useState('');
   const [supervisorId, setSupervisorId] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false); // 💡 NEW: Track loading state
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async () => {
     setIsSubmitting(true);
     await onSubmit(Number(amount || 0), method, ticketerId, supervisorId);
-    // If the modal doesn't close immediately, keep it disabled until it does
     setIsSubmitting(false);
     setAmount('');
     setSupervisorId('');
@@ -530,7 +666,6 @@ function RemitForm({ onSubmit, role, team, supervisors, posSession, setposSessio
   return (
     <div className="space-y-4">
       <div className="glass-panel rounded-2xl border border-white/5 p-4">
-
         {/* SUPERVISOR SELECTING TICKETER */}
         {role === 'SUPERVISOR' && (
           <div className="mb-4">
@@ -574,21 +709,17 @@ function RemitForm({ onSubmit, role, team, supervisors, posSession, setposSessio
           </div>
         }
 
-
         <label className="mt-4 block text-slate-500 text-[10px] font-bold uppercase tracking-widest">Amount (NGN)</label>
         <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="e.g. 50000" type="number" className="mt-2 w-full rounded-xl bg-white/3 border border-white/10 px-4 py-2.5 text-sm text-white outline-none" />
       </div>
 
       <button
         onClick={handleSubmit}
-        suppressHydrationWarning
         disabled={isSubmitting || (role === 'SUPERVISOR' && !ticketerId) || (role === 'TICKETER' && method === 'CASH' && !supervisorId) || (role === 'TICKETER' && !posSession)}
         className="w-full rounded-xl bg-linear-to-r from-cyan-400 to-blue-400 text-black py-3 text-sm font-bold tracking-tight active:scale-[0.99] disabled:opacity-50"
       >
         {isSubmitting ? "Submitting..." : "Submit remittance"}
       </button>
-
     </div>
   );
 }
-

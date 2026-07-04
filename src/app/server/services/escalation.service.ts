@@ -3,6 +3,17 @@ import { prisma } from "@/lib/prisma";
 export async function checkAndEscalateExpectations(companyId: string) {
   const now = new Date();
 
+  // Find shortage rule for grace period and fine amount
+  const shortageRule = await prisma.companyRule.findFirst({
+    where: {
+      company_id: companyId,
+      target_field: "shortage_amount",
+      is_active: true
+    }
+  });
+
+  const graceHours = shortageRule ? shortageRule.comparison_value : 24;
+
   // Find all unresolved expectations
   const expectations = await prisma.remittanceExpectation.findMany({
     where: {
@@ -26,11 +37,11 @@ export async function checkAndEscalateExpectations(companyId: string) {
 
     const dueDate = new Date(exp.due_date);
     
-    // Violation threshold: 24h after POS session allocation started
+    // Violation threshold: Custom grace hours after POS session allocation started
     const sessionAssignedAt = exp.pos_session?.assigned_at 
       ? new Date(exp.pos_session.assigned_at) 
       : new Date(exp.created_at);
-    const violationDate = new Date(sessionAssignedAt.getTime() + 24 * 60 * 60 * 1000);
+    const violationDate = new Date(sessionAssignedAt.getTime() + graceHours * 60 * 60 * 1000);
 
     let targetStatus: "OVERDUE" | "VIOLATED" | null = null;
 
@@ -54,7 +65,6 @@ export async function checkAndEscalateExpectations(companyId: string) {
           data: { status: targetStatus }
         });
 
-        // Resolve system administrator to log the escalation
         const adminUser = await tx.user.findFirst({
           where: { company_id: companyId, role: "ADMIN" }
         });
@@ -87,18 +97,15 @@ export async function checkAndEscalateExpectations(companyId: string) {
           });
 
           if (!existingFine) {
-            // Fine amount: 10% of the shortage or flat 500, whichever is greater
-            const fineAmount = Math.max(500, shortageAmount * 0.1);
-
-            // here we have to not add the amount automatically instead we 
-            // create the fine and reason admin/supervisor input the amount 
+            // Fine amount: Set from configured shortage rule (falls back to null for manual adjustment)
+            const fineAmount = shortageRule ? shortageRule.fine_amount : null;
 
             await tx.fine.create({
               data: {
                 company_id: companyId,
                 defaulter_id: exp.user_id,
                 issued_by: systemUserId,
-                amount: null,
+                amount: fineAmount,
                 reason: fineReason,
                 status: "UNPAID"
               }
@@ -110,14 +117,20 @@ export async function checkAndEscalateExpectations(companyId: string) {
   }
 }
 
-
-
-
-
 export async function checkSupervisorDepositViolations(companyId: string) {
   const now = new Date();
-  // 24 hours threshold to deposit cash accepted from ticketers
-  const depositDeadlineMs = 24 * 60 * 60 * 1000; 
+  
+  // Find active deposit rule for grace period and fine amount
+  const depositRule = await prisma.companyRule.findFirst({
+    where: {
+      company_id: companyId,
+      target_field: "deposit_delay",
+      is_active: true
+    }
+  });
+
+  const graceHours = depositRule ? depositRule.comparison_value : 24;
+  const depositDeadlineMs = graceHours * 60 * 60 * 1000; 
 
   const pendingDeposits = await prisma.remittance.findMany({
     where: {
@@ -141,7 +154,6 @@ export async function checkSupervisorDepositViolations(companyId: string) {
           where: { id: remit.id }
         });
         
-        // Double-check it has not changed status since the initial check
         if (!currentRemit || currentRemit.status !== "ACCEPTED_BY_SUPERVISOR") {
           return;
         }
@@ -162,13 +174,15 @@ export async function checkSupervisorDepositViolations(companyId: string) {
           });
           const systemUserId = adminUser ? adminUser.id : remit.received_by_supervisor_id!;
 
-          // Create the Fine record for the supervisor (set amount to null for Admin adjustment)
+          // Fine amount: Set from configured deposit rule (falls back to null for manual adjustment)
+          const fineAmount = depositRule ? depositRule.fine_amount : null;
+
           await tx.fine.create({
             data: {
               company_id: companyId,
               defaulter_id: remit.received_by_supervisor_id!,
               issued_by: systemUserId,
-              amount: null,
+              amount: fineAmount,
               reason: fineReason,
               status: "UNPAID"
             }
@@ -193,4 +207,3 @@ export async function checkSupervisorDepositViolations(companyId: string) {
     }
   }
 }
-

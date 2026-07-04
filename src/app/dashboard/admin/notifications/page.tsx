@@ -1,3 +1,5 @@
+'use client'
+
 import NotificationsPage from "../../NotificationPage";
 import { useSession } from "next-auth/react";
 

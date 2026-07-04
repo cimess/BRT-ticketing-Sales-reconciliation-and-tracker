@@ -1,13 +1,12 @@
 // src/app/dashboard/AdminRolesPage.tsx
 "use client";
 import { useState, useEffect } from "react";
-import { ShieldCheck, Plus, Trash2, ToggleLeft, ToggleRight, Sparkles, BookOpen, AlertCircle } from "lucide-react";
+import { ShieldCheck, ToggleLeft, ToggleRight, Sparkles, BookOpen, AlertCircle } from "lucide-react";
 import StatCard from "../../components/StatCard";
-import { PageScaffold, FilterRow, Input } from "../../components/pageScaffold";
-import { Badge } from "../../components/Badge";
+import { PageScaffold } from "../../components/pageScaffold";
 import { useSession } from "next-auth/react";
 import api from "../lib/axios";
-import axios from "axios";
+import { Drawer } from "../../components/Drawer";
 
 interface CommissionRule {
   id: string;
@@ -36,21 +35,28 @@ export default function AdminRolesPage() {
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Form States for Commission Rule
+  // Commission Form States
   const [commRole, setCommRole] = useState("TICKETER");
   const [commPercentage, setCommPercentage] = useState("");
   const [commFixed, setCommFixed] = useState("");
+  const [isCommDrawerOpen, setIsCommDrawerOpen] = useState(false);
 
-  // Form States for Company (Fine) Rule
-  const [ruleName, setRuleName] = useState("");
-  const [ruleDesc, setRuleDesc] = useState("");
-  const [ruleTrigger, setRuleTrigger] = useState("ON_REPORT_SUBMISSION");
-  const [ruleField, setRuleField] = useState("shortage_amount");
-  const [ruleOperator, setRuleOperator] = useState(">");
+  // Fine Rules Form States
   const [ruleValue, setRuleValue] = useState("");
   const [ruleFine, setRuleFine] = useState("");
-
-  const [showRuleModal, setShowRuleModal] = useState(false);
+  const [isRuleDrawerOpen, setIsRuleDrawerOpen] = useState(false);
+  const [selectedRule, setSelectedRule] = useState<{
+    id?: string;
+    name: string;
+    description: string;
+    trigger: string;
+    target_field: string;
+    operator: string;
+    comparison_value: number;
+    fine_amount: number;
+    is_active: boolean;
+    graceLabel: string;
+  } | null>(null);
 
   useEffect(() => {
     async function loadRulesAndCommissions() {
@@ -58,10 +64,10 @@ export default function AdminRolesPage() {
       setErrorMsg(null);
       try {
         const [commRes, ruleRes] = await Promise.all([
-          api.get("/admin/commissions"),
+          api.get("/admin/commision-rules"),
           api.get("/admin/rules"),
         ]);
-        if (commRes.data.success) setCommissions(commRes.data.data);
+        if (commRes.data.success) setCommissions(commRes.data.rules);
         if (ruleRes.data.success) setRules(ruleRes.data.data);
       } catch (err) {
         setErrorMsg("Failed to fetch settings data.");
@@ -78,58 +84,66 @@ export default function AdminRolesPage() {
     e.preventDefault();
     setErrorMsg(null);
     try {
-      const res = await api.post("/admin/commissions", {
+      const res = await api.post("/admin/commision-rules", {
         role: commRole,
-        percentage: commPercentage ? parseFloat(commPercentage) / 100 : null,
-        fixed_amount: commFixed ? parseFloat(commFixed) : null,
+        percentage: commPercentage ? parseFloat(commPercentage) : null,
+        fixedAmount: commFixed ? parseFloat(commFixed) : null,
       });
       if (res.data.success) {
         setCommissions((prev) => {
           const filtered = prev.filter((c) => c.role !== commRole);
-          return [...filtered, res.data.data];
+          return [...filtered, res.data.rule];
         });
-        setCommPercentage("");
-        setCommFixed("");
+        setIsCommDrawerOpen(false);
       }
     } catch (err) {
       setErrorMsg("Failed to save commission rate.");
     }
   };
 
-  const handleToggleCommission = async (id: string, active: boolean) => {
-    try {
-      const res = await api.put(`/admin/commissions/${id}`, { is_active: !active });
-      if (res.data.success) {
-        setCommissions((prev) => prev.map((c) => (c.id === id ? { ...c, is_active: !active } : c)));
-      }
-    } catch (err) {
-      setErrorMsg("Failed to toggle commission rule status.");
-    }
-  };
-
-  const handleCreateRule = async (e: React.FormEvent) => {
+  const handleUpdateRule = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedRule) return;
     setErrorMsg(null);
+
     try {
-      const res = await api.post("/admin/rules", {
-        name: ruleName,
-        description: ruleDesc,
-        trigger: ruleTrigger,
-        target_field: ruleField,
-        operator: ruleOperator,
-        comparison_value: parseFloat(ruleValue),
-        fine_amount: parseFloat(ruleFine),
-      });
-      if (res.data.success) {
-        setRules((prev) => [res.data.data, ...prev]);
-        setShowRuleModal(false);
-        setRuleName("");
-        setRuleDesc("");
-        setRuleValue("");
-        setRuleFine("");
+      const grace = parseFloat(ruleValue);
+      const fine = parseFloat(ruleFine);
+
+      if (selectedRule.id) {
+        // Update existing rule settings
+        const res = await api.put(`/admin/rules/${selectedRule.id}`, {
+          is_active: selectedRule.is_active,
+          comparison_value: grace,
+          fine_amount: fine
+        });
+        if (res.data.success) {
+          setRules(prev => prev.map(r => r.id === selectedRule.id ? { 
+            ...r, 
+            comparison_value: grace, 
+            fine_amount: fine, 
+            is_active: selectedRule.is_active 
+          } : r));
+          setIsRuleDrawerOpen(false);
+        }
+      } else {
+        // Create new rule from template
+        const res = await api.post("/admin/rules", {
+          name: selectedRule.name,
+          description: selectedRule.description,
+          trigger: selectedRule.trigger,
+          target_field: selectedRule.target_field,
+          operator: selectedRule.operator,
+          comparison_value: grace,
+          fine_amount: fine
+        });
+        if (res.data.success) {
+          setRules(prev => [...prev, res.data.data]);
+          setIsRuleDrawerOpen(false);
+        }
       }
     } catch (err) {
-      setErrorMsg("Failed to create automated fine policy.");
+      setErrorMsg("Failed to update policy settings.");
     }
   };
 
@@ -141,18 +155,6 @@ export default function AdminRolesPage() {
       }
     } catch (err) {
       setErrorMsg("Failed to toggle policy status.");
-    }
-  };
-
-  const handleDeleteRule = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this rule?")) return;
-    try {
-      const res = await api.delete(`/admin/rules/${id}`);
-      if (res.data.success) {
-        setRules((prev) => prev.filter((r) => r.id !== id));
-      }
-    } catch (err) {
-      setErrorMsg("Failed to delete policy.");
     }
   };
 
@@ -176,244 +178,230 @@ export default function AdminRolesPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Commission Setting Box */}
-        <div className="glass-panel rounded-2xl border border-white/5 p-5 space-y-4 bg-slate-900/40 lg:col-span-1">
-          <p className="text-white text-sm font-bold border-b border-white/5 pb-2 uppercase tracking-wider text-slate-400">Commission Rates</p>
-          <form onSubmit={handleSaveCommission} className="space-y-3">
-            <div>
-              <label className="text-[11px] text-slate-400 font-bold uppercase block mb-1">Target Role</label>
-              <select
-                value={commRole}
-                onChange={(e) => setCommRole(e.target.value)}
-                className="w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
-              >
-                <option value="TICKETER">Ticketer</option>
-                <option value="SUPERVISOR">Supervisor</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-[11px] text-slate-400 font-bold uppercase block mb-1">Percentage rate (%)</label>
-              <input
-                type="number"
-                step="0.01"
-                placeholder="e.g. 1.5"
-                value={commPercentage}
-                onChange={(e) => setCommPercentage(e.target.value)}
-                className="w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
-              />
-            </div>
-            <div>
-              <label className="text-[11px] text-slate-400 font-bold uppercase block mb-1">Or Fixed Shift Amount (₦)</label>
-              <input
-                type="number"
-                placeholder="e.g. 1000"
-                value={commFixed}
-                onChange={(e) => setCommFixed(e.target.value)}
-                className="w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
-              />
-            </div>
-            <button
-              type="submit"
-              className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold uppercase rounded-xl transition"
-            >
-              Update Payout Rule
-            </button>
-          </form>
-
-          {/* Current commissions list */}
-          <div className="space-y-2 pt-2">
-            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Configured Rates</p>
-            {loading ? (
-              <p className="text-xs text-slate-500">Loading...</p>
-            ) : commissions.length === 0 ? (
-              <p className="text-xs text-slate-600 italic">No commission definitions found.</p>
-            ) : (
-              commissions.map((comm) => (
-                <div key={comm.id} className="flex justify-between items-center bg-black/20 p-2.5 rounded-xl border border-white/5">
-                  <div>
-                    <span className="text-xs font-bold text-slate-300">{comm.role}</span>
-                    <span className="text-[10px] text-slate-500 block">
-                      {comm.percentage ? `${(comm.percentage * 100).toFixed(2)}%` : `₦${comm.fixed_amount}`}
-                    </span>
+      {loading ? (
+        <p className="p-4 text-xs text-slate-500">Loading settings...</p>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Commission Rules Card */}
+          <div className="glass-panel rounded-2xl border border-white/5 p-5 space-y-4 bg-slate-900/40 lg:col-span-1">
+            <p className="text-white text-sm font-bold border-b border-white/5 pb-2 uppercase tracking-wider text-slate-400">Commission Rates</p>
+            <div className="space-y-3">
+              {["TICKETER", "SUPERVISOR"].map((role) => {
+                const activeComm = commissions.find(c => c.role === role && c.is_active);
+                return (
+                  <div 
+                    key={role}
+                    onClick={() => {
+                      setCommRole(role);
+                      setCommPercentage(activeComm?.percentage ? String(activeComm.percentage) : "");
+                      setCommFixed(activeComm?.fixed_amount ? String(activeComm.fixed_amount) : "");
+                      setIsCommDrawerOpen(true);
+                    }}
+                    className="group rounded-xl border border-white/5 bg-black/20 p-4 transition cursor-pointer hover:border-indigo-500/30 hover:bg-indigo-500/5"
+                  >
+                    <div className="flex justify-between items-center">
+                      <span className="font-bold text-slate-200 text-xs uppercase tracking-wider">{role === "TICKETER" ? "Ticketer" : "Supervisor"}</span>
+                      <span className="text-[10px] text-indigo-400 group-hover:text-indigo-300 font-semibold uppercase tracking-wider">Configure &rarr;</span>
+                    </div>
+                    <p className="text-sm font-semibold text-white mt-2">
+                      {activeComm?.percentage && activeComm?.fixed_amount
+                        ? `${activeComm.percentage.toFixed(2)}% + ₦${Number(activeComm.fixed_amount).toLocaleString()} flat`
+                        : activeComm?.percentage
+                          ? `${activeComm.percentage.toFixed(2)}% of total sales`
+                          : activeComm?.fixed_amount
+                            ? `₦${Number(activeComm.fixed_amount).toLocaleString()} flat per shift`
+                            : "No payout rule configured"}
+                    </p>
                   </div>
-                  <button onClick={() => handleToggleCommission(comm.id, comm.is_active)}>
-                    {comm.is_active ? (
-                      <ToggleRight className="w-6 h-6 text-emerald-400" />
-                    ) : (
-                      <ToggleLeft className="w-6 h-6 text-slate-600" />
-                    )}
-                  </button>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* Fines Rules Table Box */}
-        <div className="glass-panel rounded-2xl border border-white/5 p-5 space-y-4 bg-slate-900/40 lg:col-span-2">
-          <div className="flex justify-between items-center border-b border-white/5 pb-2">
-            <p className="text-white text-sm font-bold uppercase tracking-wider text-slate-400">Automated Fines policies</p>
-            <button
-              onClick={() => setShowRuleModal(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold uppercase rounded-xl transition"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Add Policy
-            </button>
-          </div>
-
-          <div className="overflow-x-auto rounded-xl border border-white/5 bg-black/20">
-            {loading ? (
-              <p className="p-4 text-xs text-slate-500">Loading...</p>
-            ) : rules.length === 0 ? (
-              <div className="p-8 text-center text-xs text-slate-500 italic">No automated fine rules are active yet.</div>
-            ) : (
-              <table className="w-full text-xs text-slate-300">
-                <thead>
-                  <tr className="border-b border-white/10 bg-white/5 text-left text-slate-400 uppercase tracking-widest text-[9px] font-bold">
-                    <th className="px-3 py-2.5">Policy Name</th>
-                    <th className="px-3 py-2.5">Condition</th>
-                    <th className="px-3 py-2.5">Penalty</th>
-                    <th className="px-3 py-2.5 text-center">Status</th>
-                    <th className="px-3 py-2.5 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rules.map((rule) => (
-                    <tr key={rule.id} className="border-b border-white/5 hover:bg-white/5 transition">
-                      <td className="px-3 py-3">
-                        <span className="font-semibold text-slate-200 block">{rule.name}</span>
-                        <span className="text-[10px] text-slate-500 block truncate max-w-xs">{rule.description || "No description"}</span>
-                      </td>
-                      <td className="px-3 py-3 font-mono text-[10px]">
-                        <span className="text-emerald-400">{rule.trigger}</span>: {rule.target_field} {rule.operator} {rule.comparison_value}
-                      </td>
-                      <td className="px-3 py-3 text-red-300 font-semibold">₦{rule.fine_amount.toLocaleString()}</td>
-                      <td className="px-3 py-3 text-center">
-                        <button onClick={() => handleToggleRule(rule.id, rule.is_active)}>
-                          {rule.is_active ? (
-                            <ToggleRight className="w-6 h-6 text-emerald-400" />
-                          ) : (
-                            <ToggleLeft className="w-6 h-6 text-slate-600" />
-                          )}
-                        </button>
-                      </td>
-                      <td className="px-3 py-3 text-right">
-                        <button
-                          onClick={() => handleDeleteRule(rule.id)}
-                          className="p-1 rounded bg-red-500/10 hover:bg-red-500/20 text-red-400"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Slide-over Modal Dialog for Fine Rule */}
-      {showRuleModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md bg-slate-900 border border-white/10 rounded-2xl p-5 space-y-4 shadow-2xl">
-            <div className="flex justify-between items-center border-b border-white/5 pb-2">
-              <span className="text-white font-bold text-sm">Create New Auto-Fine Policy</span>
-              <button onClick={() => setShowRuleModal(false)} className="text-slate-500 hover:text-white text-xs">Cancel</button>
+                );
+              })}
             </div>
-            <form onSubmit={handleCreateRule} className="space-y-3">
-              <div>
-                <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Policy name</label>
-                <input
-                  required
-                  type="text"
-                  placeholder="e.g. Shortage Penalty"
-                  value={ruleName}
-                  onChange={(e) => setRuleName(e.target.value)}
-                  className="w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Trigger Event</label>
-                <select
-                  value={ruleTrigger}
-                  onChange={(e) => setRuleTrigger(e.target.value)}
-                  className="w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
-                >
-                  <option value="ON_REPORT_SUBMISSION">On Sales Report Submission</option>
-                  <option value="ON_SHIFT_VERIFICATION">On Shift Verification</option>
-                </select>
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                <div className="col-span-1">
-                  <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Field</label>
-                  <select
-                    value={ruleField}
-                    onChange={(e) => setRuleField(e.target.value)}
-                    className="w-full rounded-xl bg-white/5 border border-white/10 px-2 py-2 text-xs text-white focus:outline-none"
+          </div>
+
+          {/* Fines Rules Table Box */}
+          <div className="glass-panel rounded-2xl border border-white/5 p-5 space-y-4 bg-slate-900/40 lg:col-span-2">
+            <div className="border-b border-white/5 pb-2">
+              <p className="text-white text-sm font-bold uppercase tracking-wider text-slate-400">Automated Fines policies</p>
+            </div>
+
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
+              {[
+                {
+                  target_field: "hours_late_submitting",
+                  trigger: "ON_REPORT_SUBMISSION",
+                  operator: ">",
+                  name: "Late Report Submission Policy",
+                  description: "Fines ticketers who submit reports late after shift closing time.",
+                  defaultGrace: 2,
+                  defaultFine: 500,
+                  graceLabel: "Grace Period (Hours)",
+                },
+                {
+                  target_field: "shortage_amount",
+                  trigger: "ON_REPORT_SUBMISSION",
+                  operator: ">",
+                  name: "Shortage Remittance Policy",
+                  description: "Fines ticketers when remittance expectation is overdue.",
+                  defaultGrace: 24,
+                  defaultFine: 1000,
+                  graceLabel: "Grace Period (Hours)",
+                },
+                {
+                  target_field: "deposit_delay",
+                  trigger: "ON_SHIFT_VERIFICATION",
+                  operator: ">",
+                  name: "Late Bank Deposit Policy",
+                  description: "Fines supervisors who delay depositing accepted cash.",
+                  defaultGrace: 24,
+                  defaultFine: 1000,
+                  graceLabel: "Grace Period (Hours)",
+                }
+              ].map((policy) => {
+                const rule = rules.find(r => r.target_field === policy.target_field);
+                const isActive = rule?.is_active ?? false;
+
+                return (
+                  <div 
+                    key={policy.target_field} 
+                    onClick={() => {
+                      setSelectedRule({
+                        id: rule?.id,
+                        name: policy.name,
+                        description: policy.description,
+                        trigger: policy.trigger,
+                        target_field: policy.target_field,
+                        operator: policy.operator,
+                        comparison_value: rule ? rule.comparison_value : policy.defaultGrace,
+                        fine_amount: rule ? rule.fine_amount : policy.defaultFine,
+                        is_active: isActive,
+                        graceLabel: policy.graceLabel
+                      });
+                      setRuleValue(rule ? String(rule.comparison_value) : String(policy.defaultGrace));
+                      setRuleFine(rule ? String(rule.fine_amount) : String(policy.defaultFine));
+                      setIsRuleDrawerOpen(true);
+                    }}
+                    className="group rounded-2xl border border-white/5 bg-black/20 p-4 space-y-3 transition cursor-pointer hover:border-indigo-500/30 hover:bg-indigo-500/5 flex flex-col justify-between"
                   >
-                    <option value="shortage_amount">shortage</option>
-                    <option value="variance">variance</option>
-                    <option value="total_sold">sales</option>
-                  </select>
-                </div>
-                <div className="col-span-1">
-                  <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Operator</label>
-                  <select
-                    value={ruleOperator}
-                    onChange={(e) => setRuleOperator(e.target.value)}
-                    className="w-full rounded-xl bg-white/5 border border-white/10 px-2 py-2 text-xs text-white focus:outline-none"
-                  >
-                    <option value=">">&gt;</option>
-                    <option value=">=">&gt;=</option>
-                    <option value="==">==</option>
-                  </select>
-                </div>
-                <div className="col-span-1">
-                  <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Threshold Value</label>
-                  <input
-                    required
-                    type="number"
-                    placeholder="e.g. 500"
-                    value={ruleValue}
-                    onChange={(e) => setRuleValue(e.target.value)}
-                    className="w-full rounded-xl bg-white/5 border border-white/10 px-2 py-2 text-xs text-white focus:outline-none"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Auto fine Amount (₦)</label>
-                <input
-                  required
-                  type="number"
-                  placeholder="e.g. 1000"
-                  value={ruleFine}
-                  onChange={(e) => setRuleFine(e.target.value)}
-                  className="w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Description</label>
-                <textarea
-                  value={ruleDesc}
-                  onChange={(e) => setRuleDesc(e.target.value)}
-                  className="w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 resize-none h-14"
-                  placeholder="Reason for issuance..."
-                />
-              </div>
-              <button
-                type="submit"
-                className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold uppercase rounded-xl transition"
-              >
-                Activate fine rule
-              </button>
-            </form>
+                    <div className="space-y-1">
+                      <div className="flex justify-between items-start gap-2">
+                        <span className="font-bold text-slate-200 text-sm block">{policy.name}</span>
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${isActive ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-500/10 text-slate-400 border border-slate-500/20'}`}>
+                          {isActive ? "Active" : "Disabled"}
+                        </span>
+                      </div>
+                      <span className="text-[11px] text-slate-500 block leading-relaxed">{policy.description}</span>
+                    </div>
+
+                    <div className="flex justify-between items-center pt-3 border-t border-white/5 text-[10px]">
+                      <span className="text-slate-400 font-semibold uppercase tracking-wider">Configure &rarr;</span>
+                      {rule && (
+                        <span className="text-slate-300 font-mono">
+                          {rule.comparison_value}h grace • ₦{rule.fine_amount.toLocaleString()} fine
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}
+
+      {/* Commission Rate Edit Drawer */}
+      <Drawer
+        open={isCommDrawerOpen}
+        title={`Configure ${commRole === "TICKETER" ? "Ticketer" : "Supervisor"} Commission`}
+        subtitle="Set the reward percentages or flat payout rates per shift"
+        onClose={() => setIsCommDrawerOpen(false)}
+      >
+        <form onSubmit={handleSaveCommission} className="space-y-4">
+          <div>
+            <label className="text-[11px] text-slate-400 font-bold uppercase block mb-1">Percentage rate (%)</label>
+            <input
+              type="number"
+              step="0.01"
+              placeholder="e.g. 1.5"
+              value={commPercentage}
+              onChange={(e) => setCommPercentage(e.target.value)}
+              className="w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+          <div>
+            <label className="text-[11px] text-slate-400 font-bold uppercase block mb-1">Or Fixed Shift Amount (₦)</label>
+            <input
+              type="number"
+              placeholder="e.g. 1000"
+              value={commFixed}
+              onChange={(e) => setCommFixed(e.target.value)}
+              className="w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+          <button
+            type="submit"
+            className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold uppercase rounded-xl transition"
+          >
+            Save Rate Settings
+          </button>
+        </form>
+      </Drawer>
+
+      {/* Automated Fine Policy Edit Drawer */}
+      <Drawer
+        open={isRuleDrawerOpen && selectedRule !== null}
+        title={selectedRule?.name || "Configure Policy"}
+        subtitle={selectedRule?.description || ""}
+        onClose={() => setIsRuleDrawerOpen(false)}
+      >
+        {selectedRule && (
+          <form onSubmit={handleUpdateRule} className="space-y-4">
+            <div className="flex justify-between items-center rounded-xl bg-white/5 border border-white/10 p-3">
+              <span className="text-xs text-slate-300 font-bold uppercase">Policy Active Status</span>
+              <button
+                type="button"
+                onClick={() => setSelectedRule(prev => prev ? { ...prev, is_active: !prev.is_active } : null)}
+                className="focus:outline-none"
+              >
+                {selectedRule.is_active ? (
+                  <ToggleRight className="w-8 h-8 text-emerald-400" />
+                ) : (
+                  <ToggleLeft className="w-8 h-8 text-slate-600" />
+                )}
+              </button>
+            </div>
+
+            <div>
+              <label className="text-[11px] text-slate-400 font-bold uppercase block mb-1">{selectedRule.graceLabel}</label>
+              <input
+                required
+                type="number"
+                step="0.5"
+                value={ruleValue}
+                onChange={(e) => setRuleValue(e.target.value)}
+                className="w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+
+            <div>
+              <label className="text-[11px] text-slate-400 font-bold uppercase block mb-1">Fine Penalty (₦)</label>
+              <input
+                required
+                type="number"
+                value={ruleFine}
+                onChange={(e) => setRuleFine(e.target.value)}
+                className="w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+
+            <button
+              type="submit"
+              className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold uppercase rounded-xl transition"
+            >
+              Save Policy Changes
+            </button>
+          </form>
+        )}
+      </Drawer>
     </PageScaffold>
   );
 }

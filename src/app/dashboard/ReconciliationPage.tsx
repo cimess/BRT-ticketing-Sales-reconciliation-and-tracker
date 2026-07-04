@@ -774,12 +774,12 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
               </button>
             )}
 
-            {/* Set Amount Button: Admin/Issuer supervisor when amount is null */}
-            {isUnpaid && (userRole === 'ADMIN' || (userRole === 'SUPERVISOR' && row.issued_by === session?.user?.id)) && row.amount === null && (
+                       {/* Set / Edit Amount Button: Admin/Issuer supervisor on unpaid fine */}
+            {isUnpaid && (userRole === 'ADMIN' || (userRole === 'SUPERVISOR' && row.issued_by === session?.user?.id)) && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  const amt = prompt("Enter fine amount:");
+                  const amt = prompt(row.amount === null ? "Enter fine amount:" : "Edit fine amount:", row.amount?.toString() || "");
                   if (amt) {
                     const parsed = parseFloat(amt);
                     if (!isNaN(parsed) && parsed > 0) {
@@ -792,7 +792,7 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
                 disabled={actionLoading}
                 className="px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 text-xs font-semibold transition"
               >
-                Set Amount
+                {row.amount === null ? "Set Amount" : "Edit Amount"}
               </button>
             )}
 

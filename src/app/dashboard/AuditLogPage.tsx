@@ -453,6 +453,7 @@ export default function AuditorPage() {
       const res = await api.post('/admin/query', { query: sqlQuery });
       if (res.data.success) {
         setQueryResults((res.data.results as Record<string, string>[]) || []);
+        
       } else {
         setQueryError((res.data.error as string) || "Query execution failed.");
       }
@@ -538,8 +539,6 @@ export default function AuditorPage() {
       cell: (row) => <span className="text-slate-200 text-sm font-semibold">{row?.subject}</span>,
       sortValue: (row) => row?.subject,
     },
-    { id: 'verifies', header: 'verifies', cell: (row) => <span className="text-slate-400 text-xs">{row?.verifies}</span>, sortValue: (row) => row?.verifies },
-    { id: 'signal', header: 'signal', cell: (row) => <span className="text-slate-300 text-xs font-medium">{row?.signal}</span>, sortValue: (row) => row?.signal },
     {
       id: 'status',
       header: 'status',
@@ -547,10 +546,20 @@ export default function AuditorPage() {
       sortValue: (row) => row?.status,
       align: 'center',
     },
-    { id: 'actor', header: 'actor', cell: (row) => <span className="text-slate-400 text-xs">{row?.actor}</span>, sortValue: (row) => row?.actor },
-    { id: 'source', header: 'source', cell: (row) => <span className="text-slate-500 text-xs">{row?.source}</span>, sortValue: (row) => row?.source },
-    { id: 'created', header: 'created_at', cell: (row) => <span className="text-slate-500 text-xs">{row?.created_at}</span>, sortValue: (row) => row?.created_at },
+    { 
+      id: 'actor', 
+      header: 'actor', 
+      cell: (row) => <span className="text-slate-400 text-xs">{row?.actor}</span>, 
+      sortValue: (row) => row?.actor 
+    },
+    { 
+      id: 'created', 
+      header: 'created_at', 
+      cell: (row) => <span className="text-slate-500 text-xs">{row?.created_at}</span>, 
+      sortValue: (row) => row?.created_at 
+    },
   ];
+
 
   return (
     <>
@@ -608,7 +617,7 @@ export default function AuditorPage() {
           <div className="glass-panel rounded-2xl border border-white/5 p-5 space-y-4 bg-slate-950/40">
             <div className="flex items-center gap-2 text-white font-bold text-base">
               <Database className="w-5 h-5 text-emerald-400" />
-              <span>Auditor SQL Playground</span>
+              <span>Auditor SQL Query Interface</span>
               <span className="text-[10px] tracking-wider uppercase font-semibold text-slate-400 px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">Read-Only</span>
             </div>
             

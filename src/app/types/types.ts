@@ -67,6 +67,7 @@ export interface FloatLedgerEntry {
   user: User["fullname"]
   amount: number
   entry_type: 'CREDIT' | 'DEBIT'
+  display_status?: string
   description: string
   created_at: string
 }

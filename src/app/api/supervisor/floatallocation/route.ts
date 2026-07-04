@@ -3,7 +3,7 @@ import { NextResponse, NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
-import { ApiError } from "next/dist/server/api-utils";
+import { ApiError } from "@/lib/ApiError";
 
 export async function GET(req: NextRequest) { // Updated signature
   try {
@@ -230,9 +230,10 @@ export async function POST(req: Request) {
     });
   } catch (error) {
     console.error("POST /api/supervisor/topup error:", error);
-    return NextResponse.json({ 
-      success: false, 
-      message: error instanceof ApiError ? (error.statusCode===500?"Internal Server Error":error.message) : "Internal Server Error" 
-    }, { status: error instanceof ApiError ? error.statusCode  : 500 });
+    if (error instanceof ApiError) {
+      
+      return NextResponse.json({ success: false, message: error.statusCode === 500 ? "Internal Server Error" : error.message }, { status: error.statusCode });
+    }
+    return NextResponse.json({ success: false, message: "Internal Server Error" }, { status: 500 });
   }
 }

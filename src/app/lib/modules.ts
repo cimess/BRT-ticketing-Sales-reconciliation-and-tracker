@@ -41,7 +41,7 @@ export const MODULES: ModuleItem[] = [
 
   { key: 'pos', label: 'POS Devices', path: 'devices', group: 'Devices', roles: ['supervisor', 'admin', 'auditor', 'ticketer'] },
 
-  { key: 'audit', label: 'Audit Logs', path: 'audit', group: 'Audit', roles: ['supervisor', 'admin', 'auditor'] },
+  { key: 'audit', label: 'Audit Logs', path: 'audit', group: 'Audit', roles: ['admin', 'auditor'] },
 
   { key: 'reports', label: 'Reports', path: 'reports', group: 'Reports', roles: ['supervisor', 'admin', 'auditor'] },
   

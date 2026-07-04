@@ -201,6 +201,9 @@ export async function PATCH(
 
     return NextResponse.json({ success: true, data: result });
   } catch (error) {
+    if (error instanceof ApiError) {
+      return NextResponse.json({ success: false, message: error.statusCode === 500 ? "Internal Server Error" : error.message }, { status: error.statusCode });
+    }
     console.error(`PATCH /api/remitance/${remittanceId}/verify error:`, error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }

@@ -72,12 +72,15 @@ model User {
   ticketers            User[]              @relation("SupervisorTicketers")
   //the admin who issued the token
   tokens_issued        RegistrationToken[] @relation("AdminTokensIssued")
-  ticket_assignments   Ticketer_Location_Assignment[]
+  ticket_assignments   Ticketer_Location_Assignment[] @relation("TicketerAssignment")
+
   received_remittances Remittance[] @relation("SupervisorRemittances")
   remittance_expectations RemittanceExpectation[]
   company              Company             @relation(fields: [company_id], references: [id])
   @@unique([email, company_id])
-  
+
+  created_assignments  Ticketer_Location_Assignment[] @relation("AssignmentCreator")
+
 }
 model RegistrationToken {
   id          String   @id @default(cuid())
@@ -348,26 +351,29 @@ model Fine {
 
 
 model Ticketer_Location_Assignment {
-  id           String    @id @default(cuid())
+  id            String       @id @default(cuid())
+  user_id       String
+  location_id   String
+  assigned_for  DateTime
+  session       Time_Session
+  created_by_id String       // The supervisor or admin who made the assignment
+  created_at    DateTime     @default(now())
+  company_id    String
 
-  user_id      String
-  location_id  String
+  user          User         @relation("TicketerAssignment", fields: [user_id], references: [id])
+  location      Location     @relation(fields: [location_id], references: [id])
+  company       Company      @relation(fields: [company_id], references: [id])
+  creator       User         @relation("AssignmentCreator", fields: [created_by_id], references: [id])
 
-  assigned_for DateTime
-
-  created_at   DateTime  @default(now())
-  company_id           String
-  user         User      @relation(fields: [user_id], references: [id])
-  location     Location  @relation(fields: [location_id], references: [id])
-  company              Company             @relation(fields: [company_id], references: [id])
-
-  @@unique([location_id, assigned_for])
+  @@unique([user_id, assigned_for, session])
 }
+
 
 model Location {
   id            String        @id @default(cuid())
   name          String
   address       String
+  staff_count   Int      @default(1)
   opening_time  String?
   closing_time  String?
   created_at    DateTime      @default(now())
@@ -395,6 +401,10 @@ enum AuditAction {
   DEPOSIT
 }
 
+enum Time_Session{
+  MORNING
+  EVENING
+}
 enum TopUpSource {
   COMPANY_RESERVE
   GOVERNMENT_TOP_UP

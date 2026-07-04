@@ -111,14 +111,25 @@ const generateRegToken = async () => {
   };
 
   const columns: ColumnDef<User_Full_Audit>[] = [
-    { id: 'id', header: 'id', cell: (r) => <span className="text-slate-200 font-mono text-xs">{r?.user_id}</span> },
-    { id: 'fullname', header: 'fullname', cell: (r) => <span className="text-slate-300 text-xs font-bold">{r?.username}</span> },
-    { id: 'role', header: 'role', cell: (r) => <span className="text-slate-500 text-xs">{r?.role}</span>, sortValue: (r) => r?.role },
-    { id: 'supervisor', header: 'supervisor', cell: (r) => <span className="text-slate-500 text-xs">{r?.supervisor}</span>, sortValue: (r) => r?.supervisor || "" },
-    { id: 'phone', header: 'phone', cell: (r) => <span className="text-slate-500 text-xs">{r?.phone}</span>, sortValue: (r) => r?.phone || "" },
-    { id: 'email', header: 'email', cell: (r) => <span className="text-slate-500 text-xs">{r?.email}</span>, sortValue: (r) => r?.email || "" },
-    { id: 'created_at', header: 'created_at', cell: (r) => <span className="text-slate-500 text-xs">{r?.created_at ? new Date(r.created_at).toLocaleDateString() : "—"}</span>, sortValue: (r) => r?.created_at },
+    { 
+      id: 'fullname', 
+      header: 'full name', 
+      cell: (r) => <span className="text-slate-300 text-xs font-bold">{r?.username}</span> 
+    },
+    { 
+      id: 'role', 
+      header: 'role', 
+      cell: (r) => <span className="text-slate-500 text-xs">{r?.role}</span>, 
+      sortValue: (r) => r?.role 
+    },
+    { 
+      id: 'phone', 
+      header: 'phone number', 
+      cell: (r) => <span className="text-slate-500 text-xs">{r?.phone || '—'}</span>, 
+      sortValue: (r) => r?.phone || "" 
+    },
   ];
+
 
   const rows = users;
   const uniqueRoles = new Set(users.map((user) => user.role));
@@ -274,14 +285,18 @@ const generateRegToken = async () => {
                   tone: (selected?.reconciliation?.length || 0) > 0 ? 'warning' : 'success',
                 },
               ]}
-              fields={[
-                { label: 'Address', value: selected.address ?? '—' },
+                           fields={[
+                { label: 'User ID', value: selected.user_id },
+                { label: 'Email', value: selected.email },
                 { label: 'Phone', value: selected.phone ?? '—' },
+                { label: 'Supervisor', value: selected.supervisor ?? '—' },
+                { label: 'Address', value: selected.address ?? '—' },
                 { label: 'Guarantor', value: selected.guarantor ?? '—' },
                 { label: 'Guarantor Phone', value: selected.guarantor_phone ?? '—' },
                 { label: 'Guarantor Address', value: selected.guarantor_address ?? '—' },
-                { label: 'User ID', value: selected.user_id },
+                { label: 'Joined Date', value: selected.created_at ? new Date(selected.created_at).toLocaleDateString() : '—' },
               ]}
+
               sections={[
                 {
                   title: 'Shortages',

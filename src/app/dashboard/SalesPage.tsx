@@ -12,7 +12,8 @@ import {
   RotateCcw,
   AlertTriangle,
   RefreshCw,
-  Trash2
+  Trash2,
+  ChevronRight
 } from "lucide-react";
 import { Badge } from "@/components/Badge";
 import { DataTable, type ColumnDef } from "@/components/DataTable";
@@ -330,9 +331,7 @@ export default function SalesPage({
   const [selected, setSelected] = useState<Sales_Record | null>(null);
   const [openForm, setOpenForm] = useState(false);
   // State for result limit (defaults to 10 records when filtering)
-const [limit, setLimit] = useState<number | null>(10);
-
-
+  const [limit, setLimit] = useState<number | null>(10);
 
   // API loading states
   const [isLoading, setIsLoading] = useState(false);
@@ -514,57 +513,54 @@ const [limit, setLimit] = useState<number | null>(10);
     }
   };
 
-const visibleRecords = useMemo(() => {
-  const query = search.trim().toLowerCase();
+  const visibleRecords = useMemo(() => {
+    const query = search.trim().toLowerCase();
 
-  // Fallback to local salesRecords
-  const activeData = records ?? salesRecords;
+    // Fallback to local salesRecords
+    const activeData = records ?? salesRecords;
 
-  const filtered = activeData.filter((record) => {
-    if (!query) return true;
+    const filtered = activeData.filter((record) => {
+      if (!query) return true;
 
-    return [
-      record.id,
-      record.ticketer_id,
-      record.user_name,
-      record.pos_session_id,
-      record.location_id,
-      record.report_date,
-      record.submitted_at,
-      String(record.opening_balance),
-      String(record.top_up),
-      String(record.total_sold),
-      String(record.closing_balance),
-      record.status || "PENDING",
-    ].some((value) => value.toLowerCase().includes(query));
-  });
+      return [
+        record.id,
+        record.ticketer_id,
+        record.user_name,
+        record.pos_session_id,
+        record.location_id,
+        record.report_date,
+        record.submitted_at,
+        String(record.opening_balance),
+        String(record.top_up),
+        String(record.total_sold),
+        String(record.closing_balance),
+        record.status || "PENDING",
+      ].some((value) => value.toLowerCase().includes(query));
+    });
 
-  const sorted = [...filtered];
+    const sorted = [...filtered];
 
-  if (view === "TOP") {
-    sorted.sort((left, right) => right.total_sold - left.total_sold);
-  } else if (view === "BALANCED") {
-    sorted.sort(
-      (left, right) =>
-        Math.abs(left.top_up - left.total_sold) - Math.abs(right.top_up - right.total_sold)
-    );
-  } else {
-    sorted.sort(
-      (left, right) =>
-        new Date(right.submitted_at).getTime() - new Date(left.submitted_at).getTime()
-    );
-  }
+    if (view === "TOP") {
+      sorted.sort((left, right) => right.total_sold - left.total_sold);
+    } else if (view === "BALANCED") {
+      sorted.sort(
+        (left, right) =>
+          Math.abs(left.top_up - left.total_sold) - Math.abs(right.top_up - right.total_sold)
+      );
+    } else {
+      sorted.sort(
+        (left, right) =>
+          new Date(right.submitted_at).getTime() - new Date(left.submitted_at).getTime()
+      );
+    }
 
-  // Apply limit ONLY when searching/filtering and limit is set
-  if (query && limit !== null) {
-    return sorted.slice(0, limit);
-  }
+    // Apply limit ONLY when searching/filtering and limit is set
+    if (query && limit !== null) {
+      return sorted.slice(0, limit);
+    }
 
-  return sorted;
-}, [records, salesRecords, search, view, limit]);
-
-
-  
+    return sorted;
+  }, [records, salesRecords, search, view, limit]);
 
   const totals = useMemo(() => {
     const recordCount = visibleRecords.length;
@@ -630,7 +626,7 @@ const visibleRecords = useMemo(() => {
       }));
   }, [totals, visibleRecords]);
 
-const trendData = useMemo(() => {
+  const trendData = useMemo(() => {
     const labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
     const dailySums = [0, 0, 0, 0, 0, 0, 0]; // Index: 0=Mon, 1=Tue, ..., 6=Sun
     const validRecords = visibleRecords.filter(
@@ -650,7 +646,6 @@ const trendData = useMemo(() => {
       sales: dailySums[index],
     }));
   }, [visibleRecords]);
-
 
   const columns: ColumnDef<Sales_Record>[] = [
     {
@@ -675,7 +670,7 @@ const trendData = useMemo(() => {
     },
     {
       id: "pos_session_id",
-      header: "session",
+      header: "pos",
       cell: (record) => (
         <span className="font-mono text-xs text-slate-400">
           {record?.pos_session_id}
@@ -837,85 +832,147 @@ const trendData = useMemo(() => {
           )}
         </section>
 
-      <FilterRow>
-  <div className="flex w-full flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-    <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center lg:max-w-xl">
-      <div className="w-full">
-        <Input
-          value={search}
-          onChange={setSearch}
-          placeholder="Search report, ticketer, session, location..."
-        />
-      </div>
+        <FilterRow>
+          <div className="flex w-full flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center lg:max-w-xl">
+              <div className="w-full">
+                <Input
+                  value={search}
+                  onChange={setSearch}
+                  placeholder="Search report, ticketer, session, location..."
+                />
+              </div>
 
-      {/* Limit controls - ONLY visible when actively searching/filtering */}
-      {search.trim() !== "" && (
-        <div className="flex shrink-0 items-center gap-1.5 rounded-2xl border border-white/10 bg-white/[0.03] p-1.5 backdrop-blur-md animate-in fade-in slide-in-from-left-2 duration-200">
-          <span className="px-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-            Limit:
-          </span>
-          {([10, 25, 50, null] as const).map((opt) => {
-            const isSelected = limit === opt;
-            const label = opt === null ? "All" : String(opt);
-            return (
-              <button
-                key={label}
-                type="button"
-                onClick={() => setLimit(opt)}
-                className={`rounded-xl px-2.5 py-1 text-[11px] font-bold transition-all ${
-                  isSelected
-                    ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shadow-sm"
-                    : "text-slate-400 hover:text-slate-200 hover:bg-white/5"
-                }`}
-              >
-                {label}
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
+              {/* Limit controls - ONLY visible when actively searching/filtering */}
+              {search.trim() !== "" && (
+                <div className="flex shrink-0 items-center gap-1.5 rounded-2xl border border-white/10 bg-white/[0.03] p-1.5 backdrop-blur-md animate-in fade-in slide-in-from-left-2 duration-200">
+                  <span className="px-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    Limit:
+                  </span>
+                  {([10, 25, 50, null] as const).map((opt) => {
+                    const isSelected = limit === opt;
+                    const label = opt === null ? "All" : String(opt);
+                    return (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={() => setLimit(opt)}
+                        className={`rounded-xl px-2.5 py-1 text-[11px] font-bold transition-all ${
+                          isSelected
+                            ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shadow-sm"
+                            : "text-slate-400 hover:text-slate-200 hover:bg-white/5"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
 
-    <div className="flex items-center justify-between gap-3 rounded-2xl border border-white/5 bg-black/20 px-3 py-2">
-      <div>
-        <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">
-          Visible reports
-        </p>
-        <p className="mt-1 text-sm font-semibold text-white">
-          {visibleRecords.length}
-        </p>
-      </div>
-      <Badge variant={balanceTone(totals.gap)}>
-        {roleCopy.badge}
-      </Badge>
-    </div>
-  </div>
-</FilterRow>
-
+            <div className="flex items-center justify-between gap-3 rounded-2xl border border-white/5 bg-black/20 px-3 py-2">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">
+                  Visible reports
+                </p>
+                <p className="mt-1 text-sm font-semibold text-white">
+                  {visibleRecords.length}
+                </p>
+              </div>
+              <Badge variant={balanceTone(totals.gap)}>
+                {roleCopy.badge}
+              </Badge>
+            </div>
+          </div>
+        </FilterRow>
 
         {isLoading && salesRecords.length === 0 ? (
           <div className="flex h-64 items-center justify-center">
             <RefreshCw className="size-8 animate-spin text-slate-500" />
           </div>
         ) : (
-          <DataTable
-            rows={visibleRecords}
-            columns={columns}
-            getRowId={(record) => record.id}
-            onRowClick={(record) => {
-              setActionError("");
-              setShowRejectionForm(false);
-              setRejectionReason("");
-              setHandoverId("");
-              setSelected(record);
-            }}
-          />
+          <>
+            {/* Mobile View: Cards (Visible on screens smaller than 'lg' for all roles) */}
+            <div className="space-y-2 lg:hidden">
+              {visibleRecords.map((item) => {
+                const reportDate = new Date(item.report_date);
+                const dayStr = String(reportDate.getDate());
+                const monthStr = reportDate.toLocaleString('default', { month: 'short' });
+
+                const recordStatus = item.status || "PENDING";
+                const statusVariants: Record<string, "warning" | "success" | "danger" | "neutral"> = {
+                  PENDING: "warning",
+                  VERIFIED: "success",
+                  REJECTED: "danger",
+                  CANCELLED: "neutral"
+                };
+
+                return (
+                  <div
+                    key={item.id}
+                    onClick={() => {
+                      setActionError("");
+                      setShowRejectionForm(false);
+                      setRejectionReason("");
+                      setHandoverId("");
+                      setSelected(item);
+                    }}
+                    className="flex items-center justify-between p-3.5 rounded-2xl bg-white/3 border border-white/5 hover:border-white/10 hover:bg-white/5 transition-all cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3">
+                      {/* Compact Date Indicator */}
+                      <div className="flex flex-col items-center justify-center w-12 h-12 rounded-xl bg-white/5 border border-white/10">
+                        <span className="text-base font-black text-white leading-none">{dayStr}</span>
+                        <span className="text-[9px] font-bold text-slate-400 uppercase mt-0.5 tracking-wider">{monthStr}</span>
+                      </div>
+                      <div>
+                        {role !== 'TICKETER' && (
+                          <h4 className="text-xs font-bold text-white mb-0.5">{item.user_name}</h4>
+                        )}
+                        <p className="text-[10px] text-slate-400 font-medium">
+                          Sales: <span className="font-bold text-white">{formatMoney(item.total_sold)}</span>
+                        </p>
+                        <p className="text-[9px] text-slate-500">
+                          POS: {item.pos_session_id.slice(0, 8)}...
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <Badge variant={statusVariants[recordStatus] ?? "neutral"}>
+                          {recordStatus}
+                        </Badge>
+                      </div>
+                      <ChevronRight className="size-4 text-slate-600" />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Desktop View: DataTable (Visible on screens 'lg' and larger for all roles) */}
+            <div className="hidden lg:block">
+              <DataTable
+                rows={visibleRecords}
+                columns={columns}
+                getRowId={(record) => record.id}
+                onRowClick={(record) => {
+                  setActionError("");
+                  setShowRejectionForm(false);
+                  setRejectionReason("");
+                  setHandoverId("");
+                  setSelected(record);
+                }}
+              />
+            </div>
+          </>
         )}
       </PageScaffold>
 
       <Drawer
         open={Boolean(selected)}
-        title={selected ? `Report ${selected.id.slice(0, 8)}` : "Sales report"}
+        title={selected ? (role === 'ADMIN' || role === 'AUDITOR' ? `Report ${selected.id.slice(0, 8)}` : "Report Details") : "Sales report"}
         subtitle={
           selected
             ? `${selected.user_name} • ${formatDateTime(selected.submitted_at)}`
@@ -926,7 +983,11 @@ const trendData = useMemo(() => {
         {selected && (
           <ResponsiveDrawerShell
             title={selected.user_name}
-            subtitle={`${selected.location_id} • ${selected.pos_session_id}`}
+            subtitle={
+              role === 'ADMIN' || role === 'AUDITOR'
+                ? `${selected.location_id} • ${selected.pos_session_id}`
+                : `${selected.location_id}`
+            }
             badge={
               <Badge variant={
                 selected.status === "VERIFIED" ? "success" :
@@ -947,10 +1008,10 @@ const trendData = useMemo(() => {
               },
             ]}
             fields={[
-              { label: "Report ID", value: selected.id },
+              ...(role === 'ADMIN' || role === 'AUDITOR' ? [{ label: "Report ID", value: selected.id }] : []),
               { label: "Ticketer", value: selected.user_name },
-              { label: "Ticketer ID", value: selected.ticketer_id },
-              { label: "POS Session", value: selected.pos_session_id },
+              ...(role === 'ADMIN' || role === 'AUDITOR' ? [{ label: "Ticketer ID", value: selected.ticketer_id }] : []),
+              ...(role === 'ADMIN' || role === 'AUDITOR' ? [{ label: "POS Session", value: selected.pos_session_id }] : []),
               { label: "Location", value: selected.location_id },
               { label: "Report Date", value: formatDateTime(selected.report_date) },
               { label: "Submitted At", value: formatDateTime(selected.submitted_at) },
@@ -958,7 +1019,8 @@ const trendData = useMemo(() => {
                 label: "Float Gap",
                 value: formatMoney((selected.top_up||0) - (selected.total_sold||0)),
               },
-            ]}
+            ].filter(Boolean)}
+
             sections={[
               {
                 title: "Balance story",
@@ -999,7 +1061,7 @@ const trendData = useMemo(() => {
                   </div>
                 ),
               },
-              // 💡 DYNAMIC ACTION CONSOLE SECTION
+              // DYNAMIC ACTION CONSOLE SECTION
               {
                 title: "Action console",
                 content: (
@@ -1141,8 +1203,6 @@ const trendData = useMemo(() => {
                             No actions available. This report has already been finalized ({selected.status}).
                           </p>
                         )}
-
-
                       </>
                     )}
 
@@ -1158,6 +1218,7 @@ const trendData = useMemo(() => {
           />
         )}
       </Drawer>
+
       {/* Sales Report Submission Drawer */}
       <Drawer
         open={openForm}
@@ -1175,9 +1236,6 @@ const trendData = useMemo(() => {
     </>
   );
 }
-
-
-
 
 interface DeviceApiResponse {
   success: boolean;
@@ -1211,19 +1269,16 @@ function SalesReportForm({
         const data: DeviceApiResponse = await res.json();
 
         if (active && data.success) {
-          // 1. Filter to only display ACTIVE sessions for report submissions
           const activeSessions = (data.sessions || []).filter((s) => s.status === "ACTIVE");
           setSessions(activeSessions);
           setLocations(data.locations || []);
 
-          // 2. Auto-select POS session if there is exactly one active session
           if (activeSessions.length === 1) {
             const singleSession = activeSessions[0];
             setSelectedSession(singleSession.id);
             setOpeningBalance(String(singleSession.posFloat || 0));
           }
 
-          // 3. Auto-select location assigned for today
           const todayStr = new Date().toLocaleDateString("en-CA"); // Gets YYYY-MM-DD in local time
           const todayAssignment = (data.locations || []).find((la) => {
             const datePart = la.assignedFor.split("T")[0];
@@ -1233,7 +1288,6 @@ function SalesReportForm({
           if (todayAssignment) {
             setSelectedLocation(todayAssignment.id);
           } else if (data.locations && data.locations.length > 0) {
-            // Fallback to the most recent assignment if no assignment for today is found
             setSelectedLocation(data.locations[0].id);
           }
         }
@@ -1403,5 +1457,3 @@ function SalesReportForm({
     </form>
   );
 }
-
-

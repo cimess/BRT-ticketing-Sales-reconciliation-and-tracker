@@ -3,29 +3,42 @@
 "use client"
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Activity, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Activity, AlertCircle, CheckCircle2, ChevronRight, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
 import StatCard from '@/components/StatCard';
 import { Badge } from '@/components/Badge';
-import { DataTable, type ColumnDef } from '@/components/DataTable';
 import { FilterRow, Input, PageScaffold, Select } from '@/components/pageScaffold';
 import Calender from '@/components/Calender';
 import type { FloatLedgerEntry, DashboardRoleUsers } from '@/types/types';
 import { formatMoney } from '@/lib/utils';
 import api from '@/app/lib/axios';
+import { Drawer } from '@/components/Drawer';
 
 interface TransactionsPageProps {
   role: DashboardRoleUsers;
 }
 
+interface TransactionMetrics {
+  actualBalance?: number;
+  drift?: number;
+  ledgerNet?: number;
+  credits?: number;
+  debits?: number;
+  givenToday?: number;
+  returnedToday?: number;
+  outstandingToday?: number;
+  totalGiven?: number;
+  activeFloat?: number;
+}
+
 export default function TransactionsPage({ role }: TransactionsPageProps) {
-  const [q, setQ] = React.useState('');
+  const [q, setQ] = useState('');
   const prevQRef = useRef(q);
-  const [status, setStatus] = React.useState<'ALL' | 'CREDIT' | 'DEBIT'>('ALL');
+  const [status, setStatus] = useState<'ALL' | 'CREDIT' | 'DEBIT'>('ALL');
   const [dateRange, setDateRange] = useState<{ start: Date | null; end: Date | null }>({ start: null, end: null });
   const [rows, setRows] = useState<FloatLedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [metrics, setMetrics] = useState<any>({});
+  const [metrics, setMetrics] = useState<TransactionMetrics>({});
+  const [selectedDetailsTx, setSelectedDetailsTx] = useState<FloatLedgerEntry | null>(null);
 
   const loadTransactions = useCallback(async (start?: Date | null, end?: Date | null) => {
     const fromDate = start !== undefined ? start : dateRange.start;
@@ -57,182 +70,296 @@ export default function TransactionsPage({ role }: TransactionsPageProps) {
 
   // Load once on mount or when type filter changes
   useEffect(() => {
-    // eslint-disable-next-line 
-    loadTransactions();
-  }, [status]);
+    let active = true;
+    const timer = setTimeout(() => {
+      if (active) {
+        loadTransactions();
+      }
+    }, 0);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [status, loadTransactions]);
 
   // Auto-reset calendar when search query input transitions to empty
   useEffect(() => {
+    let active = true;
+    let timer: NodeJS.Timeout | undefined;
+
     if (q === '' && prevQRef.current !== '') {
       if (dateRange.start !== null || dateRange.end !== null) {
-        // eslint-disable-next-line
-        loadTransactions(null, null);
+        timer = setTimeout(() => {
+          if (active) {
+            loadTransactions(null, null);
+          }
+        }, 0);
       }
     }
     prevQRef.current = q;
+
+    return () => {
+      active = false;
+      if (timer) clearTimeout(timer);
+    };
   }, [q, dateRange, loadTransactions]);
 
-  const columns: ColumnDef<FloatLedgerEntry>[] = [
-    { id: 'id', header: 'tx_id', cell: (r) => <span className="text-slate-200 font-mono text-xs">{r?.id}</span>, sortValue: (r) => r?.id },
-    { id: 'user', header: 'user', cell: (r) => <span className="text-slate-400 text-xs">{r?.user}</span>, sortValue: (r) => r?.user },
-    { id: 'amount', header: 'amount', align: 'right', sortValue: (r) => r?.amount, cell: (r) => <span className="text-white text-xs font-bold font-mono">{formatMoney(r?.amount||0)}</span> },
-    {
-      id: 'entry_type',
-      header: 'type',
-      align: 'center',
-      cell: (r) => <Badge variant={r?.entry_type === 'CREDIT' ? 'success' : 'warning'}>{r?.entry_type}</Badge>,
-      sortValue: (r) => r?.entry_type,
-    },
-    { id: 'description', header: 'description', cell: (r) => <span className="text-slate-400 text-xs">{r?.description}</span>, sortValue: (r) => r?.description },
-    { id: 'created', header: 'created_at', cell: (r) => <span className="text-slate-500 text-xs">{r?.created_at ? new Date(r.created_at).toLocaleString() : ''}</span>, sortValue: (r) => r?.created_at },
-  ];
+
+  const filteredRows = React.useMemo(() => {
+    if (!q) return rows;
+    const qq = q.toLowerCase();
+    return rows.filter((r) =>
+      r.id.toLowerCase().includes(qq) ||
+      r?.user?.toLowerCase().includes(qq) ||
+      r.amount.toString().toLowerCase().includes(qq) ||
+      r.description.toLowerCase().includes(qq) ||
+      r.entry_type.toLowerCase().includes(qq)
+    );
+  }, [rows, q]);
 
   return (
-    <PageScaffold
-      title="Transaction Processing"
-      subtitle="POS/top-up throughput and failure visibility (append-only records)"
-      right={
-        <Select
-          value={status}
-          onChange={(v) => setStatus(v as 'ALL' | 'CREDIT' | 'DEBIT')}
-          options={[
-            { value: 'ALL', label: 'All types' },
-            { value: 'CREDIT', label: 'Credit' },
-            { value: 'DEBIT', label: 'Debit' },
-          ]}
-        />
-      }
-      kpis={
-        role === 'ADMIN' || role === 'AUDITOR' ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-            <StatCard 
-              title="Company Float Balance" 
-              value={formatMoney(metrics.actualBalance || 0)} 
-              icon={<Activity className="text-blue-300" />} 
-              iconBg="bg-blue-500/10" 
-              subtitle={metrics.drift === 0 ? "Reconciled with ledger" : `Drift: ${formatMoney(metrics.drift || 0)}`}
-            />
-            <StatCard 
-              title="Ledger Net Balance" 
-              value={formatMoney(metrics.ledgerNet || 0)} 
-              icon={<CheckCircle2 className="text-emerald-300" />} 
-              iconBg="bg-emerald-500/10" 
-              subtitle={`Creds: ${formatMoney(metrics.credits || 0)} | Debs: ${formatMoney(metrics.debits || 0)}`}
-            />
-            <StatCard 
-              title="Given Today (Allocations)" 
-              value={formatMoney(metrics.givenToday || 0)} 
-              icon={<AlertCircle className="text-purple-300" />} 
-              iconBg="bg-purple-500/10" 
-              subtitle="Outflow today"
-            />
-            <StatCard 
-              title="Returned Today (Remits)" 
-              value={formatMoney(metrics.returnedToday || 0)} 
-              icon={<Activity className="text-emerald-300" />} 
-              iconBg="bg-emerald-500/10" 
-              subtitle="Inflow today"
-            />
+    <>
+      <PageScaffold
+        title="Transaction Processing"
+        subtitle="POS/top-up throughput and failure visibility (append-only records)"
+        right={
+          <Select
+            value={status}
+            onChange={(v) => setStatus(v as 'ALL' | 'CREDIT' | 'DEBIT')}
+            options={[
+              { value: 'ALL', label: 'All types' },
+              { value: 'CREDIT', label: 'Credit' },
+              { value: 'DEBIT', label: 'Debit' },
+            ]}
+          />
+        }
+        kpis={
+          role === 'ADMIN' || role === 'AUDITOR' ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+              <StatCard 
+                title="Company Float Balance" 
+                value={formatMoney(metrics.actualBalance || 0)} 
+                icon={<Activity className="text-blue-300" />} 
+                iconBg="bg-blue-500/10" 
+                subtitle={metrics.drift === 0 ? "Reconciled with ledger" : `Drift: ${formatMoney(metrics.drift || 0)}`}
+              />
+              <StatCard 
+                title="Ledger Net Balance" 
+                value={formatMoney(metrics.ledgerNet || 0)} 
+                icon={<CheckCircle2 className="text-emerald-300" />} 
+                iconBg="bg-emerald-500/10" 
+                subtitle={`Creds: ${formatMoney(metrics.credits || 0)} | Debs: ${formatMoney(metrics.debits || 0)}`}
+              />
+              <StatCard 
+                title="Given Today (Allocations)" 
+                value={formatMoney(metrics.givenToday || 0)} 
+                icon={<AlertCircle className="text-purple-300" />} 
+                iconBg="bg-purple-500/10" 
+                subtitle="Outflow today"
+              />
+              <StatCard 
+                title="Returned Today (Remits)" 
+                value={formatMoney(metrics.returnedToday || 0)} 
+                icon={<Activity className="text-emerald-300" />} 
+                iconBg="bg-emerald-500/10" 
+                subtitle="Inflow today"
+              />
+            </div>
+          ) : role === 'SUPERVISOR' ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+              <StatCard 
+                title="Given Today (Allocations)" 
+                value={formatMoney(metrics.givenToday || 0)} 
+                icon={<Activity className="text-blue-300" />} 
+                iconBg="bg-blue-500/10" 
+                subtitle="Float allocated today"
+              />
+              <StatCard 
+                title="Returned Today (Remitted)" 
+                value={formatMoney(metrics.returnedToday || 0)} 
+                icon={<CheckCircle2 className="text-emerald-300" />} 
+                iconBg="bg-emerald-500/10" 
+                subtitle="Team remittances today"
+              />
+              <StatCard 
+                title="Today's Net Outstanding" 
+                value={formatMoney(metrics.outstandingToday || 0)} 
+                icon={<AlertCircle className="text-purple-300" />} 
+                iconBg="bg-purple-500/10" 
+                subtitle="Active float in field today"
+              />
+              <StatCard 
+                title="Total Allocated" 
+                value={formatMoney(metrics.totalGiven || 0)} 
+                icon={<Activity className="text-emerald-300" />} 
+                iconBg="bg-emerald-500/10" 
+                subtitle="All-time allocations"
+              />
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+              <StatCard 
+                title="Given Today (Received)" 
+                value={formatMoney(metrics.givenToday || 0)} 
+                icon={<Activity className="text-blue-300" />} 
+                iconBg="bg-blue-500/10" 
+                subtitle="Top ups received today"
+              />
+              <StatCard 
+                title="Returned Today (Remitted)" 
+                value={formatMoney(metrics.returnedToday || 0)} 
+                icon={<CheckCircle2 className="text-emerald-300" />} 
+                iconBg="bg-emerald-500/10" 
+                subtitle="My remittances today"
+              />
+              <StatCard 
+                title="Active POS Float" 
+                value={formatMoney(metrics.activeFloat || 0)} 
+                icon={<AlertCircle className="text-purple-300" />} 
+                iconBg="bg-purple-500/10" 
+                subtitle="Current session balance"
+              />
+              <StatCard 
+                title="Total Received" 
+                value={formatMoney(metrics.totalGiven || 0)} 
+                icon={<Activity className="text-emerald-300" />} 
+                iconBg="bg-emerald-500/10" 
+                subtitle="All-time top ups received"
+              />
+            </div>
+          )
+        }
+      >
+        <FilterRow>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 w-full">
+            <div className="w-full sm:w-72 shrink-0">
+              <Input value={q} onChange={setQ} placeholder="Search tx_id / user / description…" />
+            </div>
+            <div className="text-slate-500 text-xs font-medium z-10 w-full sm:w-auto">
+              <Calender
+                className="w-full"
+                range={dateRange ? { startDate: dateRange.start, endDate: dateRange.end } : undefined}
+                onRangeChange={(range) => {
+                  loadTransactions(range.startDate, range.endDate);
+                }}
+              />
+            </div>
           </div>
-        ) : role === 'SUPERVISOR' ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-            <StatCard 
-              title="Given Today (Allocations)" 
-              value={formatMoney(metrics.givenToday || 0)} 
-              icon={<Activity className="text-blue-300" />} 
-              iconBg="bg-blue-500/10" 
-              subtitle="Float allocated today"
-            />
-            <StatCard 
-              title="Returned Today (Remitted)" 
-              value={formatMoney(metrics.returnedToday || 0)} 
-              icon={<CheckCircle2 className="text-emerald-300" />} 
-              iconBg="bg-emerald-500/10" 
-              subtitle="Team remittances today"
-            />
-            <StatCard 
-              title="Today's Net Outstanding" 
-              value={formatMoney(metrics.outstandingToday || 0)} 
-              icon={<AlertCircle className="text-purple-300" />} 
-              iconBg="bg-purple-500/10" 
-              subtitle="Active float in field today"
-            />
-            <StatCard 
-              title="Total Allocated" 
-              value={formatMoney(metrics.totalGiven || 0)} 
-              icon={<Activity className="text-emerald-300" />} 
-              iconBg="bg-emerald-500/10" 
-              subtitle="All-time allocations"
-            />
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-            <StatCard 
-              title="Given Today (Received)" 
-              value={formatMoney(metrics.givenToday || 0)} 
-              icon={<Activity className="text-blue-300" />} 
-              iconBg="bg-blue-500/10" 
-              subtitle="Top ups received today"
-            />
-            <StatCard 
-              title="Returned Today (Remitted)" 
-              value={formatMoney(metrics.returnedToday || 0)} 
-              icon={<CheckCircle2 className="text-emerald-300" />} 
-              iconBg="bg-emerald-500/10" 
-              subtitle="My remittances today"
-            />
-            <StatCard 
-              title="Active POS Float" 
-              value={formatMoney(metrics.activeFloat || 0)} 
-              icon={<AlertCircle className="text-purple-300" />} 
-              iconBg="bg-purple-500/10" 
-              subtitle="Current session balance"
-            />
-            <StatCard 
-              title="Total Received" 
-              value={formatMoney(metrics.totalGiven || 0)} 
-              icon={<Activity className="text-emerald-300" />} 
-              iconBg="bg-emerald-500/10" 
-              subtitle="All-time top ups received"
-            />
-          </div>
-        )
-      }
-    >
-      <FilterRow>
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 w-full">
-          <div className="w-full sm:w-72 shrink-0">
-            <Input value={q} onChange={setQ} placeholder="Search tx_id / user / description…" />
-          </div>
-          <div className="text-slate-500 text-xs font-medium z-10 w-full sm:w-auto">
-            <Calender
-              className="w-full"
-              range={dateRange ? { startDate: dateRange.start, endDate: dateRange.end } : undefined}
-              onRangeChange={(range) => {
-                loadTransactions(range.startDate, range.endDate);
-              }}
-            />
-          </div>
-        </div>
-      </FilterRow>
+        </FilterRow>
 
-      {loading ? (
-        <div className="text-slate-400 p-8 font-medium">Loading ledger entries...</div>
-      ) : (
-        <DataTable
-          rows={rows}
-          columns={columns}
-          getRowId={(r) => r.id}
-          searchValue={q}
-          searchPredicate={(r, qq) =>
-            r.id.toLowerCase().includes(qq) ||
-            r.user.toLowerCase().includes(qq) ||
-            r.amount.toString().toLowerCase().includes(qq) ||
-            r.description.toLowerCase().includes(qq) ||
-            r.entry_type.toLowerCase().includes(qq)
-          }
-        />
-      )}
-    </PageScaffold>
+        {loading ? (
+          <div className="text-slate-400 p-8 font-medium">Loading ledger entries...</div>
+        ) : filteredRows.length === 0 ? (
+          <div className="text-center py-10 text-slate-600 text-xs italic">No transactions found.</div>
+        ) : (
+          <div className="space-y-2">
+                      {filteredRows.map((item: FloatLedgerEntry) => (
+              <div
+                key={item.id}
+                onClick={() => setSelectedDetailsTx(item)}
+                className="flex items-center justify-between p-3.5 rounded-2xl bg-white/3 border border-white/5 hover:border-white/10 hover:bg-white/5 transition-all cursor-pointer"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-white/5 border border-white/10">
+                    {item.display_status === 'REVERSED' ? (
+                      <AlertCircle className="size-4 text-amber-400" />
+                    ) : item.entry_type === 'CREDIT' ? (
+                      <ArrowDownLeft className="size-4 text-emerald-400" />
+                    ) : (
+                      <ArrowUpRight className="size-4 text-rose-400" />
+                    )}
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-white">{item.user}</h4>
+                    <p className="text-[10px] text-slate-500 mt-0.5">
+                      {item.created_at ? new Date(item.created_at).toLocaleString() : ''}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="text-right">
+                    <span className="text-xs font-black text-white font-mono">
+                      {formatMoney(item.amount || 0)}
+                    </span>
+                    <span className="block mt-0.5">
+                      <Badge variant={
+                        item.display_status === 'REVERSED'
+                          ? 'danger'
+                          : item.entry_type === 'CREDIT'
+                          ? 'success'
+                          : 'warning'
+                      }>
+                        {item.display_status || item.entry_type}
+                      </Badge>
+                    </span>
+                  </div>
+                  <ChevronRight className="size-4 text-slate-600" />
+                </div>
+              </div>
+            ))}
+
+          </div>
+        )}
+      </PageScaffold>
+
+      {/* DRAWER: Transaction Details */}
+      <Drawer
+        open={!!selectedDetailsTx}
+        title="Transaction Details"
+        subtitle="Verification & ledger reference"
+        onClose={() => setSelectedDetailsTx(null)}
+      >
+        {selectedDetailsTx && (
+          <div className="space-y-6">
+            <div className="p-4 rounded-xl bg-white/3 border border-white/5 space-y-4">
+              <div className="flex justify-between items-center border-b border-white/5 pb-3">
+                <div>
+                  <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest block">Amount</label>
+                  <span className="text-lg font-black text-white font-mono mt-1 block">
+                    {formatMoney(selectedDetailsTx.amount || 0)}
+                  </span>
+                </div>
+                <Badge variant={
+                  selectedDetailsTx.display_status === 'REVERSED'
+                    ? 'warning'
+                    : selectedDetailsTx.entry_type === 'CREDIT'
+                    ? 'success'
+                    : 'danger'
+                }>
+                  {selectedDetailsTx.display_status || selectedDetailsTx.entry_type}
+                </Badge>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest block">User / Entity</label>
+                  <span className="text-xs font-semibold text-slate-200 mt-1 block">{selectedDetailsTx.user}</span>
+                </div>
+                <div>
+                  <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest block">Transaction ID</label>
+                  <span className="text-[10px] font-mono text-slate-400 mt-1 block break-all">{selectedDetailsTx.id}</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 pt-2 border-t border-white/5">
+                <div>
+                  <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest block">Timestamp</label>
+                  <span className="text-xs text-slate-400 mt-1 block">
+                    {selectedDetailsTx.created_at ? new Date(selectedDetailsTx.created_at).toLocaleString() : ''}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {selectedDetailsTx.description && (
+              <div className="p-4 rounded-xl bg-white/3 border border-white/5">
+                <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest block mb-1">Description</label>
+                <p className="text-xs text-slate-300 leading-relaxed font-sans">{selectedDetailsTx.description}</p>
+              </div>
+            )}
+          </div>
+        )}
+      </Drawer>
+    </>
   );
 }

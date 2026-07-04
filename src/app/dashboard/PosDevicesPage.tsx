@@ -1,6 +1,6 @@
 "use client"
 import React, { useState, useMemo } from 'react';
-import { Smartphone, Plus, Send } from 'lucide-react';
+import { Smartphone, Plus, Send, ChevronRight } from 'lucide-react';
 import StatCard from '@/components/StatCard';
 import { Badge } from '@/components/Badge';
 import { DataTable, type ColumnDef } from '@/components/DataTable';
@@ -36,7 +36,6 @@ export interface PosDeviceSession {
   unassignedBy: string | null;
   unassignedReason: string | null;
   status: 'ACTIVE' | 'RETURNED' | 'SHARED' | 'CLOSED'
-
 }
 
 export interface AvailableUser {
@@ -76,7 +75,7 @@ export default function PosDevicesPage({
   loggedInUserId
 }: PosDevicesPageProps) {
   const [q, setQ] = useState('');
-  
+
   // Filtering variables
   const [actionFilter, setActionFilter] = useState<'ALL' | 'ACTIVE' | 'RETURNED' | 'SHARED' | 'CLOSED'>('ALL');
   const [activeActionFilter, setActiveActionFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE' | 'MAINTENANCE'>('ALL');
@@ -88,6 +87,7 @@ export default function PosDevicesPage({
   const [isTopupOpen, setIsTopupOpen] = useState(false);
   const [selectedDevice, setSelectedDevice] = useState<PosDevice | null>(null);
   const [selectedSession, setSelectedSession] = useState<PosDeviceSession | null>(null);
+  const [sessionDetails, setSessionDetails] = useState<PosDeviceSession | null>(null);
 
   // Form Fields
   const [newDeviceName, setNewDeviceName] = useState('');
@@ -97,7 +97,7 @@ export default function PosDevicesPage({
   const [returnReason, setReturnReason] = useState('');
   const [topupAmount, setTopupAmount] = useState('');
 
-    const { metrics, refreshMetrics } = useDashboard();
+  const { refreshMetrics } = useDashboard();
 
   // Filter Rows
   const filteredEvents = useMemo(() => {
@@ -163,14 +163,14 @@ export default function PosDevicesPage({
   };
 
   // API Call: Assign Device
- const handleAssignDevice = async (e: React.FormEvent) => {
+  const handleAssignDevice = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedDevice || !assignUserId) {
       toast.error("Please select a user");
       return;
     }
     try {
-      if(role!=='SUPERVISOR'){
+      if (role !== 'SUPERVISOR') {
         return toast.error("You are not authorized to assign devices");
       }
       const endpoint = '/supervisor/device/assign'
@@ -194,7 +194,7 @@ export default function PosDevicesPage({
   };
 
   // API Call: Return/Unassign Device
-const handleReturnDevice = async (e: React.FormEvent) => {
+  const handleReturnDevice = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedDevice) return;
     const activeSession = sessions.find(s => s.deviceId === selectedDevice.id && s.status === 'ACTIVE');
@@ -255,84 +255,82 @@ const handleReturnDevice = async (e: React.FormEvent) => {
 
   // Column definitions for Device Events (Audit Trails)
   const columns: ColumnDef<PosDeviceSession>[] = [
-    { 
-      id: 'device', 
-      header: 'device', 
+    {
+      id: 'device',
+      header: 'device',
       cell: (r) => (
         <div className="flex flex-col">
           <span className="text-slate-300 text-xs font-bold">{r?.deviceName}</span>
           <span className="text-slate-500 text-[10px]">{r?.deviceSerial}</span>
         </div>
-      ) 
+      )
     },
-    { 
-      id: 'ticketer', 
-      header: 'ticketer', 
+    {
+      id: 'ticketer',
+      header: 'ticketer',
       cell: (r) => (
         <div className="flex flex-col">
           <span className="text-slate-400 text-xs">{r?.username}</span>
           <span className="text-slate-500 text-[10px] uppercase">{r?.userRole}</span>
         </div>
-      ) 
+      )
     },
-    { 
-      id: 'posFloat', 
-      header: 'current float', 
-      cell: (r) => <span className="text-emerald-400 text-xs font-mono font-bold">₦{r?.posFloat?.toLocaleString()}</span> 
+    {
+      id: 'posFloat',
+      header: 'current float',
+      cell: (r) => <span className="text-emerald-400 text-xs font-mono font-bold">₦{r?.posFloat?.toLocaleString()}</span>
     },
-    { 
-      id: 'action', 
-      header: 'action', 
-      align: 'center', 
-      sortValue: (r) => r?.status, 
-            cell: (r) => (
-        <Badge 
+    {
+      id: 'action',
+      header: 'action',
+      align: 'center',
+      sortValue: (r) => r?.status,
+      cell: (r) => (
+        <Badge
           variant={
-            r?.status === 'ACTIVE' ? 'success' : 
-            r?.status === 'CLOSED' ? 'neutral' : 
-            r?.status === 'SHARED' ? 'info' : 
-            'warning'
+            r?.status === 'ACTIVE' ? 'success' :
+              r?.status === 'CLOSED' ? 'neutral' :
+                r?.status === 'SHARED' ? 'info' :
+                  'warning'
           }
         >
           {r?.status}
         </Badge>
       )
-
     },
-    { 
-      id: 'reason', 
-      header: 'reason', 
-            cell: (r) => (
+    {
+      id: 'reason',
+      header: 'reason',
+      cell: (r) => (
         <span className="text-slate-500 text-xs">
-          {r?.status === 'ACTIVE' 
-            ? 'Active Assignment' 
-            : r?.status === 'CLOSED' 
-              ? 'Shift Closed & Sales Verified' 
+          {r?.status === 'ACTIVE'
+            ? 'Active Assignment'
+            : r?.status === 'CLOSED'
+              ? 'Shift Closed & Sales Verified'
               : r?.unassignedReason || 'Returned'}
         </span>
       )
-
     },
-    { 
-      id: 'date', 
-      header: 'date', 
+    {
+      id: 'date',
+      header: 'date',
       cell: (r) => (
         <span className="text-slate-500 text-xs">
-          {r?.status === 'ACTIVE' 
-            ? (r?.assignedAt ? formatDateTime(r.assignedAt) : '—') 
+          {r?.status === 'ACTIVE'
+            ? (r?.assignedAt ? formatDateTime(r.assignedAt) : '—')
             : (r?.unassignedAt ? formatDateTime(r.unassignedAt) : '—')
           }
         </span>
-      ) 
+      )
     },
-    { 
-      id: 'supervisor', 
-      header: 'supervisor', 
+    {
+      id: 'supervisor',
+      header: 'supervisor',
       cell: (r) => (
         <span className="text-slate-400 text-xs">
           {r?.status === 'ACTIVE' ? r?.assignedBy : (r?.unassignedBy || '—')}
         </span>
-      ) 
+      )
     },
     {
       id: 'topup',
@@ -355,24 +353,24 @@ const handleReturnDevice = async (e: React.FormEvent) => {
   const activeDevicesColumns: ColumnDef<PosDevice>[] = [
     { id: 'id', header: 'device id', cell: (r) => <span className="text-slate-300 text-xs font-bold font-mono">{r?.id}</span> },
     { id: 'name', header: 'name', cell: (r) => <span className="text-slate-400 text-xs">{r?.name}</span> },
-    { 
-      id: 'status', 
-      header: 'status', 
-      align: 'center', 
-      sortValue: (r) => r?.status, 
+    {
+      id: 'status',
+      header: 'status',
+      align: 'center',
+      sortValue: (r) => r?.status,
       cell: (r) => (
         <Badge variant={r?.status === 'ACTIVE' ? 'success' : r?.status === 'INACTIVE' ? 'neutral' : 'danger'}>
           {r?.status}
         </Badge>
-      ) 
+      )
     },
     { id: 'serial_number', header: 'serial_number', cell: (r) => <span className="text-slate-500 text-xs">{r?.serial_number}</span> },
-    { 
-      id: 'created_at', 
-      header: 'created_at', 
-      cell: (r) => <span className="text-slate-500 text-xs">{r?.created_at ? new Date(r.created_at).toLocaleDateString() : '—'}</span> 
+    {
+      id: 'created_at',
+      header: 'created_at',
+      cell: (r) => <span className="text-slate-500 text-xs">{r?.created_at ? new Date(r.created_at).toLocaleDateString() : '—'}</span>
     },
-     {
+    {
       id: 'actions',
       header: 'actions',
       align: 'right',
@@ -382,36 +380,49 @@ const handleReturnDevice = async (e: React.FormEvent) => {
             {r?.status === 'INACTIVE' && (
               <button
                 onClick={() => handleOpenAssign(r)}
-                className="px-3 py-1 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors cursor-pointer"
+                className="px-3.5 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-xl transition-colors cursor-pointer"
               >
                 Assign
               </button>
             )}
             {r?.status === 'ACTIVE' && (
-              // If supervisor, only show "Return" if the device is active for one of their ticketers.
-              // Otherwise, show "Assigned (Other)" to prevent illegal returns.
               (role !== 'SUPERVISOR' || sessions.some(s => s.deviceId === r.id && s.status === 'ACTIVE')) ? (
                 <button
                   onClick={() => handleOpenReturn(r)}
-                  className="px-3 py-1 text-xs font-bold text-white bg-amber-600 hover:bg-amber-500 rounded-lg transition-colors cursor-pointer"
+                  className="px-3.5 py-1.5 text-xs font-bold text-white bg-amber-600 hover:bg-amber-500 rounded-xl transition-colors cursor-pointer"
                 >
                   Return
                 </button>
               ) : (
-                <span className="text-slate-500 text-xs italic">Assigned (Other)</span>
+                <span className="text-slate-500 text-xs italic py-1.5">Assigned (Other)</span>
               )
             )}
             {r?.status === 'MAINTENANCE' && (
-              <span className="text-slate-500 text-xs italic">Maintenance</span>
+              <span className="text-slate-500 text-xs italic py-1.5">Maintenance</span>
+            )}
+          </div>
+        ) : role === 'ADMIN' ? (
+          <div className="flex gap-2 justify-end">
+            {r?.status === 'ACTIVE' && (
+              <button
+                onClick={() => handleOpenReturn(r)}
+                className="px-3.5 py-1.5 text-xs font-bold text-white bg-amber-600 hover:bg-amber-500 rounded-xl transition-colors cursor-pointer"
+              >
+                Return
+              </button>
+            )}
+            {r?.status === 'INACTIVE' && (
+              <span className="text-slate-500 text-xs italic py-1.5">Available</span>
+            )}
+            {r?.status === 'MAINTENANCE' && (
+              <span className="text-slate-500 text-xs italic py-1.5">Maintenance</span>
             )}
           </div>
         ) : (
-          <span className="text-slate-500 text-xs italic">View Only</span>
+          <span className="text-slate-500 text-xs italic py-1.5">View Only</span>
         )
       )
     }
-
-
   ];
 
   if (isLoading) {
@@ -430,29 +441,29 @@ const handleReturnDevice = async (e: React.FormEvent) => {
         subtitle="View your active POS details and assignment history"
         kpis={
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-            <StatCard 
-              title="Active Terminal" 
-              value={activeAssignedSession ? activeAssignedSession.deviceName : 'None Assigned'} 
-              icon={<Smartphone className="text-blue-300" />} 
-              iconBg="bg-blue-500/10" 
+            <StatCard
+              title="Active Terminal"
+              value={activeAssignedSession ? activeAssignedSession.deviceName : 'None Assigned'}
+              icon={<Smartphone className="text-blue-300" />}
+              iconBg="bg-blue-500/10"
             />
-            <StatCard 
-              title="Current Float" 
-              value={activeAssignedSession ? `₦${activeAssignedSession.posFloat.toLocaleString()}` : '₦0'} 
-              icon={<Smartphone className="text-emerald-300" />} 
-              iconBg="bg-emerald-500/10" 
+            <StatCard
+              title="Current Float"
+              value={activeAssignedSession ? `₦${activeAssignedSession.posFloat.toLocaleString()}` : '₦0'}
+              icon={<Smartphone className="text-emerald-300" />}
+              iconBg="bg-emerald-500/10"
             />
-            <StatCard 
-              title="Devices Used" 
-              value={String(sessions.length)} 
-              icon={<Smartphone className="text-slate-300" />} 
-              iconBg="bg-slate-500/10" 
+            <StatCard
+              title="Devices Used"
+              value={String(sessions.length)}
+              icon={<Smartphone className="text-slate-300" />}
+              iconBg="bg-slate-500/10"
             />
-            <StatCard 
-              title="Active Location" 
-              value={locations[0] ? locations[0].locationName : 'No assigned location'} 
-              icon={<Smartphone className="text-purple-300" />} 
-              iconBg="bg-purple-500/10" 
+            <StatCard
+              title="Active Location"
+              value={locations[0] ? locations[0].locationName : 'No assigned location'}
+              icon={<Smartphone className="text-purple-300" />}
+              iconBg="bg-purple-500/10"
             />
           </div>
         }
@@ -487,32 +498,168 @@ const handleReturnDevice = async (e: React.FormEvent) => {
           {/* Assigned Locations */}
           <div className="space-y-3">
             <h3 className="text-slate-300 text-xs font-bold uppercase tracking-wider">My Assigned Locations</h3>
-            <DataTable
-              rows={locations}
-              columns={[
-                { id: 'name', header: 'location name', cell: (r) => <span className="text-slate-300 text-xs font-bold">{r?.locationName}</span> },
-                { id: 'address', header: 'address', cell: (r) => <span className="text-slate-500 text-xs">{r?.locationAddress}</span> },
-                { id: 'date', header: 'assigned date', cell: (r) => <span className="text-slate-400 text-xs">{r?.assignedFor}</span> },
-              ]}
-              getRowId={(r) => r.id}
-            />
+            {/* Mobile View: Cards */}
+            <div className="space-y-2 lg:hidden">
+              {locations.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex items-center justify-between p-3.5 rounded-2xl bg-white/3 border border-white/5"
+                >
+                  <div>
+                    <h4 className="text-xs font-bold text-white">{item.locationName}</h4>
+                    <p className="text-[10px] text-slate-500 mt-0.5">{item.locationAddress}</p>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                      {item.assignedFor}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop View: DataTable */}
+            <div className="hidden lg:block">
+              <DataTable
+                rows={locations}
+                columns={[
+                  { id: 'name', header: 'location name', cell: (r) => <span className="text-slate-300 text-xs font-bold">{r?.locationName}</span> },
+                  { id: 'address', header: 'address', cell: (r) => <span className="text-slate-500 text-xs">{r?.locationAddress}</span> },
+                  { id: 'date', header: 'assigned date', cell: (r) => <span className="text-slate-400 text-xs">{r?.assignedFor}</span> },
+                ]}
+                getRowId={(r) => r.id}
+              />
+            </div>
           </div>
 
           {/* User's Session History */}
           <div className="space-y-3">
             <h3 className="text-slate-300 text-xs font-bold uppercase tracking-wider">My Terminal History</h3>
-            <DataTable
-              rows={filteredEvents}
-              columns={columns.filter(col => col.id !== 'ticketer' && col.id !== 'topup')}
-              getRowId={(r) => r.id}
-              searchValue={q}
-              searchPredicate={(r, qq) =>
-                r.deviceName.toLowerCase().includes(qq) ||
-                r.deviceSerial.toLowerCase().includes(qq) ||
-                r.status.toLowerCase().includes(qq)
-              }
-            />
+            
+            {/* Mobile View: Cards */}
+            <div className="space-y-2 lg:hidden">
+              {filteredEvents
+                .filter((r) => !q || r.deviceName.toLowerCase().includes(q.toLowerCase()) || r.deviceSerial.toLowerCase().includes(q.toLowerCase()))
+                .map((item) => (
+                  <div
+                    key={item.id}
+                    onClick={() => setSessionDetails(item)}
+                    className="flex items-center justify-between p-3.5 rounded-2xl bg-white/3 border border-white/5 hover:border-white/10 hover:bg-white/5 transition-all cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 rounded-xl bg-white/5 border border-white/10">
+                        <Smartphone className="size-4 text-slate-400" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-white">{item.deviceName}</h4>
+                        <p className="text-[10px] text-slate-500 mt-0.5 font-mono">
+                          {item.deviceSerial}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <span className="text-xs font-black text-emerald-400 font-mono">
+                          ₦{item.posFloat.toLocaleString()}
+                        </span>
+                        <span className="block mt-0.5">
+                          <Badge
+                            variant={
+                              item.status === 'ACTIVE' ? 'success' :
+                                item.status === 'CLOSED' ? 'neutral' :
+                                  item.status === 'SHARED' ? 'info' :
+                                    'warning'
+                            }
+                          >
+                            {item.status}
+                          </Badge>
+                        </span>
+                      </div>
+                      <ChevronRight className="size-4 text-slate-600" />
+                    </div>
+                  </div>
+                ))}
+            </div>
+
+            {/* Desktop View: DataTable */}
+            <div className="hidden lg:block">
+              <DataTable
+                rows={filteredEvents.filter((r) => !q || r.deviceName.toLowerCase().includes(q.toLowerCase()) || r.deviceSerial.toLowerCase().includes(q.toLowerCase()))}
+                columns={[
+                  {
+                    id: 'device',
+                    header: 'device',
+                    cell: (r) => (
+                      <div className="flex flex-col">
+                        <span className="text-slate-300 text-xs font-bold">{r?.deviceName}</span>
+                        <span className="text-slate-500 text-[10px]">{r?.deviceSerial}</span>
+                      </div>
+                    )
+                  },
+                  {
+                    id: 'posFloat',
+                    header: 'current float',
+                    cell: (r) => <span className="text-emerald-400 text-xs font-mono font-bold">₦{r?.posFloat?.toLocaleString()}</span>
+                  },
+                  {
+                    id: 'action',
+                    header: 'status',
+                    align: 'center',
+                    cell: (r) => (
+                      <Badge
+                        variant={
+                          r?.status === 'ACTIVE' ? 'success' :
+                            r?.status === 'CLOSED' ? 'neutral' :
+                              r?.status === 'SHARED' ? 'info' :
+                                'warning'
+                        }
+                      >
+                        {r?.status}
+                      </Badge>
+                    )
+                  },
+                  {
+                    id: 'reason',
+                    header: 'reason',
+                    cell: (r) => (
+                      <span className="text-slate-500 text-xs">
+                        {r?.status === 'ACTIVE'
+                          ? 'Active Assignment'
+                          : r?.status === 'CLOSED'
+                            ? 'Shift Closed & Sales Verified'
+                            : r?.unassignedReason || 'Returned'}
+                      </span>
+                    )
+                  },
+                  {
+                    id: 'date',
+                    header: 'date',
+                    cell: (r) => (
+                      <span className="text-slate-500 text-xs">
+                        {r?.status === 'ACTIVE'
+                          ? (r?.assignedAt ? formatDateTime(r.assignedAt) : '—')
+                          : (r?.unassignedAt ? formatDateTime(r.unassignedAt) : '—')
+                        }
+                      </span>
+                    )
+                  },
+                  {
+                    id: 'supervisor',
+                    header: 'supervisor/actor',
+                    cell: (r) => (
+                      <span className="text-slate-400 text-xs">
+                        {r?.status === 'ACTIVE' ? r?.assignedBy : (r?.unassignedBy || '—')}
+                      </span>
+                    )
+                  }
+                ]}
+                getRowId={(r) => r.id}
+                onRowClick={(r) => setSessionDetails(r)}
+              />
+            </div>
+
           </div>
+
         </div>
       </PageScaffold>
     );
@@ -534,7 +681,7 @@ const handleReturnDevice = async (e: React.FormEvent) => {
                 <Plus className="w-4 h-4" /> Add Device
               </button>
             )}
-                       <Select
+            <Select
               value={actionFilter}
               onChange={(v) => setActionFilter(v)}
               options={[
@@ -545,7 +692,6 @@ const handleReturnDevice = async (e: React.FormEvent) => {
                 { value: 'CLOSED', label: 'Closed Only' },
               ]}
             />
-
           </div>
         }
         kpis={
@@ -564,35 +710,139 @@ const handleReturnDevice = async (e: React.FormEvent) => {
 
         <div className="space-y-8">
           <div className="space-y-3">
-            <h3 className="text-slate-300 text-xs font-bold uppercase tracking-wider">Active POS Inventory</h3>  
-            <DataTable
-              rows={filteredDevices}
-              columns={activeDevicesColumns}
-              getRowId={(r) => r.id}
-              searchValue={q}
-              searchPredicate={(r, qq) =>
-                r.id.toLowerCase().includes(qq) ||
-                r.name.toLowerCase().includes(qq) ||
-                r.serial_number.toLowerCase().includes(qq) ||
-                r.status.toLowerCase().includes(qq)
-              }
-            />
+            <h3 className="text-slate-300 text-xs font-bold uppercase tracking-wider">Active POS Inventory</h3>
+            
+            {/* Mobile View: Cards (visible on screens smaller than 'lg' for both roles) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 lg:hidden">
+              {filteredDevices
+                .filter((r) => !q || r.name.toLowerCase().includes(q.toLowerCase()) || r.serial_number.toLowerCase().includes(q.toLowerCase()))
+                .map((item) => (
+                  <div
+                    key={item.id}
+                    className="p-4 rounded-2xl bg-white/3 border border-white/5 hover:border-white/10 hover:bg-white/5 transition-all flex flex-col justify-between"
+                  >
+                    <div className="flex justify-between items-start mb-3">
+                      <div>
+                        <h4 className="text-sm font-bold text-white">{item.name}</h4>
+                        <p className="text-[10px] text-slate-500 mt-0.5 font-mono">{item.serial_number}</p>
+                      </div>
+                      <Badge variant={item.status === 'ACTIVE' ? 'success' : item.status === 'INACTIVE' ? 'neutral' : 'danger'}>
+                        {item.status}
+                      </Badge>
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-2 border-t border-white/5 mt-auto">
+                      {item.status === 'INACTIVE' && role === 'SUPERVISOR' && (
+                        <button
+                          onClick={() => handleOpenAssign(item)}
+                          className="px-3.5 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-xl transition-colors cursor-pointer"
+                        >
+                          Assign
+                        </button>
+                      )}
+                      {item.status === 'ACTIVE' && (
+                        (role !== 'SUPERVISOR' || sessions.some(s => s.deviceId === item.id && s.status === 'ACTIVE')) ? (
+                          <button
+                            onClick={() => handleOpenReturn(item)}
+                            className="px-3.5 py-1.5 text-xs font-bold text-white bg-amber-600 hover:bg-amber-500 rounded-xl transition-colors cursor-pointer"
+                          >
+                            Return
+                          </button>
+                        ) : (
+                          <span className="text-slate-500 text-xs italic py-1.5">Assigned (Other)</span>
+                        )
+                      )}
+                      {item.status === 'INACTIVE' && role === 'ADMIN' && (
+                        <span className="text-slate-500 text-xs italic py-1.5">Available</span>
+                      )}
+                      {item.status === 'MAINTENANCE' && (
+                        <span className="text-slate-500 text-xs italic py-1.5">Maintenance</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+            </div>
+
+            {/* Desktop View: DataTable (visible on screens 'lg' and larger for both roles) */}
+            <div className="hidden lg:block">
+              <DataTable
+                rows={filteredDevices}
+                columns={activeDevicesColumns}
+                getRowId={(r) => r.id}
+                searchValue={q}
+                searchPredicate={(r, qq) =>
+                  r.id.toLowerCase().includes(qq) ||
+                  r.name.toLowerCase().includes(qq) ||
+                  r.serial_number.toLowerCase().includes(qq) ||
+                  r.status.toLowerCase().includes(qq)
+                }
+              />
+            </div>
           </div>
 
           <div className="space-y-3">
-            <h3 className="text-slate-300 text-xs font-bold uppercase tracking-wider">Device Session History</h3> 
-            <DataTable
-              rows={filteredEvents}
-              columns={columns}
-              getRowId={(r) => r.id}
-              searchValue={q}
-              searchPredicate={(r, qq) =>
-                r.id.toLowerCase().includes(qq) ||
-                r.username.toLowerCase().includes(qq) ||
-                r.assignedBy.toLowerCase().includes(qq) ||
-                r.status.toLowerCase().includes(qq)
-              }
-            />
+            <h3 className="text-slate-300 text-xs font-bold uppercase tracking-wider">Device Session History</h3>
+            
+            {/* Mobile View: Cards (visible on screens smaller than 'lg' for both roles) */}
+            <div className="space-y-2 lg:hidden">
+              {filteredEvents
+                .filter((r) => !q || r.username.toLowerCase().includes(q.toLowerCase()) || r.deviceName.toLowerCase().includes(q.toLowerCase()))
+                .map((item) => (
+                  <div
+                    key={item.id}
+                    onClick={() => setSessionDetails(item)}
+                    className="flex items-center justify-between p-3.5 rounded-2xl bg-white/3 border border-white/5 hover:border-white/10 hover:bg-white/5 transition-all cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 rounded-xl bg-white/5 border border-white/10">
+                        <Smartphone className="size-4 text-slate-400" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-white">{item.deviceName}</h4>
+                        <p className="text-[10px] text-slate-500 mt-0.5">
+                          Staff: {item.username} ({item.userRole})
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <span className="text-xs font-black text-emerald-400 font-mono">
+                          ₦{item.posFloat.toLocaleString()}
+                        </span>
+                        <span className="block mt-0.5">
+                          <Badge
+                            variant={
+                              item.status === 'ACTIVE' ? 'success' :
+                                item.status === 'CLOSED' ? 'neutral' :
+                                  item.status === 'SHARED' ? 'info' :
+                                    'warning'
+                            }
+                          >
+                            {item.status}
+                          </Badge>
+                        </span>
+                      </div>
+                      <ChevronRight className="size-4 text-slate-600" />
+                    </div>
+                  </div>
+                ))}
+            </div>
+
+            {/* Desktop View: DataTable (visible on screens 'lg' and larger for both roles) */}
+            <div className="hidden lg:block">
+              <DataTable
+                rows={filteredEvents}
+                columns={columns}
+                getRowId={(r) => r.id}
+                searchValue={q}
+                searchPredicate={(r, qq) =>
+                  r.id.toLowerCase().includes(qq) ||
+                  r.username.toLowerCase().includes(qq) ||
+                  r.assignedBy.toLowerCase().includes(qq) ||
+                  r.status.toLowerCase().includes(qq)
+                }
+              />
+            </div>
           </div>
         </div>
       </PageScaffold>
@@ -851,6 +1101,93 @@ const handleReturnDevice = async (e: React.FormEvent) => {
               </button>
             </div>
           </form>
+        )}
+      </Drawer>
+
+      {/* DRAWER 5: Session/History Details */}
+      <Drawer
+        open={!!sessionDetails}
+        title="Session Details"
+        subtitle="Staff assignment & float audit"
+        onClose={() => setSessionDetails(null)}
+      >
+        {sessionDetails && (
+          <div className="space-y-6">
+            <div className="p-4 rounded-xl bg-white/3 border border-white/5 space-y-4">
+              <div className="flex justify-between items-center border-b border-white/5 pb-3">
+                <div>
+                  <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest block">Current Float</label>
+                  <span className="text-lg font-black text-emerald-400 font-mono mt-1 block">
+                    ₦{sessionDetails.posFloat.toLocaleString()}
+                  </span>
+                </div>
+                <Badge variant={
+                  sessionDetails.status === 'ACTIVE' ? 'success' : 
+                  sessionDetails.status === 'CLOSED' ? 'neutral' : 
+                  sessionDetails.status === 'SHARED' ? 'info' : 
+                  'warning'
+                }>
+                  {sessionDetails.status}
+                </Badge>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest block">Device</label>
+                  <span className="text-xs text-slate-200 mt-1 block font-bold">{sessionDetails.deviceName}</span>
+                  <span className="text-[10px] text-slate-400 font-mono mt-0.5 block">{sessionDetails.deviceSerial}</span>
+                </div>
+                <div>
+                  <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest block">Staff / User</label>
+                  <span className="text-xs text-slate-200 mt-1 block font-bold">{sessionDetails.username}</span>
+                  <span className="text-[10px] text-slate-400 font-mono mt-0.5 block">{sessionDetails.userRole}</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 pt-3 border-t border-white/5">
+                <div>
+                  <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest block">Assigned At</label>
+                  <span className="text-xs text-slate-300 mt-1 block">{formatDateTime(sessionDetails.assignedAt)}</span>
+                </div>
+                <div>
+                  <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest block">Assigned By</label>
+                  <span className="text-xs text-slate-300 mt-1 block">{sessionDetails.assignedBy}</span>
+                </div>
+              </div>
+
+              {sessionDetails.unassignedAt && (
+                <div className="grid grid-cols-2 gap-4 pt-3 border-t border-white/5">
+                  <div>
+                    <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest block">Returned At</label>
+                    <span className="text-xs text-slate-300 mt-1 block">{formatDateTime(sessionDetails.unassignedAt)}</span>
+                  </div>
+                  <div>
+                    <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest block">Received By</label>
+                    <span className="text-xs text-slate-300 mt-1 block">{sessionDetails.unassignedBy || '—'}</span>
+                  </div>
+                </div>
+              )}
+
+              {sessionDetails.unassignedReason && (
+                <div className="pt-3 border-t border-white/5">
+                  <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest block">Return Reason</label>
+                  <span className="text-xs text-amber-200 mt-1 block italic">{sessionDetails.unassignedReason}</span>
+                </div>
+              )}
+            </div>
+
+            {sessionDetails.status === 'ACTIVE' && (role === 'SUPERVISOR' || role === 'ADMIN') && (
+              <button
+                onClick={() => {
+                  handleOpenTopup(sessionDetails);
+                  setSessionDetails(null);
+                }}
+                className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2"
+              >
+                <Send className="w-4 h-4" /> Topup Float
+              </button>
+            )}
+          </div>
         )}
       </Drawer>
     </>
