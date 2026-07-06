@@ -4,6 +4,7 @@ import { NextResponse, NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { ApiError } from "@/app/lib/ApiError";
+import { checkSupervisorFinePermission } from "@/app/server/services/rules.service";
 
 export async function PATCH(
   req: NextRequest,
@@ -28,11 +29,22 @@ export async function PATCH(
     }
 
     const result = await prisma.$transaction(async (tx) => {
+
+
+      
       const fine = await tx.fine.findUnique({
         where: { id: fineId, company_id }
       });
 
       if (!fine) throw new ApiError(404, "Fine not found");
+
+      // Gating rule check for Supervisors
+  if (role === "SUPERVISOR") {
+    const hasPermission = await checkSupervisorFinePermission(company_id);
+    if (!hasPermission) {
+      throw new ApiError(403, "Forbidden: Supervisors do not have permission to edit or waive fines");
+    }
+  }
       
       let updatedFine;
 

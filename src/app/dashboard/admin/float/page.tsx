@@ -4,6 +4,8 @@ import FloatLedgerPage from "@/app/dashboard/FloatLedgerPage";
 import api from '@/app/lib/axios';
 import { TopUpItem } from '@/types/float';
 import { Float_Alocation } from '@/types/types';
+import axios from 'axios';
+import { toast } from 'react-toastify';
 
 export default function FloatRoute() {
   const [entries, setEntries] = useState<Float_Alocation[]>([]);
@@ -62,7 +64,10 @@ export default function FloatRoute() {
           setPosAllocations(allocationsRes.data.history || []);
         }
       } catch (err) {
-        console.error("Error loading admin float data:", err);
+        if(err instanceof axios.AxiosError)
+        toast.error(err?.response?.data.message || "Error loading admin float data");
+        else
+        toast.error("Error loading admin float data");
       } finally {
         if (isMounted) setLoading(false);
       }

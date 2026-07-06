@@ -89,8 +89,17 @@ export async function PATCH(
         }
       });
 
-      // B) Update ticketer's expectation
-      const remainingOwed = Math.max(0, expectation.shortage_amount - paidAmount);
+            // B) Update ticketer's expectation
+      const confirmedAgg = await tx.remittance.aggregate({
+        where: {
+          company_id,
+          pos_session_id: expectation.pos_session_id,
+          status: "CONFIRMED"
+        },
+        _sum: { amount: true }
+      });
+      const totalConfirmed = Number(confirmedAgg._sum.amount ?? 0);
+      const remainingOwed = Math.max(0, Number(expectation.expected_amount) - totalConfirmed);
       const isPaid = remainingOwed <= 0;
 
       await tx.remittanceExpectation.update({
@@ -100,6 +109,7 @@ export async function PATCH(
           status: isPaid ? "PAID" : expectation.status
         }
       });
+
 
       // C) Financial ledger entries (Credit Company Account & Ticketer Account)
       await tx.float_Ledger.create({

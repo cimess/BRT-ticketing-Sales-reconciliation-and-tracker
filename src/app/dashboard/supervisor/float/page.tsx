@@ -3,6 +3,8 @@ import React, { useEffect, useState, useCallback } from 'react';
 import FloatLedgerPage from "@/app/dashboard/FloatLedgerPage";
 import api from '@/app/lib/axios';
 import { Float_Alocation } from '@/types/types';
+import { toast } from 'react-toastify';
+import axios from 'axios';
 
 export default function FloatRoute() {
   const [entries, setEntries] = useState<Float_Alocation[]>([]);
@@ -37,7 +39,10 @@ export default function FloatRoute() {
           setEntries(allocationsRes.data.history || []);
         }
       } catch (err) {
-        console.error("Error loading supervisor float data:", err);
+        if(err instanceof axios.AxiosError)
+        toast.error(err?.response?.data.message || "Error loading supervisor float data");
+        else
+        toast.error("Error loading supervisor float data");
       } finally {
         if (isMounted) setLoading(false);
       }

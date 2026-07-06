@@ -147,11 +147,12 @@ export async function getRoleFinancialSnapshot(
       }, 0);
       
       // 7. Supervisor Cash Holdings (Physical Cash currently accepted & held by Supervisors)
-      const supervisorCashAgg = await prisma.remittance.aggregate({
+           const supervisorCashAgg = await prisma.remittance.aggregate({
         where: {
-          status: "ACCEPTED_BY_SUPERVISOR",
+          status: { in: ["ACCEPTED_BY_SUPERVISOR", "DEPOSITED"] },
           company_id: companyId,
         },
+
         _sum: { amount: true },
       });
       supervisorCash = Number(supervisorCashAgg._sum.amount ?? 0);
@@ -423,7 +424,6 @@ export async function getRoleSalesSnapshot(
         where: {
           ...submittedByFilter,
           status: RemittanceStatus.CONFIRMED,
-          received_by_supervisor_id: null, // DIRECT TO BANK/COMPANY VAULT ONLY
           ...getDateRangeFilter(fromDate, toDate, "remittance_date"),
           company_id:companyId,
         },
@@ -536,17 +536,48 @@ export async function fetchTicketerPosSnapshot(
 
     if (!pos) throw new ApiError(404, "POS session not found");
 
-    const previousSalesReport = pos.sales_reports[0];
-    const closingBalance = Number(previousSalesReport?.closing_balance ?? 0);
-
+       // 1. Fetch all successful top-ups received during this session
     const topupAggregate = await prisma.float_allocations.aggregate({
       where: { pos_device_id, status: Float_Status.SUCCESS, ...dateFilter, company_id: companyId },
       _sum: { amount_allocated: true },
     });
 
     const totalTopUp = Number(topupAggregate._sum.amount_allocated ?? 0);
-    const effectiveOpening = closingBalance + totalTopUp;
+
+    // 2. Fetch the actual opening balance from the ledger (Primary Source of Truth)
+    const openingLedger = await prisma.float_Ledger.findFirst({
+      where: {
+        posSession: pos_device_id,
+        reference_type: "SESSION_OPENING",
+        entry_type: "CREDIT",
+        company_id: companyId,
+      },
+      select: { amount: true }
+    });
+
+    let openingBalance = 0;
+    if (openingLedger) {
+      openingBalance = Number(openingLedger.amount);
+    } else {
+      // Fallback: If no ledger entry exists, use the mathematical/sales-report calculation
+      if (pos.status === "ACTIVE") {
+        openingBalance = Math.max(0, Number(pos.pos_float) - totalTopUp);
+      } else {
+        const salesReport = pos.sales_reports[0];
+        if (salesReport) {
+          openingBalance = Number(salesReport.opening_balance);
+        } else {
+          openingBalance = Math.max(0, Number(pos.pos_float) - totalTopUp);
+        }
+      }
+    }
+
+    // 3. Set the return metrics
+    const closingBalance = openingBalance; 
+    const effectiveOpening = openingBalance + totalTopUp;
     const expectedRemittance = effectiveOpening;
+
+
 
     const topUp = pos.allocations_given.map((allocation) => ({
       id: allocation.id,

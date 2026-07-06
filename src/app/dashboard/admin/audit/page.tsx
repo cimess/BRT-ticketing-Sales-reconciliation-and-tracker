@@ -1,4 +1,4 @@
-import AuditorPage from "@/dashboard/AuditLogPage";
+import AuditorPage from "../../AuditLogPage";
 
 export default function AuditPage() {
     return (

@@ -1,36 +1,31 @@
 // src/app/workers/rulesWorker.ts
 import { Worker, WorkerOptions } from "bullmq"; 
 import IORedis from "ioredis";
-import { prisma } from "@/lib/prisma";
+import { prisma } from "@/app/lib/prisma";
 
-// Safe dynamic comparison helper
-function evaluateCondition(actual: number, operator: string, threshold: number): boolean {
-  switch (operator) {
-    case ">": return actual > threshold;
-    case ">=": return actual >= threshold;
-    case "<": return actual < threshold;
-    case "<=": return actual <= threshold;
-    case "==": return actual === threshold;
-    default: return false;
-  }
-}
-
-// Main evaluation logic (can run in Worker or synchronously as fallback)
 export async function runRuleEvaluation(payload: { event: string; reportId: string; companyId: string }) {
   const { event, reportId, companyId } = payload;
 
-  // 1. Hydrate contextual data for the rule evaluation
+  // We only run this worker on report submission events
+  if (event !== "ON_REPORT_SUBMISSION") return;
+
   const report = await prisma.salesReport.findFirst({
     where: { id: reportId, company_id: companyId },
     include: { pos_device: true }
   });
   if (!report) return;
 
-  const expectation = await prisma.remittanceExpectation.findFirst({
-    where: { pos_session_id: report.pos_session_id }
+  // 1. Fetch active "Late Report Submission Policy" directly by Name
+  const rule = await prisma.companyRule.findFirst({
+    where: {
+      company_id: companyId,
+      name: "Late Report Submission Policy",
+      is_active: true
+    }
   });
+  if (!rule) return;
 
-  // Calculate delay if any (time between location closing time and physical submission)
+  // 2. Calculate hours late from the location's closing time
   let hoursLateSubmitting = 0;
   const location = await prisma.location.findFirst({ where: { id: report.location_id } });
   if (location?.closing_time && report.submitted_at) {
@@ -45,44 +40,46 @@ export async function runRuleEvaluation(payload: { event: string; reportId: stri
     }
   }
 
-  // Define context variables accessible to admin rules
-  const context: Record<string, number> = {
-    shortage_amount: expectation?.shortage_amount ?? 0,
-    opening_balance: report.opening_balance,
-    closing_balance: report.closing_balance,
-    total_sold: report.total_sold,
-    hours_late_submitting: hoursLateSubmitting
-  };
+  // 3. Direct comparison: If late, issue the fine
+  if (hoursLateSubmitting > rule.comparison_value) {
+    const ticketer = await prisma.user.findUnique({
+      where: { id: report.ticketer_id },
+      select: { supervisor_id: true }
+    });
 
-  // 2. Fetch active rules for the triggered event
-  const activeRules = await prisma.companyRule.findMany({
-    where: {
-      company_id: companyId,
-      trigger: event,
-      is_active: true
+    let issuerId = ticketer?.supervisor_id;
+    if (!issuerId) {
+      const adminUser = await prisma.user.findFirst({
+        where: { company_id: companyId, role: "ADMIN" },
+        select: { id: true }
+      });
+      issuerId = adminUser?.id || report.ticketer_id;
     }
-  });
 
-  // 3. Evaluate each rule
-  for (const rule of activeRules) {
-    const actualValue = context[rule.target_field];
-    if (actualValue === undefined) continue; // Rule targets a field that doesn't exist in context
+    const reportDateStr = new Date(report.report_date).toISOString().split('T')[0];
+    const fineReason = `Late Report Submission: POS Session ${report.pos_session_id} on ${reportDateStr}`;
 
-    const isViolated = evaluateCondition(actualValue, rule.operator, rule.comparison_value);
+    // Deduplicate to avoid repeating fines for the same report submission
+    const existingFine = await prisma.fine.findFirst({
+      where: {
+        company_id: companyId,
+        defaulter_id: report.ticketer_id,
+        reason: fineReason
+      }
+    });
 
-    if (isViolated) {
-      // 4. Create automated Fine
+    if (!existingFine) {
       await prisma.fine.create({
         data: {
           company_id: companyId,
           defaulter_id: report.ticketer_id,
           amount: rule.fine_amount,
-          reason: `Automated Rule Penalty: ${rule.name}`,
-          issued_by: "SYSTEM_RULES_ENGINE", // Custom system tag
+          reason: fineReason,
+          issued_by: issuerId,
           status: "UNPAID"
         }
       });
-      console.log(`Successfully issued automated fine for rule: ${rule.name} to user: ${report.ticketer_id}`);
+      console.log(`Successfully issued automated fine for Late Report Submission to ticketer: ${report.ticketer_id}`);
     }
   }
 }
@@ -90,7 +87,6 @@ export async function runRuleEvaluation(payload: { event: string; reportId: stri
 const REDIS_URL = process.env.REDIS_URL;
 if (REDIS_URL) {
   const connection = new IORedis(REDIS_URL, { maxRetriesPerRequest: null });
-  // Cast connection using WorkerOptions["connection"] to bypass ESLint 'any' checks
   new Worker("rules-queue", async (job) => {
     console.log(`Processing rule job ${job.id} for event: ${job.data.event}`);
     await runRuleEvaluation(job.data);

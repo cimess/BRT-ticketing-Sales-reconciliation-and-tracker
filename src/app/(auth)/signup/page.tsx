@@ -28,6 +28,7 @@ export default function Register() {
     const [showPassword, setShowPassword] = useState(false);
     const [token, setToken] = useState("")
     const [confirmPassword, setConfirmPassword] = useState("")
+    const [address, setAddress] = useState("")
     const [guarantorName, setGuarantorName] = useState("")
     const [guarantorPhone, setGuarantorPhone] = useState("")
     const [guarantorAddress, setGuarantorAddress] = useState("")
@@ -51,11 +52,9 @@ export default function Register() {
 
         } catch (err) {
             if (axios.isAxiosError(err)) {
-                console.log(err?.response?.data, "i am here 1")
                 toast.error(err?.response?.data?.message)
                 setTokenMessage(err?.response?.data?.message)
             } else {
-                console.log(err, "i am here 2")
                 toast.error("Network error||system error")
                 setTokenMessage("Network error||system error")
             }
@@ -152,6 +151,14 @@ export default function Register() {
             return
         }
 
+        if(!address && role !== "ADMIN"){
+            toast.warning("Please enter your residential address")
+            setMessage("Please enter your residential address")
+            setShake(true)
+            setTimeout(() => setShake(false), 500)
+            return
+        }
+
 
         try {
             setShowLoader(true)
@@ -163,6 +170,7 @@ export default function Register() {
                 token,
                 phoneNumber,
                 companyCode,
+                address,
                 // so if the role is ADMIN, send the role, otherwise don't 
                 // send it so i just dont send stuff that wont be used
                 ...(role === "ADMIN" && { role, companyName }),
@@ -336,6 +344,21 @@ export default function Register() {
 
                             </div>
 
+                             <div className="relative">
+                                <input
+                                    type="text"
+                                    placeholder="Address"
+                                    className="w-full rounded-xl bg-white/3 border border-white/10
+              text-white px-5 py-3.5 outline-none focus:border-white/20 transition-all font-medium"
+                                    value={address}
+                                    maxLength={150}
+                                    onChange={(e) => setAddress(e.target.value)}
+                                    onFocus={() => { setMessage("Enter your residential address") }}
+                                />
+
+                            </div>
+
+
                             <div className="relative">
                                 <input
                                     type={showPasswordToken ? "text" : "password"}
@@ -457,6 +480,7 @@ export default function Register() {
                                     <input
                                         type="text"
                                         placeholder="Guarantor's Address"
+                                        maxLength={150}
                                         className="w-full rounded-xl bg-white/3 border border-white/10
               text-white px-5 py-3.5 outline-none focus:border-white/20 transition-all font-medium"
                                         value={guarantorAddress}

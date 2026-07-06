@@ -12,11 +12,13 @@ import type { FloatLedgerEntry, DashboardRoleUsers } from '@/types/types';
 import { formatMoney } from '@/lib/utils';
 import api from '@/app/lib/axios';
 import { Drawer } from '@/components/Drawer';
+import { toast } from 'react-toastify';
+import axios from 'axios';
 
 interface TransactionsPageProps {
   role: DashboardRoleUsers;
 }
-
+// console
 interface TransactionMetrics {
   actualBalance?: number;
   drift?: number;
@@ -62,7 +64,11 @@ export default function TransactionsPage({ role }: TransactionsPageProps) {
         setMetrics(res.data.metrics);
       }
     } catch (err) {
-      console.error("Error loading transactions:", err);
+      if(err instanceof axios.AxiosError){
+        toast.error(err?.response?.data.message || "Failed to load transactions.");
+      }else{
+        toast.error("Failed to load transactions.");
+      }
     } finally {
       setLoading(false);
     }

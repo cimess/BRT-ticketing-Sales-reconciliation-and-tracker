@@ -2,6 +2,8 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import DevicesPage, { PosDevice, PosDeviceSession, AvailableUser } from "@/app/dashboard/PosDevicesPage";
 import api from '@/lib/axios';
+import { toast } from 'react-toastify';
+import axios from 'axios';
 
 export default function AdminDevicesRoute() {
   const [devices, setDevices] = useState<PosDevice[]>([]);
@@ -18,7 +20,10 @@ export default function AdminDevicesRoute() {
         setAvailableUsers(res.data.availableUsers || []);
       }
     } catch (err) {
-      console.error("Error loading admin devices:", err);
+      if(err instanceof axios.AxiosError)
+      toast.error(err?.response?.data.message || "Error loading admin devices");
+      else
+      toast.error("Error loading admin devices");
     } finally {
       setLoading(false);
     }

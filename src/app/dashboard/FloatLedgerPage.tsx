@@ -1,7 +1,7 @@
 // src/app/dashboard/FloatLedgerPage.tsx
 
 "use client"
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { ArrowRightLeft, Coins, Plus, ChevronRight } from 'lucide-react';
 import StatCard from '@/components/StatCard';
 import { Badge } from '@/components/Badge';
@@ -52,6 +52,61 @@ export default function FloatLedgerPage({
   dateRange,
 }: FloatLedgerPageProps) {
 
+
+    // Add at the beginning of the FloatLedgerPage component:
+  interface QuickStatusDevice {
+    id: string;
+    name: string;
+    serialNumber: string;
+    status: 'ACTIVE' | 'INACTIVE' | 'MAINTENANCE';
+    activeSession: {
+      id: string;
+      userId: string;
+      userName: string;
+      currentFloat: number;
+      assignedAt: string;
+    } | null;
+    lastSession: {
+      userId: string;
+      userName: string;
+      lastFloat: number;
+      closedAt: string | null;
+    } | null;
+    isEligible: boolean;
+    reason: string | null;
+  }
+
+  const [quickDevices, setQuickDevices] = useState<QuickStatusDevice[]>([]);
+  const [quickAmounts, setQuickAmounts] = useState<Record<string, string>>({});
+  const [quickSubmitting, setQuickSubmitting] = useState<Record<string, boolean>>({});
+
+  const fetchQuickDevices = useCallback(async () => {
+    if (role !== 'SUPERVISOR') return;
+    try {
+      const res = await api.get<{ success: boolean; devices: QuickStatusDevice[] }>('/supervisor/device/quick-status');
+      if (res.data?.success) {
+        setQuickDevices(res.data.devices);
+      }
+    } catch (err) {
+      if(err instanceof axios.AxiosError){
+        toast.error(err?.response?.data.message || "Failed to load database audit logs.");
+      }
+      toast.error("Failed to load active POS sessions");
+    }
+  }, [role]);
+
+
+  useEffect(() => {
+    if (role === 'SUPERVISOR') {
+      const timer = setTimeout(() => {
+        fetchQuickDevices();
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, [role, entries,fetchQuickDevices]);
+
+
+
   const [q, setQ] = useState('');
   const prevQRef = React.useRef(q);
   const [reason, setReason] = useState<'ALL' | Float_Status>('ALL');
@@ -91,7 +146,7 @@ export default function FloatLedgerPage({
             }
           }
         } catch (err) {
-          console.error("Error fetching active sessions:", err);
+         
           toast.error("Failed to load active POS sessions");
         }
       };
@@ -210,7 +265,7 @@ export default function FloatLedgerPage({
         toast.error(res.data?.message || "Failed to reverse allocation");
       }
     } catch (err) {
-      console.error(err);
+     (err);
       if (axios.isAxiosError(err)) {
         toast.error(err.response?.data?.error || err.response?.data?.message || err?.message || "An error occurred");
       }
@@ -222,7 +277,6 @@ export default function FloatLedgerPage({
   if (isLoading) {
     return <div className="text-slate-400 p-8 font-medium">Loading ledger records...</div>;
   }
-
   return (
     <>
       <PageScaffold
@@ -308,6 +362,129 @@ export default function FloatLedgerPage({
             </button>
           </div>
         )}
+
+                {role === 'SUPERVISOR' && quickDevices.length > 0 && (
+          <div className="bg-white/3 border border-white/5 rounded-3xl p-6 mb-6">
+            <div className="flex justify-between items-center mb-5">
+              <div>
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider">Quick POS Allocation Dashboard</h3>
+                <p className="text-[11px] text-slate-400 mt-1">Assign inactive devices and allocate float instantly to the last holder.</p>
+              </div>
+              <button 
+                onClick={fetchQuickDevices}
+                className="text-[10px] text-blue-400 font-bold uppercase tracking-wider hover:underline"
+              >
+                Refresh Status
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {quickDevices.map((device) => {
+                const isDeviceActive = device.status === 'ACTIVE';
+                const lastHolder = device.lastSession?.userName || "N/A";
+                const currentHolder = device.activeSession?.userName || lastHolder;
+                const currentFloat = isDeviceActive ? (device.activeSession?.currentFloat ?? 0) : (device.lastSession?.lastFloat ?? 0);
+                
+                return (
+                  <div 
+                    key={device.id} 
+                    className={`rounded-2xl border p-4 transition-all relative ${
+                      isDeviceActive 
+                        ? 'bg-blue-950/20 border-blue-500/30' 
+                        : device.status === 'MAINTENANCE' 
+                        ? 'bg-red-950/10 border-red-500/10 opacity-70' 
+                        : 'bg-white/3 border-white/5'
+                    }`}
+                  >
+                    <div className="flex justify-between items-start mb-3">
+                      <div>
+                        <h4 className="text-xs font-bold text-white font-mono">{device.name}</h4>
+                        <p className="text-[10px] text-slate-500 font-mono mt-0.5">{device.serialNumber}</p>
+                      </div>
+                      <Badge variant={isDeviceActive ? 'success' : device.status === 'MAINTENANCE' ? 'danger' : 'neutral'}>
+                        {device.status}
+                      </Badge>
+                    </div>
+
+                    <div className="space-y-1.5 mb-4 text-[11px]">
+                      <div className="flex justify-between">
+                        <span className="text-slate-500 font-medium">Holder:</span>
+                        <span className="text-slate-200 font-semibold">{currentHolder}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500 font-medium">
+                          {isDeviceActive ? 'Current Float:' : 'Carry-over Float:'}
+                        </span>
+                        <span className="text-slate-200 font-mono font-bold">{formatMoney(currentFloat)}</span>
+                      </div>
+                    </div>
+
+                    {device.isEligible ? (
+                      <div className="space-y-2 mt-4 pt-3 border-t border-white/5">
+                        <div className="flex gap-2">
+                          <input
+                            type="number"
+                            placeholder="Allocation amount (₦)"
+                            value={quickAmounts[device.id] || ''}
+                            onChange={(e) => setQuickAmounts(prev => ({ ...prev, [device.id]: e.target.value }))}
+                            disabled={quickSubmitting[device.id]}
+                            className="w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          />
+                          <button
+                            onClick={async () => {
+                              const amount = quickAmounts[device.id];
+                              if (!amount || Number(amount) <= 0) {
+                                toast.error("Please enter a valid amount");
+                                return;
+                              }
+
+                              if (!isDeviceActive) {
+                                const confirmAssign = window.confirm(
+                                  `This will assign ${device.name} to ${lastHolder} with carry-over of ${formatMoney(currentFloat)} and allocate an additional ${formatMoney(Number(amount))}. Continue?`
+                                );
+                                if (!confirmAssign) return;
+                              }
+
+                              try {
+                                setQuickSubmitting(prev => ({ ...prev, [device.id]: true }));
+                                const res = await api.post<{ success: boolean; message: string }>("/supervisor/floatallocation", {
+                                  deviceId: device.id,
+                                  amount: Number(amount)
+                                });
+                                toast.success(res.data.message);
+                                setQuickAmounts(prev => ({ ...prev, [device.id]: '' }));
+                                if (onRefresh) onRefresh();
+                                refreshMetrics();
+                                fetchQuickDevices();
+                              } catch (err) {
+                                if (axios.isAxiosError(err)) {
+                                  toast.error(err.response?.data?.message || err.response?.data?.error || "An error occurred");
+                                }
+                              } finally {
+                                setQuickSubmitting(prev => ({ ...prev, [device.id]: false }));
+                              }
+                            }}
+                            disabled={quickSubmitting[device.id] || !quickAmounts[device.id]}
+                            className="rounded-xl bg-blue-500 hover:bg-blue-400 disabled:bg-slate-700 disabled:text-slate-500 text-white text-[11px] font-bold px-3 py-2 shrink-0 transition-all"
+                          >
+                            {quickSubmitting[device.id] ? '...' : isDeviceActive ? 'Top Up' : 'Assign & Alloc'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mt-4 pt-3 border-t border-white/5 text-center">
+                        <span className="text-[10px] text-rose-400 font-bold bg-rose-500/10 px-2.5 py-1 rounded-lg inline-block">
+                          ⚠️ {device.reason || 'Not eligible for quick assign'}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
 
         <FilterRow>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 w-full">

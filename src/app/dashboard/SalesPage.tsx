@@ -24,9 +24,11 @@ import { Button } from "@/components/ui/button";
 import { formatDateTime, formatMoney } from "@/app/lib/utils";
 import type { DashboardRoleUsers, Sales_Record, Ticketer_Location_Assignment } from "@/app/types/types";
 import { PosDeviceSession } from "./PosDevicesPage";
+import axios from "axios";
+import { toast } from "react-toastify";
 
 type SalesView = "LATEST" | "TOP" | "BALANCED";
-
+// 
 type SalesPageProps = {
   role?: DashboardRoleUsers;
   records?: Sales_Record[];
@@ -365,7 +367,9 @@ export default function SalesPage({
           setSalesRecords(json.reports || []);
         }
       } catch (e) {
-        console.error("Failed to load real sales records:", e);
+        if(e instanceof axios.AxiosError){
+          toast.error(e?.response?.data.message || "Failed to load sales records.");
+        }
       } finally {
         if (active) setIsLoading(false);
       }
@@ -392,7 +396,9 @@ export default function SalesPage({
           setTicketers(json.data || []);
         }
       } catch (e) {
-        console.error("Failed to load ticketers:", e);
+        if (e instanceof axios.AxiosError) {
+          toast.error(e?.response?.data.message || "Failed to load ticketers.");
+        }
       }
     }
 
@@ -571,9 +577,28 @@ export default function SalesPage({
     );
 
     const totalSales = validRecords.reduce((sum, record) => sum + record.total_sold, 0);
-    const totalTopUps = validRecords.reduce((sum, record) => sum + record.top_up, 0);
-    const totalOpening = validRecords.reduce((sum, record) => sum + record.opening_balance, 0);
-    const totalClosing = validRecords.reduce((sum, record) => sum + record.closing_balance, 0);
+     const totalTopUps = validRecords.reduce((sum, record) => sum + record.top_up, 0);
+
+    // Group by pos_session_id to avoid double-counting/accumulating balances of the same session
+    const sessionReportsMap = new Map<string, typeof validRecords>();
+    validRecords.forEach((r) => {
+      if (!sessionReportsMap.has(r.pos_session_id)) {
+        sessionReportsMap.set(r.pos_session_id, []);
+      }
+      sessionReportsMap.get(r.pos_session_id)!.push(r);
+    });
+
+    let totalOpening = 0;
+    let totalClosing = 0;
+    sessionReportsMap.forEach((reportsList) => {
+      const sortedReports = [...reportsList].sort(
+        (a, b) => new Date(a.submitted_at).getTime() - new Date(b.submitted_at).getTime()
+      );
+      if (sortedReports.length > 0) {
+        totalOpening += sortedReports[0].opening_balance;
+        totalClosing += sortedReports[sortedReports.length - 1].closing_balance;
+      }
+    });
     
     const averageTicket = recordCount ? totalSales / recordCount : 0;
     const coverage = totalTopUps ? (totalSales / totalTopUps) * 100 : 0;
@@ -1292,8 +1317,10 @@ function SalesReportForm({
           }
         }
       } catch (err) {
-        console.error("Failed to load ticketer details:", err);
-        setError("Failed to fetch device and location data");
+        if(err instanceof axios.AxiosError){
+          toast.error(err?.response?.data.message || "Failed to load ticketer details.");
+        }
+        toast.error("Failed to load ticketer details.");
       }
     }
 
@@ -1314,6 +1341,8 @@ function SalesReportForm({
 
     setLoading(true);
     setError("");
+    const selectedAssignment = locations.find((l) => l.id === selectedLocation);
+    const trueLocationId = selectedAssignment ? selectedAssignment.locationId : selectedLocation;
 
     try {
       const res = await fetch("/api/sales", {
@@ -1321,7 +1350,7 @@ function SalesReportForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           posSessionId: selectedSession,
-          locationId: selectedLocation,
+          locationId: trueLocationId,
           openingBalance: Number(openingBalance),
           closingBalance: Number(closingBalance),
           totalSold: Number(totalSold),
@@ -1360,7 +1389,12 @@ function SalesReportForm({
             setSelectedSession(val);
             if (val) {
               const sess = sessions.find((s) => s.id === val);
-              setOpeningBalance(sess ? String(sess.posFloat || 0) : "");
+              const opBal = sess ? String(sess.posFloat || 0) : "";
+              setOpeningBalance(opBal);
+              // Auto-calculate closing balance if totalSold is already input
+              if (opBal && totalSold) {
+                setClosingBalance(String(Math.max(0, Number(opBal) - Number(totalSold))));
+              }
             } else {
               setOpeningBalance("");
             }
@@ -1417,7 +1451,14 @@ function SalesReportForm({
         <input
           type="number"
           value={openingBalance}
-          onChange={(e) => setOpeningBalance(e.target.value)}
+          onChange={(e) => {
+            const val = e.target.value;
+            setOpeningBalance(val);
+            // Auto-calculate closing balance when opening balance changes
+            if (val && totalSold) {
+              setClosingBalance(String(Math.max(0, Number(val) - Number(totalSold))));
+            }
+          }}
           placeholder="0.00"
           className="mt-2 w-full rounded-xl bg-white/3 border border-white/10 px-4 py-2.5 text-sm text-white focus:outline-none"
         />
@@ -1426,25 +1467,34 @@ function SalesReportForm({
       {/* Total Sold (Sales) */}
       <div>
         <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">Total Sold (Sales)</label>
-        <input
+              <input
           type="number"
           value={totalSold}
-          onChange={(e) => setTotalSold(e.target.value)}
+          onChange={(e) => {
+            const val = e.target.value;
+            setTotalSold(val);
+            // Auto-calculate closing balance: Opening Balance - Total Sold
+            if (openingBalance && val !== "") {
+              setClosingBalance(String(Math.max(0, Number(openingBalance) - Number(val))));
+            }
+          }}
           placeholder="e.g. 50000"
           className="mt-2 w-full rounded-xl bg-white/3 border border-white/10 px-4 py-2.5 text-sm text-white focus:outline-none"
         />
+
       </div>
 
       {/* Closing Balance */}
       <div>
         <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">Closing Balance</label>
-        <input
+             <input
           type="number"
           value={closingBalance}
           onChange={(e) => setClosingBalance(e.target.value)}
           placeholder="e.g. 50000"
           className="mt-2 w-full rounded-xl bg-white/3 border border-white/10 px-4 py-2.5 text-sm text-white focus:outline-none"
         />
+
       </div>
 
       <button

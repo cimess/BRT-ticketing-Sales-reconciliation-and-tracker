@@ -43,7 +43,7 @@ export interface FineRecord {
   };
 }
 
-
+// 
 function expectationStatusVariant(s: RemittanceExpectationStatus): 'danger' | 'success' | 'warning' | 'info' {
   if (s === 'PAID') return 'success';
   if (s === 'SUBMITTED') return 'info';
@@ -90,6 +90,7 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
 
   const [fines, setFines] = useState<FineRecord[]>([]);
   const { data: session } = useSession();
+   const [supervisorCanFine, setSupervisorCanFine] = useState(false);
 
   // Manual Fine States
   const [fineUsers, setFineUsers] = useState<{ id: string; name: string }[]>([]);
@@ -109,15 +110,16 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
     if (userRole !== 'SUPERVISOR' && userRole !== 'ADMIN') return;
     try {
       // Calls the GET endpoint you just created (using 'requests' for [id])
-      const res = await fetch('/api/remitance/requests/accept?status=PENDING');
+      const res = await fetch('/api/remitance/requests/accept?status=PENDING_SUPERVISOR_ACCEPTANCE');
       const result = await res.json();
 
       if (result.success) {
         setSupervisorHandovers(result.data || []);
-        console.log('supervisor data', result.data)
       }
     } catch (err) {
-      console.error('Failed to load supervisor cash handovers', err);
+      if(err instanceof axios.AxiosError){
+        toast.error(err?.response?.data.message || "Failed to load supervisor cash handovers.");
+      }
     }
   }, [userRole]);
 
@@ -140,6 +142,7 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
 
       setExpectations(data.expectations || []);
       setRemittances(data.remittances || []);
+      setSupervisorCanFine(data.supervisorCanFine || false);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'An unexpected error occurred';
       setError(message);
@@ -161,6 +164,7 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
           }
           setExpectations(data.expectations || []);
           setRemittances(data.remittances || []);
+          setSupervisorCanFine(data.supervisorCanFine || false);
         }
 
         if (isMounted && (userRole === 'SUPERVISOR' || userRole === 'ADMIN')) {
@@ -195,7 +199,9 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
           setSupervisors(res.data.data || []);
         }
       } catch (err) {
-        console.error('Failed to load supervisors', err);
+        if(err instanceof axios.AxiosError){
+          toast.error(err?.response?.data.message || "Failed to load supervisors.");
+        }
       }
     };
     if (userRole === 'TICKETER') {
@@ -225,7 +231,9 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
         }
       }
     } catch (err) {
-      console.error('Failed to load users for fine dropdown', err);
+      if(err instanceof axios.AxiosError){
+        toast.error(err?.response?.data.message || "Failed to load users for fine dropdown.");
+      }
     }
   }, [userRole]);
 
@@ -259,8 +267,9 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
         toast.error(res.data?.error || "Failed to issue fine");
       }
     } catch (err) {
-      console.error(err);
-      toast.error("Error issuing fine");
+      if(err instanceof axios.AxiosError){
+        toast.error(err?.response?.data.message || "Failed to issue fine.");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -485,7 +494,9 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
         setFines(result.fines || []);
       }
     } catch (err) {
-      console.error('Failed to load fines', err);
+      if(err instanceof axios.AxiosError){
+        toast.error(err?.response?.data.message || "Failed to load fines.");
+      }
     }
   }, []);
 
@@ -518,8 +529,15 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
     return expectations.reduce((acc, e) => acc + Number(e.shortage_amount), 0);
   }, [expectations]);
 
-  const totalPendingRemittances = useMemo(() => {
-    return remittances.reduce((acc, r) => acc + Number(r.amount), 0);
+ const totalPendingRemittances = useMemo(() => {
+    return remittances
+      .filter((r) => 
+        r.status === 'PENDING' || 
+        r.status === 'PENDING_SUPERVISOR_ACCEPTANCE' || 
+        r.status === 'ACCEPTED_BY_SUPERVISOR' || 
+        r.status === 'DEPOSITED'
+      )
+      .reduce((acc, r) => acc + Number(r.amount), 0);
   }, [remittances]);
 
   const filteredFines = useMemo(() => {
@@ -775,7 +793,7 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
             )}
 
                        {/* Set / Edit Amount Button: Admin/Issuer supervisor on unpaid fine */}
-            {isUnpaid && (userRole === 'ADMIN' || (userRole === 'SUPERVISOR' && row.issued_by === session?.user?.id)) && (
+            {isUnpaid && (userRole === 'ADMIN' || (userRole === 'SUPERVISOR' && supervisorCanFine && row.issued_by === session?.user?.id)) && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -797,7 +815,7 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
             )}
 
             {/* Waive Button: Admin/Issuer supervisor on unpaid or pending fine */}
-            {(isUnpaid || isPending) && (userRole === 'ADMIN' || (userRole === 'SUPERVISOR' && row.issued_by === session?.user?.id)) && (
+            {(isUnpaid || isPending) && (userRole === 'ADMIN' || (userRole === 'SUPERVISOR' && supervisorCanFine && row.issued_by === session?.user?.id)) && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -834,7 +852,7 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
             </button>
 
             {/* Added: Manual "Issue Fine" button for Admins and Supervisors when viewing the Fines tab */}
-            {activeTab === 'FINES' && (userRole === 'ADMIN' || userRole === 'SUPERVISOR') && (
+            {activeTab === 'FINES' && (userRole === 'ADMIN' || (userRole === 'SUPERVISOR' && supervisorCanFine)) && (
               <button
                 onClick={() => { loadFineUsers(); setOpenIssueFineDrawer(true) }}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-400 text-xs font-semibold transition border border-red-500/30"

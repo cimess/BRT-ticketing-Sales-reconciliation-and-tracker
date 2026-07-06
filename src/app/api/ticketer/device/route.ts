@@ -36,6 +36,7 @@ export async function GET(req: NextRequest) {
     const locations = dbLocations.map((la) => ({
       id: la.id,
       assignmentId: la.id,
+      locationId: la.location_id,
       locationName: la.location.name,
       locationAddress: la.location.address,
       assignedFor: la.assigned_for.toISOString(),

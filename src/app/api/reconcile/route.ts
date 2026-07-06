@@ -5,6 +5,8 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { ApiError } from "@/lib/ApiError";
 import { checkAndEscalateExpectations, checkSupervisorDepositViolations } from "@/server/services/escalation.service";
+import { checkSupervisorFinePermission } from "@/app/server/services/rules.service";
+
 
 
 export async function GET(req: NextRequest) {
@@ -20,12 +22,20 @@ export async function GET(req: NextRequest) {
 
         await checkAndEscalateExpectations(company_id);
         await checkSupervisorDepositViolations(company_id);
+         const supervisorCanFine = await checkSupervisorFinePermission(company_id);
 
         if (role === "ADMIN" || role === "AUDITOR") {
             const expectations = await prisma.remittanceExpectation.findMany({
                 where: {
                     company_id,
-                    status: { in: ["OVERDUE", "VIOLATED"] }
+                    status: { in: ["OVERDUE", "VIOLATED"] },
+                    pos_session: {
+                        sales_reports: {
+                            some: {
+                                status: { in: ["PENDING", "VERIFIED"] }
+                            }
+                        }
+                    }
                 },
                 include: {
                     user: { select: { id: true, first_name: true, last_name: true, role: true } },
@@ -59,19 +69,27 @@ export async function GET(req: NextRequest) {
                 orderBy: { created_at: "desc" }
             });
 
-            return NextResponse.json({ success: true, expectations, remittances });
+            return NextResponse.json({ success: true, expectations, remittances,supervisorCanFine });
         }
 
         if (role === "SUPERVISOR") {
-            const expectations = await prisma.remittanceExpectation.findMany({
+                      const expectations = await prisma.remittanceExpectation.findMany({
                 where: {
                     company_id,
                     status: { in: ["OVERDUE", "VIOLATED"] },
                     OR: [
                         { user: { supervisor_id: userId } },
                         { user_id: userId }
-                    ]
+                    ],
+                    pos_session: {
+                        sales_reports: {
+                            some: {
+                                status: { in: ["PENDING", "VERIFIED"] }
+                            }
+                        }
+                    }
                 },
+
                 include: {
                     user: { select: { id: true, first_name: true, last_name: true, role: true } },
                     pos_session: {
@@ -110,16 +128,24 @@ export async function GET(req: NextRequest) {
 
 
 
-            return NextResponse.json({ success: true, expectations, remittances });
+            return NextResponse.json({ success: true, expectations, remittances,supervisorCanFine });
         }
 
         if (role === "TICKETER") {
-            const expectations = await prisma.remittanceExpectation.findMany({
+                       const expectations = await prisma.remittanceExpectation.findMany({
                 where: {
                     company_id,
                     user_id: userId,
-                    status: { not: "PAID" }
+                    status: { not: "PAID" },
+                    pos_session: {
+                        sales_reports: {
+                            some: {
+                                status: { in: ["PENDING", "VERIFIED"] }
+                            }
+                        }
+                    }
                 },
+
                 include: {
                     user: { select: { id: true, first_name: true, last_name: true, role: true } },
                     pos_session: {
@@ -154,10 +180,10 @@ export async function GET(req: NextRequest) {
             });
 
 
-            return NextResponse.json({ success: true, expectations, remittances });
+            return NextResponse.json({ success: true, expectations, remittances,supervisorCanFine });
         }
 
-        return NextResponse.json({ success: true, expectations: [], remittances: [] });
+        return NextResponse.json({ success: true, expectations: [], remittances: [],supervisorCanFine });
     } catch (error) {
         console.error("GET /api/reconcile error:", error);
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

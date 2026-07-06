@@ -38,8 +38,8 @@ export async function POST(req: NextRequest) {
         where: { pos_device_id: posSessionId, company_id, status: "SUCCESS" },
         _sum: { amount_allocated: true }
       });
-      const topupSum = Number(topups._sum.amount_allocated ?? 0);
-      const expectedCash = (Number(sessionRecord.pos_float) - Number(finalPosFloat)) + topupSum;
+         const expectedCash = Number(sessionRecord.pos_float) - Number(finalPosFloat);
+
 
       const remittances = await tx.remittance.aggregate({
         where: { pos_session_id: posSessionId, status: "CONFIRMED" },

@@ -11,7 +11,7 @@ import { formatMoney } from '@/lib/utils';
 import { useState, useEffect } from 'react';
 import api from '../lib/axios';
 import axios from 'axios';
-
+import { toast } from 'react-toastify';
 
 interface DBReconciliationReport {
   id: string;
@@ -183,7 +183,7 @@ function mapReconciliationReport(report: DBReconciliationReport): FindingRow {
 
 function mapAuditLog(log: DBAuditLog): FindingRow {
   const actorName = `${log.user.first_name} ${log.user.last_name} (${log.user.role})`;
-  
+
   let category: FindingCategory = 'AUDIT';
   if (log.entity_type === 'REMITTANCE') category = 'REMITTANCE';
   else if (log.entity_type === 'FINE') category = 'FINE';
@@ -257,6 +257,7 @@ function mapPosDeviceSession(session: DBPosDeviceSession): FindingRow {
   };
 }
 
+// mapped Fine Mapper
 function mapFine(fine: DBFine): FindingRow {
   const defaulterName = `${fine.defaulter.first_name} ${fine.defaulter.last_name}`;
   const issuerName = `${fine.issuer.first_name} ${fine.issuer.last_name}`;
@@ -328,9 +329,9 @@ function categoryLabel(category: FindingCategory) {
 function VisualDiff({ before, after }: { before?: unknown; after?: unknown }) {
   if (!before && !after) return <p className="text-slate-500 text-xs italic">No state changes recorded.</p>;
 
- const beforeObj = (typeof before === 'object' && before !== null ? before : {}) as Record<string, unknown>;
- const afterObj = (typeof after === 'object' && after !== null ? after : {}) as Record<string, unknown>;
- const allKeys = Array.from(new Set([...Object.keys(beforeObj), ...Object.keys(afterObj)]));
+  const beforeObj = (typeof before === 'object' && before !== null ? before : {}) as Record<string, unknown>;
+  const afterObj = (typeof after === 'object' && after !== null ? after : {}) as Record<string, unknown>;
+  const allKeys = Array.from(new Set([...Object.keys(beforeObj), ...Object.keys(afterObj)]));
 
   return (
     <div className="space-y-2 font-mono text-xs">
@@ -346,7 +347,7 @@ function VisualDiff({ before, after }: { before?: unknown; after?: unknown }) {
           const isAdded = !(key in beforeObj) && (key in afterObj);
           const isRemoved = (key in beforeObj) && !(key in afterObj);
           const isChanged = (key in beforeObj) && (key in afterObj) && JSON.stringify(valBefore) !== JSON.stringify(valAfter);
-          
+
           let rowClass = "text-slate-400";
           let beforeBadge = "text-slate-500";
           let afterBadge = "text-slate-300";
@@ -387,7 +388,7 @@ export default function AuditorPage() {
   const [q, setQ] = useState('');
   const [scope, setScope] = useState<FindingScope>('REMITTANCE');
   const [selected, setSelected] = useState<FindingRow | null>(null);
-  
+
   const [dbAuditLogs, setDbAuditLogs] = useState<FindingRow[]>([]);
   const [loadingDbLogs, setLoadingDbLogs] = useState(false);
 
@@ -395,7 +396,7 @@ export default function AuditorPage() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
-  // SQL Console States
+  // SQL  States
   const [sqlQuery, setSqlQuery] = useState(`SELECT id, first_name, last_name, role \nFROM "User" \nWHERE company_id = '${session?.user?.company_id || 'cmqlzhetb00000cj243lbzpl0'}';`);
   const [queryResults, setQueryResults] = useState<Record<string, string>[] | null>(null);
   const [queryError, setQueryError] = useState<string | null>(null);
@@ -415,8 +416,8 @@ export default function AuditorPage() {
         const res = await api.get('/admin/audit', { params });
         if (res.data.success && res.data.data) {
           const payload = res.data.data;
-          
-                  const mappedRecon = (payload.reconciliationReports as DBReconciliationReport[] || []).map(mapReconciliationReport);
+
+          const mappedRecon = (payload.reconciliationReports as DBReconciliationReport[] || []).map(mapReconciliationReport);
           const mappedLogs = (payload.auditLogs as DBAuditLog[] || []).map(mapAuditLog);
           const mappedRemit = (payload.remittances as DBRemittance[] || []).map(mapRemittance);
           const mappedDevice = (payload.posDeviceSessions as DBPosDeviceSession[] || []).map(mapPosDeviceSession);
@@ -435,7 +436,11 @@ export default function AuditorPage() {
           setDbAuditLogs(compiled);
         }
       } catch (err) {
-        console.error("Failed to load database audit logs:", err);
+        if (err instanceof axios.AxiosError) {
+          toast.error(err?.response?.data.message || "Failed to load database audit logs.");
+        } else {
+          toast.error("Failed to load database audit logs.");
+        }
       } finally {
         setLoadingDbLogs(false);
       }
@@ -453,7 +458,7 @@ export default function AuditorPage() {
       const res = await api.post('/admin/query', { query: sqlQuery });
       if (res.data.success) {
         setQueryResults((res.data.results as Record<string, string>[]) || []);
-        
+
       } else {
         setQueryError((res.data.error as string) || "Query execution failed.");
       }
@@ -546,18 +551,47 @@ export default function AuditorPage() {
       sortValue: (row) => row?.status,
       align: 'center',
     },
-    { 
-      id: 'actor', 
-      header: 'actor', 
-      cell: (row) => <span className="text-slate-400 text-xs">{row?.actor}</span>, 
-      sortValue: (row) => row?.actor 
+    {
+      id: 'after',
+      header: 'after',
+      cell: (row) => {
+        const afterObj = row?.after as Record<string, number> | undefined;
+        // Safely check for any of the common amount/numerical properties
+        const amt = afterObj
+          ? (afterObj.amount ?? afterObj.net_pay ?? afterObj.actual_remittance ?? afterObj.variance ?? afterObj.pos_float)
+          : undefined;
+
+        const numAmt = amt !== undefined && amt !== null ? Number(amt) : null;
+
+        return (
+          <span className="text-slate-500 text-xs font-mono">
+            {numAmt !== null && !isNaN(numAmt) ? formatMoney(numAmt) : '—'}
+          </span>
+        );
+      },
+      sortValue: (row) => {
+        const afterObj = row?.after as Record<string, number> | undefined;
+        const amt = afterObj
+          ? (afterObj.amount ?? afterObj.net_pay ?? afterObj.actual_remittance ?? afterObj.variance ?? afterObj.pos_float)
+          : undefined;
+
+        const numAmt = amt !== undefined && amt !== null ? Number(amt) : null;
+        return numAmt !== null && !isNaN(numAmt) ? numAmt : -Infinity;
+      }
     },
-    { 
-      id: 'created', 
-      header: 'created_at', 
-      cell: (row) => <span className="text-slate-500 text-xs">{row?.created_at}</span>, 
-      sortValue: (row) => row?.created_at 
+    {
+      id: 'actor',
+      header: 'actor',
+      cell: (row) => <span className="text-slate-400 text-xs">{row?.actor}</span>,
+      sortValue: (row) => row?.actor
     },
+    {
+      id: 'created',
+      header: 'created_at',
+      cell: (row) => <span className="text-slate-500 text-xs">{row?.created_at}</span>,
+      sortValue: (row) => row?.created_at
+    },
+
   ];
 
 
@@ -620,7 +654,7 @@ export default function AuditorPage() {
               <span>Auditor SQL Query Interface</span>
               <span className="text-[10px] tracking-wider uppercase font-semibold text-slate-400 px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">Read-Only</span>
             </div>
-            
+
             <p className="text-xs text-slate-400">
               Run custom database queries inside the read-only replica connection pool. Destructive commands are blocked automatically.
             </p>

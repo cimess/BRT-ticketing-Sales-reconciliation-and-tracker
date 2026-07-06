@@ -44,13 +44,13 @@ export async function GET(req: NextRequest) {
     });
 
     // Fetch reconciliation reports to map shortage history
-    const reconciliationReports = await prisma.reconciliation_reports.findMany({
-      where: { company_id: session.user.company_id }
+    const liveExpectations = await prisma.remittanceExpectation.findMany({
+      where: { company_id: session.user.company_id,shortage_amount: { gt: 0 } }
     });
 
     // Map DB structures to match the frontend User_Full_Audit interface
     const mappedUsers = users.map(user => {
-      const userReconciliations = reconciliationReports.filter(r => r.user_id === user.id);
+      const userLiveExpectations = liveExpectations.filter(r => r.user_id === user.id);
       return {
         user_id: user.id,
         username: `${user.first_name} ${user.last_name}`,
@@ -73,30 +73,18 @@ export async function GET(req: NextRequest) {
           status: f.status,
           created_at: f.created_at.toISOString(),
         })),
-        remitance: user.remittances.map(r => ({
-          id: r.id,
-          remit_id: r.id,
-          method: r.method,
-          amount: Number(r.amount),
-          status: r.status,
-          proof_ref: r.payment_reference || undefined,
-          submitted_at: r.created_at.toISOString(),
-          verified_at: r.verified_at?.toISOString() || undefined,
-          submitted_by: `${user.first_name} ${user.last_name}`,
-          remittance_date: r.remittance_date.toISOString(),
-          created_at: r.created_at.toISOString(),
-        })),
-        reconciliation: userReconciliations.map(r => ({
-          run_id: r.id,
+        reconciliation: userLiveExpectations.map(e => ({
+          run_id: e.id,
           actor: `${user.first_name} ${user.last_name}`,
-          date: r.date.toISOString().split("T")[0],
-          expected_float: Number(r.expected_float),
-          actual_remittance: Number(r.actual_remittance),
-          variance: Number(r.variance),
-          status: r.status,
-          scope: r.scope,
-          generated_at: r.generated_at.toISOString(),
+          date: e.created_at.toISOString().split("T")[0],
+          expected_float: Number(e.expected_amount),
+          actual_remittance: Number(e.expected_amount) - Number(e.shortage_amount),
+          variance: Number(e.shortage_amount),
+          status: e.status,
+          scope: "SESSION",
+          generated_at: e.created_at.toISOString(),
         })),
+
       };
     });
 

@@ -90,6 +90,7 @@ export interface Location {
 export interface Ticketer_Location_Assignment {
   id: string
   assignmentId: string
+  locationId?: string
   locationName: string
   locationAddress: string
   assignedFor: string
@@ -322,5 +323,6 @@ export interface ReconcileApiResponse {
   success: boolean;
   expectations: RemittanceExpectation[];
   remittances: ReconciliationRemittance[];
+  supervisorCanFine: boolean;
   error?: string;
 }

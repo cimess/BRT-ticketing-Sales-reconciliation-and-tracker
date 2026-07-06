@@ -20,13 +20,11 @@ interface CompanyRule {
   id: string;
   name: string;
   description: string | null;
-  trigger: string;
-  target_field: string;
-  operator: string;
   comparison_value: number;
-  fine_amount: number;
+  fine_amount: number | null;
   is_active: boolean;
 }
+
 
 export default function AdminRolesPage() {
   const { data: session } = useSession();
@@ -48,10 +46,7 @@ export default function AdminRolesPage() {
   const [selectedRule, setSelectedRule] = useState<{
     id?: string;
     name: string;
-    description: string;
-    trigger: string;
-    target_field: string;
-    operator: string;
+    description: string | null;
     comparison_value: number;
     fine_amount: number;
     is_active: boolean;
@@ -131,9 +126,6 @@ export default function AdminRolesPage() {
         const res = await api.post("/admin/rules", {
           name: selectedRule.name,
           description: selectedRule.description,
-          trigger: selectedRule.trigger,
-          target_field: selectedRule.target_field,
-          operator: selectedRule.operator,
           comparison_value: grace,
           fine_amount: fine
         });
@@ -225,11 +217,8 @@ export default function AdminRolesPage() {
             </div>
 
             <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
-              {[
+                           {[
                 {
-                  target_field: "hours_late_submitting",
-                  trigger: "ON_REPORT_SUBMISSION",
-                  operator: ">",
                   name: "Late Report Submission Policy",
                   description: "Fines ticketers who submit reports late after shift closing time.",
                   defaultGrace: 2,
@@ -237,9 +226,6 @@ export default function AdminRolesPage() {
                   graceLabel: "Grace Period (Hours)",
                 },
                 {
-                  target_field: "shortage_amount",
-                  trigger: "ON_REPORT_SUBMISSION",
-                  operator: ">",
                   name: "Shortage Remittance Policy",
                   description: "Fines ticketers when remittance expectation is overdue.",
                   defaultGrace: 24,
@@ -247,62 +233,71 @@ export default function AdminRolesPage() {
                   graceLabel: "Grace Period (Hours)",
                 },
                 {
-                  target_field: "deposit_delay",
-                  trigger: "ON_SHIFT_VERIFICATION",
-                  operator: ">",
                   name: "Late Bank Deposit Policy",
                   description: "Fines supervisors who delay depositing accepted cash.",
                   defaultGrace: 24,
                   defaultFine: 1000,
                   graceLabel: "Grace Period (Hours)",
+                },
+                {
+                  name: "Supervisor Fine Authority Policy",
+                  description: "Allows supervisors to manually issue fines, waive, and edit fine amounts.",
+                  defaultGrace: 1,
+                  defaultFine: 0,
+                  graceLabel: "Authority Status",
                 }
               ].map((policy) => {
-                const rule = rules.find(r => r.target_field === policy.target_field);
+                // Find rule in database by exact Name
+                const rule = rules.find(r => r.name === policy.name);
                 const isActive = rule?.is_active ?? false;
 
                 return (
                   <div 
-                    key={policy.target_field} 
+                    key={policy.name} 
                     onClick={() => {
                       setSelectedRule({
                         id: rule?.id,
                         name: policy.name,
                         description: policy.description,
-                        trigger: policy.trigger,
-                        target_field: policy.target_field,
-                        operator: policy.operator,
                         comparison_value: rule ? rule.comparison_value : policy.defaultGrace,
-                        fine_amount: rule ? rule.fine_amount : policy.defaultFine,
+                        fine_amount: rule ? (rule.fine_amount ?? 0) : policy.defaultFine,
                         is_active: isActive,
                         graceLabel: policy.graceLabel
                       });
                       setRuleValue(rule ? String(rule.comparison_value) : String(policy.defaultGrace));
-                      setRuleFine(rule ? String(rule.fine_amount) : String(policy.defaultFine));
+                      setRuleFine(rule ? String(rule.fine_amount ?? 0) : String(policy.defaultFine));
                       setIsRuleDrawerOpen(true);
                     }}
-                    className="group rounded-2xl border border-white/5 bg-black/20 p-4 space-y-3 transition cursor-pointer hover:border-indigo-500/30 hover:bg-indigo-500/5 flex flex-col justify-between"
+                    className={`glass-panel p-4 rounded-xl border transition cursor-pointer hover:border-white/20 hover:bg-white/5 flex flex-col justify-between min-h-[140px] ${
+                      isActive ? 'border-emerald-500/30' : 'border-white/5'
+                    }`}
                   >
                     <div className="space-y-1">
-                      <div className="flex justify-between items-start gap-2">
-                        <span className="font-bold text-slate-200 text-sm block">{policy.name}</span>
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${isActive ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-500/10 text-slate-400 border border-slate-500/20'}`}>
-                          {isActive ? "Active" : "Disabled"}
+                      <div className="flex justify-between items-start">
+                        <span className="text-white text-xs font-bold leading-tight">{policy.name}</span>
+                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
+                          isActive ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-500/10 text-slate-400 border border-slate-500/20'
+                        }`}>
+                          {isActive ? 'Active' : 'Disabled'}
                         </span>
                       </div>
-                      <span className="text-[11px] text-slate-500 block leading-relaxed">{policy.description}</span>
+                      <p className="text-[10px] text-slate-400 leading-normal">{policy.description}</p>
                     </div>
 
                     <div className="flex justify-between items-center pt-3 border-t border-white/5 text-[10px]">
                       <span className="text-slate-400 font-semibold uppercase tracking-wider">Configure &rarr;</span>
                       {rule && (
                         <span className="text-slate-300 font-mono">
-                          {rule.comparison_value}h grace • ₦{rule.fine_amount.toLocaleString()} fine
+                          {rule.name === "Supervisor Fine Authority Policy" 
+                            ? (rule.is_active ? "Authorized" : "Unauthorized") 
+                            : `${rule.comparison_value}h grace • ₦${(rule.fine_amount ?? 0).toLocaleString()} fine`}
                         </span>
                       )}
                     </div>
                   </div>
                 );
               })}
+
             </div>
           </div>
         </div>
@@ -370,28 +365,34 @@ export default function AdminRolesPage() {
               </button>
             </div>
 
-            <div>
-              <label className="text-[11px] text-slate-400 font-bold uppercase block mb-1">{selectedRule.graceLabel}</label>
-              <input
-                required
-                type="number"
-                step="0.5"
-                value={ruleValue}
-                onChange={(e) => setRuleValue(e.target.value)}
-                className="w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
-              />
-            </div>
+                       {selectedRule.name !== "Supervisor Fine Authority Policy" && (
+              <>
+                <div>
+                  <label className="text-[11px] text-slate-400 font-bold uppercase block mb-1">
+                    {selectedRule.graceLabel}</label>
+                  <input
+                    required
+                    type="number"
+                    step="0.5"
+                    value={ruleValue}
+                    onChange={(e) => setRuleValue(e.target.value)}
+                    className="w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
 
-            <div>
-              <label className="text-[11px] text-slate-400 font-bold uppercase block mb-1">Fine Penalty (₦)</label>
-              <input
-                required
-                type="number"
-                value={ruleFine}
-                onChange={(e) => setRuleFine(e.target.value)}
-                className="w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
-              />
-            </div>
+                <div>
+                  <label className="text-[11px] text-slate-400 font-bold uppercase block mb-1">Fine Penalty (₦)</label>
+                  <input
+                    required
+                    type="number"
+                    value={ruleFine}
+                    onChange={(e) => setRuleFine(e.target.value)}
+                    className="w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </>
+            )}
+
 
             <button
               type="submit"

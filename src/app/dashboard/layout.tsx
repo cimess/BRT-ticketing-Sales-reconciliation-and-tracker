@@ -9,6 +9,8 @@ import { Suspense } from "react";
 import { useSession } from "next-auth/react";
 
 import api from "@/app/lib/axios";
+import { toast } from "react-toastify";
+import axios from "axios";
 
 export interface DashboardMetrics {
   availableFloat: number;
@@ -77,7 +79,10 @@ export default function DashboardLayout({
         setMetrics(res.data.metrics);
       }
     } catch (err) {
-      console.error("Error loading dashboard metrics:", err);
+      if(err instanceof axios.AxiosError)
+      toast.error(err?.response?.data.message || "Error loading dashboard metrics");
+      else
+      toast.error("Error loading dashboard metrics");
     } finally {
       setLoading(false);
     }

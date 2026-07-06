@@ -1,3 +1,5 @@
+import { toast } from "react-toastify";
+
 export type SystemEvent =
   | "TOPUP_CREATED"
   | "SALE_CREATED"
@@ -63,7 +65,7 @@ export function broadcast(
       try{
       client.controller.enqueue(buffer);
       }catch(error){
-        console.error("Error en el envio del SSE", error)
+        toast.error(`Error en el envio del SSE ${error}`)
         set.delete(client)
       }
     }

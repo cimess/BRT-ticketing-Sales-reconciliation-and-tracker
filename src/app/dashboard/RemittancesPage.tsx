@@ -2,8 +2,8 @@
 
 'use client'
 
-import React, { useEffect, useState, useCallback } from 'react';
-import { Banknote, CheckCircle2, Clock, Coins, Plus, ChevronRight } from 'lucide-react';
+import { useEffect, useState, useCallback } from 'react';
+import { Banknote, CheckCircle2, Clock, Coins, Plus, ChevronRight, BadgeCheck, BanknoteIcon, Landmark } from 'lucide-react';
 import StatCard from '@/components/StatCard';
 import { Badge } from '@/components/Badge';
 import { Drawer } from '@/components/Drawer';
@@ -32,14 +32,14 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
   const [posSession, setPosSession] = useState<string | null>(null);
   const [totalOutstanding, setTotalOutstanding] = useState(0);
   const [selectedRemittance, setSelectedRemittance] = useState<Remittance | null>(null);
+  const [message, setMessage] = useState<string|null>(null);
 
   // 💡 ROLES ENFORCEMENT
   const canSubmit = user === 'TICKETER' || user === 'SUPERVISOR';
   const canVerify = user === 'ADMIN';
 
   const { metrics, refreshMetrics } = useDashboard();
-
-  // --- API LOGIC --- //
+// / --- API LOGIC --- //
   const fetchRemittances = useCallback(async () => {
     setLoading(true);
     try {
@@ -55,16 +55,14 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
         params.set('to', toISO.toISOString());
       }
       const queryString = params.toString();
-      const url = `/api/remitance${queryString ? `?${queryString}` : ''}`;
-      const res = await fetch(url);
-      const data = await res.json();
-      if (data.success) {
-        setRows(data.data);
-        setTotalOutstanding(data.totalOutstanding || 0);
+      const url = `/remitance${queryString ? `?${queryString}` : ''}`;
+      const res = await api.get(url);
+      if (res.data.success) {
+        setRows(res.data.data);
+        setTotalOutstanding(res.data.totalOutstanding || 0);
       }
     } catch (error) {
-      console.error(error);
-      const errorMessage = error instanceof Error ? error.message : "An error occurred";
+      const errorMessage = error instanceof axios.AxiosError ? error.response?.data.error : "An error occurred";
       toast.error(errorMessage);
     } finally {
       setLoading(false);
@@ -74,20 +72,20 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
   const fetchUsers = useCallback(async () => {
     try {
       if (user === 'SUPERVISOR') {
-        const res = await fetch('/api/supervisor/user');
-        const data = await res.json();
+        const res = await api.get('/supervisor/user');
+        const data = res.data;
         if (data.success) setTeam(data.data);
       } else if (user === 'TICKETER') {
-        const res = await fetch('/api/admin/user');
-        const data = await res.json();
+        const res = await api.get('/admin/user');
+        const data = res.data;
         if (data.success) {
           const sups = data.data.filter((u: User) => u.role === 'SUPERVISOR');
           setSupervisors(sups);
         }
       }
     } catch (e) {
-      console.error(e);
-      const errorMessage = e instanceof Error ? e.message : "An error occurred";
+      
+      const errorMessage = e instanceof axios.AxiosError ? e.response?.data.error : "An error occurred";
       toast.error(errorMessage);
     }
   }, [user]);
@@ -115,24 +113,19 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
     }
     try {
       setSendingRequest(true);
-      const res = await fetch('/api/remitance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount, method, remittance_date: new Date().toISOString(), ticketer_id: ticketerId, supervisor_id: supervisorId, pos_id: posSession })
+      const res = await api.post('/remitance', {
+        amount, method, remittance_date: new Date().toISOString(), ticketer_id: ticketerId, supervisor_id: supervisorId, pos_id: posSession
       });
-      if (res.ok) {
+      if (res.data.success) {
         setOpenForm(false);
         fetchRemittances();
         refreshMetrics();
         toast.success(`Remittance submitted successfully`);
-      } else {
-        const data = await res.json();
-        toast.error(data.error || `Failed to submit remittance`);
       }
     } catch (err) {
-      console.error(err);
-      const errorMessage = err instanceof Error ? err.message : "An error occurred";
-      toast.error(errorMessage);
+      
+      const errorMessage = err instanceof axios.AxiosError ? err.response?.data.error : "An error occurred";
+      setMessage(errorMessage);
     } finally {
       setSendingRequest(false);
     }
@@ -142,23 +135,18 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
     if (!confirm(`Are you sure you want to ${actionStatus} this remittance?`)) return;
     try {
       setSendingRequest(true);
-      const res = await fetch(`/api/remitance/${id}/verify`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: actionStatus })
+      const res = await api.patch(`/remitance/${id}/verify`, {
+        status: actionStatus
       });
-      if (res.ok) {
+      if (res.data.success) {
         setSelectedRemittance(null);
         fetchRemittances();
         refreshMetrics();
         toast.success(`Remittance ${actionStatus.toLowerCase()} successfully`);
-      } else {
-        const data = await res.json();
-        toast.error(data.error || `Failed to ${actionStatus.toLowerCase()} remittance`);
-      }
+      } 
     } catch (err) {
-      console.error(err);
-      const errorMessage = err instanceof Error ? err.message : "An error occurred";
+      
+      const errorMessage = err instanceof axios.AxiosError ? err.response?.data.error : "An error occurred";
       toast.error(errorMessage);
     } finally {
       setSendingRequest(false);
@@ -178,9 +166,7 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
         fetchRemittances();
         refreshMetrics();
         toast.success(`Handover ${action === 'ACCEPT' ? 'accepted' : 'disputed'} successfully`);
-      } else {
-        toast.error(res.data.error || `Failed to process handover`);
-      }
+      } 
     } catch (err) {
       if (err instanceof axios.AxiosError) {
         toast.error(err.response?.data.message || err.response?.data.error || "An error occurred");
@@ -193,25 +179,19 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
   };
 
   const handleReverse = async (id: string) => {
-    if (!confirm("Are you sure you want to reverse this? If Admin, logs will update. If Ticketer, this cancels your submission.")) return;
+    if (!confirm("Are you sure you want to reverse this?")) return;
     try {
       setSendingRequest(true);
-      const res = await fetch(`/api/remitance/${id}/reverse`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' }
-      });
-      if (res.ok) {
+      const res = await api.patch(`/remitance/${id}/reverse`);
+      if (res.data.success) {
         setSelectedRemittance(null);
         fetchRemittances();
         refreshMetrics();
         toast.success(`Remittance reversed successfully`);
-      } else {
-        const data = await res.json();
-        toast.error(data.error || `Failed to reverse remittance`);
-      }
+      } 
     } catch (err) {
-      console.error(err);
-      const errorMessage = err instanceof Error ? err.message : "An error occurred";
+      
+      const errorMessage = err instanceof axios.AxiosError ? err.response?.data.error : "An error occurred";
       toast.error(errorMessage);
     } finally {
       setSendingRequest(false);
@@ -220,7 +200,8 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
 
   // --- UI METRICS --- //
   const totalConfirmed = rows.reduce((acc, r) => r.status === 'CONFIRMED' ? acc + r.amount : acc, 0);
-  const totalPending = rows.reduce((acc, r) => r.status === 'PENDING' ? acc + r.amount : acc, 0);
+ const totalPending = rows.reduce((acc, r) => ['PENDING', 'PENDING_SUPERVISOR_ACCEPTANCE', 'ACCEPTED_BY_SUPERVISOR', 'DEPOSITED'].includes(r.status) ? acc + r.amount : acc, 0);
+
 
   const cashTotal = rows.filter(r => r.method === 'CASH' && r.status === 'CONFIRMED')
     .reduce((acc, r) => acc + r.amount, 0);
@@ -288,7 +269,7 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
               iconBg="bg-amber-500/10"
             />
             <StatCard
-              title="Total Outstanding"
+              title="Total Outstanding Owed"
               value={formatMoney(totalOutstanding)}
               icon={<Coins className="text-rose-300" />}
               iconBg="bg-rose-500/10"
@@ -454,7 +435,7 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
                 >
                   <div className="flex items-center gap-3">
                     <div className="p-2.5 rounded-xl bg-white/5 border border-white/10">
-                      <Banknote className="size-4 text-cyan-400" />
+                      {item.method==='CASH'?<Banknote className="size-4 text-violet-400" />: <Landmark className="size-4 text-emerald-400" />}
                     </div>
                     <div>
                       <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
@@ -471,7 +452,7 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <div className="text-right">
+                    <div className="text-right ">
                       <span className="text-xs font-black text-white font-mono">
                         {formatMoney(item.amount || 0)}
                       </span>
@@ -485,9 +466,10 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
                             ? 'danger'
                             : 'info'
                         }>
-                          {item.status}
+                          {item.status} 
                         </Badge>
                       </span>
+                     
                     </div>
                     <ChevronRight className="size-4 text-slate-600" />
                   </div>
@@ -498,8 +480,8 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
         )}
       </PageScaffold>
 
-      <Drawer open={openForm} title="Submit Remittance" subtitle={user === 'SUPERVISOR' ? "Log a cash handover from a ticketer" : "Hand over your cash or log a transfer"} onClose={() => setOpenForm(false)}>
-        <RemitForm onSubmit={submitRemittance} role={user} team={team} supervisors={supervisors} posSession={posSession} setposSession={setPosSession} />
+      <Drawer open={openForm} title="Submit Remittance" subtitle={user === 'SUPERVISOR' ? "Log a cash handover from a ticketer" : "Hand over your cash or log a transfer"} onClose={() => {setOpenForm(false); setMessage("")}}>
+        <RemitForm onSubmit={submitRemittance} role={user} team={team} supervisors={supervisors} posSession={posSession} setposSession={setPosSession} message={message} />
       </Drawer>
 
       {/* DRAWER: Remittance Details */}
@@ -638,6 +620,34 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
                   Cancel Submission
                 </button>
               )}
+              {/* SUPERVISOR REVERSE DEPOSIT BUTTON */}
+              {user === 'SUPERVISOR' && selectedRemittance.status === 'DEPOSITED' && (
+                <button
+                  onClick={async () => {
+                    if (!confirm("Are you sure you want to reverse this deposit back to your cash holding?")) return;
+                    try {
+                      setSendingRequest(true);
+                      const res = await api.patch('/supervisor/deposit', { remittance_ids: [selectedRemittance.id] });
+                      if (res.data.success) {
+                        setSelectedRemittance(null);
+                        fetchRemittances();
+                        refreshMetrics();
+                        toast.success("Deposit reversed back to cash holding!");
+                      }
+                    } catch (err) {
+                      const errorMessage = err instanceof axios.AxiosError ? err.response?.data.error : "An error occurred";
+                      toast.error(errorMessage ||"Failed to reverse deposit.");
+                    } finally {
+                      setSendingRequest(false);
+                    }
+                  }}
+                  disabled={sendingRequest}
+                  className="w-full rounded-xl py-3 text-xs font-bold uppercase tracking-widest bg-rose-500 text-white hover:bg-rose-400 active:scale-[0.99] transition-all disabled:opacity-50"
+                >
+                  Reverse Deposit
+                </button>
+              )}
+
             </div>
           </div>
         )}
@@ -647,7 +657,7 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
 }
 
 // 💡 The RemitForm must stay outside the main component!
-function RemitForm({ onSubmit, role, team, supervisors, posSession, setposSession }: { onSubmit: (amount: number, method: 'CASH' | 'TRANSFER', ticketerId?: string, supervisorId?: string) => Promise<void> | void, role: string, team: User[], supervisors?: User[], posSession?: string | null, setposSession?: (value: string) => void }) {
+function RemitForm({ onSubmit, role, team, supervisors, posSession, setposSession,message }: { onSubmit: (amount: number, method: 'CASH' | 'TRANSFER', ticketerId?: string, supervisorId?: string) => Promise<void> | void, role: string, team: User[], supervisors?: User[], posSession?: string | null, setposSession?: (value: string) => void,message?:string|null }) {
   const [amount, setAmount] = useState('');
   const [method, setMethod] = useState<'CASH' | 'TRANSFER'>('CASH');
   const [ticketerId, setTicketerId] = useState('');
@@ -661,6 +671,7 @@ function RemitForm({ onSubmit, role, team, supervisors, posSession, setposSessio
     setAmount('');
     setSupervisorId('');
     setMethod('CASH');
+  
   };
 
   return (
@@ -711,6 +722,12 @@ function RemitForm({ onSubmit, role, team, supervisors, posSession, setposSessio
 
         <label className="mt-4 block text-slate-500 text-[10px] font-bold uppercase tracking-widest">Amount (NGN)</label>
         <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="e.g. 50000" type="number" className="mt-2 w-full rounded-xl bg-white/3 border border-white/10 px-4 py-2.5 text-sm text-white outline-none" />
+        <div>
+              <p className='text-sm text-red-700'>
+                {message}
+              </p>
+        
+        </div>
       </div>
 
       <button

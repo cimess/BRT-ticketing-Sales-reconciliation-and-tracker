@@ -246,39 +246,57 @@ export async function GET(req: NextRequest) {
 
     // 7️⃣ Fetch total outstanding expectations for the active role view
 
-    let outstandingFilter = {};
+     let outstandingFilter = {};
     if (role === "TICKETER") {
       outstandingFilter = { user_id: userId };
     } else if (role === "SUPERVISOR") {
       const ticketers = await prisma.user.findMany({ 
-        where: { supervisor_id: userId,company_id }, 
+        where: { supervisor_id: userId, company_id }, 
         select: { id: true } 
       });
       const ids = ticketers.map(t => t.id);
-      outstandingFilter = { user_id: { in: ids } };
+      // Supervisors see their team's + their own outstanding shortages
+      outstandingFilter = { user_id: { in: [...ids, userId] } };
     } else {
-      outstandingFilter = { user: { role: "TICKETER" } };
+      // ADMIN/AUDITOR sees all outstanding expectations in the company
+      outstandingFilter = {};
     }
-       const outstandingExpectationAgg = await prisma.remittanceExpectation.aggregate({
+
+  const outstandingExpectationAgg = await prisma.remittanceExpectation.aggregate({
       where: {
         ...outstandingFilter,
         company_id,
-        status: { in: ["PENDING", "OVERDUE","VIOLATED","SUBMITTED"] }
+        status: { in: ["PENDING", "OVERDUE","VIOLATED","SUBMITTED"] },
+        pos_session: {
+          sales_reports: {
+            some: {
+              status: { in: ["PENDING", "VERIFIED"] }
+            }
+          }
+        }
       },
       _sum: { shortage_amount: true }
     });
     const totalOutstanding = Number(outstandingExpectationAgg._sum.shortage_amount ?? 0);
     // 8️⃣ Fetch current outstanding expectations for each user who has a remittance in this list
     const uniqueUserIds = Array.from(new Set(remittances.map(r => r.submitted_by)));
-    const userExpectations = await prisma.remittanceExpectation.groupBy({
+       const userExpectations = await prisma.remittanceExpectation.groupBy({
       by: ['user_id'],
       where: {
         company_id,
         user_id: { in: uniqueUserIds },
-        status: { in: ["PENDING", "OVERDUE","VIOLATED","SUBMITTED"] }
+        status: { in: ["PENDING", "OVERDUE","VIOLATED","SUBMITTED"] },
+        pos_session: {
+          sales_reports: {
+            some: {
+              status: { in: ["PENDING", "VERIFIED"] }
+            }
+          }
+        }
       },
       _sum: { shortage_amount: true }
     });
+
     const outstandingMap = new Map<string, number>();
     for (const exp of userExpectations) {
       outstandingMap.set(exp.user_id, Number(exp._sum.shortage_amount ?? 0));

@@ -1,7 +1,11 @@
-// src/app/api/admin/rules/route.ts
+// Replace src/app/api/admin/rules/route.ts with:
+
 import { NextResponse, NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { ensureCompanyRules, DEFAULT_RULES } from "@/app/server/services/rules.service";
+
+
 
 export async function GET() {
   try {
@@ -10,11 +14,26 @@ export async function GET() {
       return NextResponse.json({ error: "Forbidden: Admin role required" }, { status: 403 });
     }
 
-    const rules = await prisma.companyRule.findMany({
-      where: { company_id: session.user.company_id },
+    const companyId = session.user.company_id;
+
+    // 1. Fetch the rules
+    let rules = await prisma.companyRule.findMany({
+      where: { company_id: companyId },
       orderBy: { created_at: "desc" },
     });
 
+    // 2. Quick memory check: If count is less than default rules, run self-healing
+    if (rules.length < DEFAULT_RULES.length) {
+      await ensureCompanyRules(companyId);
+      
+      // Re-fetch the newly populated rules
+      rules = await prisma.companyRule.findMany({
+        where: { company_id: companyId },
+        orderBy: { created_at: "desc" },
+      });
+    }
+
+    // 3. Return immediately (Common case: exactly 1 database query)
     return NextResponse.json({ success: true, data: rules });
   } catch (error) {
     console.error("Failed to list rules:", error);
@@ -22,32 +41,3 @@ export async function GET() {
   }
 }
 
-export async function POST(req: NextRequest) {
-  try {
-    const session = await auth();
-    if (!session?.user || session.user.role !== "ADMIN") {
-      return NextResponse.json({ error: "Forbidden: Admin role required" }, { status: 403 });
-    }
-
-    const body = await req.json();
-    const { name, description, trigger, target_field, operator, comparison_value, fine_amount } = body;
-
-    const newRule = await prisma.companyRule.create({
-      data: {
-        name,
-        description,
-        trigger,
-        target_field,
-        operator,
-        comparison_value: parseFloat(comparison_value),
-        fine_amount: parseFloat(fine_amount),
-        company_id: session.user.company_id,
-      },
-    });
-
-    return NextResponse.json({ success: true, data: newRule });
-  } catch (error) {
-    console.error("Failed to create rule:", error);
-    return NextResponse.json({ error: "Failed to create rule" }, { status: 500 });
-  }
-}

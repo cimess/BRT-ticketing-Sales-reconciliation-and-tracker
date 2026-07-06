@@ -36,26 +36,3 @@ export async function PUT(
 }
 
 
-
-export async function DELETE(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const session = await auth();
-    if (!session?.user || session.user.role !== "ADMIN") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    const { id } = await params;
-
-    await prisma.companyRule.delete({
-      where: { id, company_id: session.user.company_id },
-    });
-
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error("DELETE rules/[id] error:", error);
-    return NextResponse.json({ error: "Failed to delete rule" }, { status: 500 });
-  }
-}

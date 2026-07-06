@@ -1,13 +1,18 @@
+// src/app/server/services/escalation.service.ts
 import { prisma } from "@/lib/prisma";
 
+/**
+ * Worker to check for overdue/violated remittance expectations
+ * and apply "Shortage Remittance Policy" fines.
+ */
 export async function checkAndEscalateExpectations(companyId: string) {
   const now = new Date();
 
-  // Find shortage rule for grace period and fine amount
+  // Find active Shortage Remittance rule
   const shortageRule = await prisma.companyRule.findFirst({
     where: {
       company_id: companyId,
-      target_field: "shortage_amount",
+      name: "Shortage Remittance Policy",
       is_active: true
     }
   });
@@ -36,11 +41,11 @@ export async function checkAndEscalateExpectations(companyId: string) {
     }
 
     const dueDate = new Date(exp.due_date);
-    
-    // Violation threshold: Custom grace hours after POS session allocation started
     const sessionAssignedAt = exp.pos_session?.assigned_at 
       ? new Date(exp.pos_session.assigned_at) 
       : new Date(exp.created_at);
+    
+    // Violation date = starting assignment timestamp + policy grace period
     const violationDate = new Date(sessionAssignedAt.getTime() + graceHours * 60 * 60 * 1000);
 
     let targetStatus: "OVERDUE" | "VIOLATED" | null = null;
@@ -79,14 +84,14 @@ export async function checkAndEscalateExpectations(companyId: string) {
             entity_id: exp.id,
             after_state: {
               status: targetStatus,
-              reason: `Escalated automatically: due date ${dueDate.toISOString()}, allocation start ${sessionAssignedAt.toISOString()}`
+              reason: `Escalated automatically: due date ${dueDate.toISOString()}, grace hours ${graceHours}h after allocation start`
             }
           }
         });
 
-        // Issue automated Fine if status is VIOLATED
+        // Issue automated Fine if status escalates to VIOLATED
         if (targetStatus === "VIOLATED") {
-          const fineReason = `Overdue Remittance Violation for POS Session ${exp.pos_session_id}`;
+          const fineReason = `Overdue Shortage Remittance: POS Session ${exp.pos_session_id}`;
           
           const existingFine = await tx.fine.findFirst({
             where: {
@@ -97,7 +102,6 @@ export async function checkAndEscalateExpectations(companyId: string) {
           });
 
           if (!existingFine) {
-            // Fine amount: Set from configured shortage rule (falls back to null for manual adjustment)
             const fineAmount = shortageRule ? shortageRule.fine_amount : null;
 
             await tx.fine.create({
@@ -110,6 +114,7 @@ export async function checkAndEscalateExpectations(companyId: string) {
                 status: "UNPAID"
               }
             });
+            console.log(`Issued automated Shortage Remittance fine to ticketer: ${exp.user_id}`);
           }
         }
       });
@@ -117,14 +122,18 @@ export async function checkAndEscalateExpectations(companyId: string) {
   }
 }
 
+/**
+ * Worker to check for supervisor late bank deposits
+ * and apply "Late Bank Deposit Policy" fines.
+ */
 export async function checkSupervisorDepositViolations(companyId: string) {
   const now = new Date();
   
-  // Find active deposit rule for grace period and fine amount
+  // Find active Late Bank Deposit rule
   const depositRule = await prisma.companyRule.findFirst({
     where: {
       company_id: companyId,
-      target_field: "deposit_delay",
+      name: "Late Bank Deposit Policy",
       is_active: true
     }
   });
@@ -173,8 +182,6 @@ export async function checkSupervisorDepositViolations(companyId: string) {
             where: { company_id: companyId, role: "ADMIN" }
           });
           const systemUserId = adminUser ? adminUser.id : remit.received_by_supervisor_id!;
-
-          // Fine amount: Set from configured deposit rule (falls back to null for manual adjustment)
           const fineAmount = depositRule ? depositRule.fine_amount : null;
 
           await tx.fine.create({
@@ -202,6 +209,7 @@ export async function checkSupervisorDepositViolations(companyId: string) {
               }
             }
           });
+          console.log(`Issued automated Late Deposit fine to supervisor: ${remit.received_by_supervisor_id}`);
         }
       });
     }

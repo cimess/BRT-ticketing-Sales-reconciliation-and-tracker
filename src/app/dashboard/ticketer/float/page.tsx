@@ -4,6 +4,8 @@ import FloatLedgerPage from "@/app/dashboard/FloatLedgerPage";
 import api from '@/app/lib/axios';
 import { TicketerPosSnapshot, TicketerPosSessionSummary } from '@/app/types/float';
 import { Float_Alocation, DashboardRoleUsers } from '@/app/types/types';
+import axios from 'axios';
+import { toast } from 'react-toastify';
 
 export default function FloatRoute() {
   const [ticketerSnapshot, setTicketerSnapshot] = useState<TicketerPosSnapshot | null>(null);
@@ -66,7 +68,10 @@ export default function FloatRoute() {
           setEntries(mappedEntries);
         }
       } catch (err) {
-        console.error("Error loading ticketer float data:", err);
+      if(err instanceof axios.AxiosError)
+      toast.error(err?.response?.data.message || "Error loading ticketer float data");
+      else
+      toast.error("Error loading ticketer float data");
       } finally {
         if (isMounted) setLoading(false);
       }

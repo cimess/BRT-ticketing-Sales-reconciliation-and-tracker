@@ -294,19 +294,12 @@ model Commission_rules {
 
 model CompanyRule {
   id                String   @id @default(cuid())
-  name              String   // E.g., "Late Remittance Fine"
+  name              String   @unique  
   description       String?
-  
-  // The event context when this rule is checked
-  trigger           String   // E.g., "ON_REPORT_SUBMISSION", "ON_SHIFT_VERIFICATION"
-  
-  // The rule condition details
-  target_field      String   // E.g., "shortage_amount", "hours_late_submitting", "total_sold"
-  operator          String   // E.g., ">", ">=", "<", "=="
+
   comparison_value  Float    // The threshold (e.g., 1000 for Naira, 24 for hours)
   
-  // The penalty
-  fine_amount       Float    // The automatic fine to issue
+  fine_amount       Float?    // The automatic fine to issue
   
   is_active         Boolean  @default(true)
   created_at        DateTime @default(now())

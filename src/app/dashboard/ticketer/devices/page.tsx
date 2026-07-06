@@ -3,6 +3,8 @@ import React, { useEffect, useState, useCallback } from 'react';
 import DevicesPage, { PosDeviceSession, LocationAssignment } from "@/app/dashboard/PosDevicesPage";
 import api from '@/lib/axios';
 import { useSession } from "next-auth/react";
+import { toast } from 'react-toastify';
+import axios from 'axios';
 
 export default function TicketerDevicesRoute() {
   const { data: session } = useSession();
@@ -20,7 +22,10 @@ export default function TicketerDevicesRoute() {
         setLocations(res.data.locations || []);
       }
     } catch (err) {
-      console.error("Error loading ticketer devices:", err);
+      if(err instanceof axios.AxiosError)
+      toast.error(err?.response?.data.message || "Error loading ticketer devices");
+      else
+      toast.error("Error loading ticketer devices");
     } finally {
       setLoading(false);
     }

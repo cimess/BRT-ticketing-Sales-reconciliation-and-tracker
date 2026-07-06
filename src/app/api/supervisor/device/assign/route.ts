@@ -47,7 +47,7 @@ export async function POST(req: Request) {
       });
 
       const carriedOverFloat = lastSession ? lastSession.pos_float : new Prisma.Decimal(0);
-
+      
       // d. Create assignment session with the carried over float
       const newSession = await tx.posDeviceSession.create({
         data: {
@@ -59,6 +59,41 @@ export async function POST(req: Request) {
           status: "ACTIVE",
         },
       });
+
+      // 💡 1. Decrement carried-over float from previous session's expectation (avoid double charging)
+      if (lastSession && carriedOverFloat.gt(0)) {
+        const lastExpectation = await tx.remittanceExpectation.findUnique({
+          where: { pos_session_id: lastSession.id }
+        });
+        if (lastExpectation) {
+          const updatedExpected = Math.max(0, Number(lastExpectation.expected_amount) - Number(carriedOverFloat));
+          const updatedShortage = Math.max(0, Number(lastExpectation.shortage_amount) - Number(carriedOverFloat));
+          await tx.remittanceExpectation.update({
+            where: { id: lastExpectation.id },
+            data: {
+              expected_amount: updatedExpected,
+              shortage_amount: updatedShortage,
+              status: updatedShortage <= 0 ? "PAID" : lastExpectation.status
+            }
+          });
+        }
+      }
+
+      // 💡 2. Initialize the new session's expectation with the carried-over opening float
+      if (carriedOverFloat.gt(0)) {
+        await tx.remittanceExpectation.create({
+          data: {
+            company_id,
+            user_id: userId,
+            pos_session_id: newSession.id,
+            expected_amount: Number(carriedOverFloat),
+            shortage_amount: Number(carriedOverFloat),
+            due_date: new Date(Date.now() + 24 * 60 * 60 * 1000),
+            status: "PENDING",
+          }
+        });
+      }
+
 
       // e. Update device status to ACTIVE
       await tx.pos_devices.update({

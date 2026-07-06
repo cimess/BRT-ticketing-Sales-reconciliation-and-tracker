@@ -345,7 +345,7 @@ export default function CommissionPage() {
         <div className="mb-8">
           <h2 className="mb-2 text-lg font-bold text-white">
             Commission Statements
-            {supervisorRule && <span className='text-slate-500 text-xs font-medium ml-2'> ({supervisorRule.percentage}%)</span>}
+            {supervisorRule && <span className='text-slate-500 text-xs font-medium ml-2'> ({supervisorRule.percentage===0?supervisorRule.fixed_amount:supervisorRule.percentage}%)</span>}
           </h2>
           <FilterRow>
             <Input value={q2} onChange={setQ2} placeholder="Search record_id / subject / period…" />

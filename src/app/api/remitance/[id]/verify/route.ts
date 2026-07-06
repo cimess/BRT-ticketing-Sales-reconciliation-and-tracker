@@ -103,7 +103,7 @@ export async function PATCH(
 
 
 
-            // Find expectation by pos_session_id or find the oldest unresolved expectation for the user (e.g. supervisors)
+             // Find expectation by pos_session_id or find the oldest unresolved expectation for the user
         let expectation = null;
         if (remittance.pos_session_id) {
           expectation = await tx.remittanceExpectation.findUnique({
@@ -121,13 +121,39 @@ export async function PATCH(
         }
 
         if (expectation) {
-          // Deduct directly from the current outstanding shortage
-          const remainingOwed = Math.max(0, Number(expectation.shortage_amount) - paidAmount);
+          // Recalculate confirmed remittances including the newly confirmed one
+          const confirmedAgg = await tx.remittance.aggregate({
+            where: {
+              company_id,
+              pos_session_id: expectation.pos_session_id,
+              status: "CONFIRMED"
+            },
+            _sum: { amount: true }
+          });
+          const totalConfirmed = Number(confirmedAgg._sum.amount ?? 0);
+          const remainingOwed = Math.max(0, Number(expectation.expected_amount) - totalConfirmed);
 
-          // Keep status as OVERDUE or VIOLATED if there is still a shortage remaining
-          const newStatus = remainingOwed <= 0 
-            ? "PAID" 
-            : (["OVERDUE", "VIOLATED"].includes(expectation.status) ? expectation.status : "SUBMITTED");
+          // Update status dynamically
+          let newStatus: "PAID" | "PENDING" | "OVERDUE" | "VIOLATED" | "SUBMITTED" = "PENDING";
+          if (remainingOwed <= 0) {
+            newStatus = "PAID";
+          } else {
+            const pendingCount = await tx.remittance.count({
+              where: {
+                company_id,
+                pos_session_id: expectation.pos_session_id,
+                status: { in: ["PENDING", "PENDING_SUPERVISOR_ACCEPTANCE", "ACCEPTED_BY_SUPERVISOR", "DEPOSITED"] }
+              }
+            });
+            if (pendingCount > 0) {
+              newStatus = "SUBMITTED";
+            } else {
+              const now = new Date();
+              newStatus = expectation.due_date < now 
+                ? (["OVERDUE", "VIOLATED"].includes(expectation.status) ? (expectation.status) : "OVERDUE")
+                : "PENDING";
+            }
+          }
 
           await tx.remittanceExpectation.update({
             where: { id: expectation.id },
@@ -138,10 +164,8 @@ export async function PATCH(
           });
         }
 
-
-
-      }else if (status === "REJECTED") {
-        // If rejected, restore expectation status back to PENDING/OVERDUE/VIOLATED if no other pending remittances exist
+      } else if (status === "REJECTED") {
+        // If rejected, restore expectation status dynamically
         let expectation = null;
         if (remittance.pos_session_id) {
           expectation = await tx.remittanceExpectation.findUnique({
@@ -159,6 +183,17 @@ export async function PATCH(
         }
 
         if (expectation) {
+          const confirmedAgg = await tx.remittance.aggregate({
+            where: {
+              company_id,
+              pos_session_id: expectation.pos_session_id,
+              status: "CONFIRMED"
+            },
+            _sum: { amount: true }
+          });
+          const totalConfirmed = Number(confirmedAgg._sum.amount ?? 0);
+          const remainingOwed = Math.max(0, Number(expectation.expected_amount) - totalConfirmed);
+
           const pendingCount = await tx.remittance.count({
             where: {
               pos_session_id: remittance.pos_session_id,
@@ -169,17 +204,25 @@ export async function PATCH(
             }
           });
 
-          if (pendingCount === 0) {
+          let newStatus: "PAID" | "PENDING" | "OVERDUE" | "VIOLATED" | "SUBMITTED" = "PENDING";
+          if (remainingOwed <= 0) {
+            newStatus = "PAID";
+          } else if (pendingCount > 0) {
+            newStatus = "SUBMITTED";
+          } else {
             const now = new Date();
-            const targetStatus = now > expectation.due_date 
-              ? (now.getTime() > expectation.due_date.getTime() + 24 * 60 * 60 * 1000 ? "VIOLATED" : "OVERDUE")
+            newStatus = expectation.due_date < now 
+              ? (["OVERDUE", "VIOLATED"].includes(expectation.status) ? (expectation.status) : "OVERDUE")
               : "PENDING";
-
-            await tx.remittanceExpectation.update({
-              where: { id: expectation.id },
-              data: { status: targetStatus }
-            });
           }
+
+          await tx.remittanceExpectation.update({
+            where: { id: expectation.id },
+            data: {
+              status: newStatus,
+              shortage_amount: remainingOwed
+            }
+          });
         }
       }
 

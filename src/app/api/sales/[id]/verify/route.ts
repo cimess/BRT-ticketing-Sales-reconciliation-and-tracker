@@ -35,7 +35,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       // 1. Fetch Sales Report & Session details
       const report = await tx.salesReport.findFirst({
         where: { id: reportId, company_id: companyId },
-        include: { pos_device: true , ticketer: true}
+        include: { pos_device: true , ticketer: true,location:true}
       });
       if (!report) throw new ApiError(404, "Sales report not found");
       if (report.status !== "PENDING") throw new ApiError(400, "Report has already been processed");
@@ -44,45 +44,95 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       // Note: opening_balance already includes all top-ups
       const expectedCash = report.opening_balance - report.closing_balance;
 
-
-     // Sum all remittances submitted for this session (both pending and confirmed)
       const remittances = await tx.remittance.aggregate({
         where: { 
           company_id: companyId,
-          status: { in: ["CONFIRMED", "PENDING"] },
+          status: "CONFIRMED",
           pos_session_id: report.pos_session_id
         },
         _sum: { amount: true }
       });
-      const totalRemitted = Number(remittances._sum.amount ?? 0);
+      const totalConfirmed = Number(remittances._sum.amount ?? 0);
 
-            // 4. Update or Create Remittance Expectation
+      const shortageAmount = Math.max(0, expectedCash - totalConfirmed);
+
+      // 4. Update or Create Remittance Expectation
       const expectation = await tx.remittanceExpectation.findUnique({
         where: { pos_session_id: report.pos_session_id }
       });
 
       if (expectation) {
+        let targetStatus: "PAID" | "PENDING" | "OVERDUE" | "SUBMITTED" | "VIOLATED" = "PENDING";
+        if (totalConfirmed >= expectedCash) {
+          targetStatus = "PAID";
+        } else {
+          const pendingCount = await tx.remittance.count({
+            where: {
+              company_id: companyId,
+              pos_session_id: report.pos_session_id,
+              status: { in: ["PENDING", "PENDING_SUPERVISOR_ACCEPTANCE", "ACCEPTED_BY_SUPERVISOR", "DEPOSITED"] }
+            }
+          });
+          if (pendingCount > 0) {
+            targetStatus = "SUBMITTED";
+          } else {
+            const now = new Date();
+            targetStatus = expectation.due_date < now 
+              ? (["OVERDUE", "VIOLATED"].includes(expectation.status) ? (expectation.status ) : "OVERDUE")
+              : "PENDING";
+          }
+        }
+
         await tx.remittanceExpectation.update({
           where: { id: expectation.id },
           data: {
             expected_amount: expectedCash,
-            status: totalRemitted >= expectedCash ? "PAID" : "PENDING",
-            shortage_amount: Math.max(0, expectedCash - totalRemitted)
+            status: targetStatus,
+            shortage_amount: shortageAmount
           }
         });
       } else {
+        // Fallback: closing session date plus 24 hours
+        const closingDateTime = new Date(report.report_date);
+        if (report.location?.closing_time) {
+          const [hours, minutes] = report.location.closing_time.split(":").map(Number);
+          closingDateTime.setHours(hours, minutes, 0, 0);
+        } else {
+          closingDateTime.setHours(18, 0, 0, 0);
+        }
+        const dueDate = new Date(closingDateTime.getTime() + 24 * 60 * 60 * 1000);
+
+        let targetStatus: "PAID" | "PENDING" | "OVERDUE" | "SUBMITTED" = "PENDING";
+        if (totalConfirmed >= expectedCash) {
+          targetStatus = "PAID";
+        } else {
+          const pendingCount = await tx.remittance.count({
+            where: {
+              company_id: companyId,
+              pos_session_id: report.pos_session_id,
+              status: { in: ["PENDING", "PENDING_SUPERVISOR_ACCEPTANCE", "ACCEPTED_BY_SUPERVISOR", "DEPOSITED"] }
+            }
+          });
+          if (pendingCount > 0) {
+            targetStatus = "SUBMITTED";
+          } else if (dueDate < new Date()) {
+            targetStatus = "OVERDUE";
+          }
+        }
+
         await tx.remittanceExpectation.create({
           data: {
             company_id: companyId,
             user_id: report.ticketer_id,
             pos_session_id: report.pos_session_id,
             expected_amount: expectedCash,
-            due_date: new Date(Date.now() + 24 * 60 * 60 * 1000),
-            status: totalRemitted >= expectedCash ? "PAID" : "PENDING",
-            shortage_amount: Math.max(0, expectedCash - totalRemitted)
+            due_date: dueDate,
+            status: targetStatus,
+            shortage_amount: shortageAmount
           }
         });
       }
+
 
 
       let newSession: PosDeviceSession | undefined = undefined;
@@ -114,6 +164,22 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
           }
         });
 
+        // 💡 Create B's expectation with the handed-over opening float
+        if (Number(report.closing_balance) > 0) {
+          await tx.remittanceExpectation.create({
+            data: {
+              company_id: companyId,
+              user_id: handoverToTicketerId,
+              pos_session_id: newSession.id,
+              expected_amount: Number(report.closing_balance),
+              shortage_amount: Number(report.closing_balance),
+              due_date: new Date(Date.now() + 24 * 60 * 60 * 1000),
+              status: "PENDING",
+            }
+          });
+        }
+
+
         // Set device status to ACTIVE under B's possession
         await tx.pos_devices.update({
           where: { id: report.pos_device.device_id },
@@ -143,7 +209,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
           orderBy: { assigned_at: "desc" }
         });
 
-        if (sharedSession) {
+            if (sharedSession) {
           // Reactivate A's session back to ACTIVE and set opening float to B's closing balance
           reactivatedSession = await tx.posDeviceSession.update({
             where: { id: sharedSession.id },
@@ -155,7 +221,36 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
               assigned_by: verifierId
             }
           });
-        } else {
+
+          // 💡 Increment A's expectation by B's closing balance (handback)
+          if (Number(report.closing_balance) > 0) {
+            const existingExpectation = await tx.remittanceExpectation.findUnique({
+              where: { pos_session_id: sharedSession.id }
+            });
+            if (existingExpectation) {
+              await tx.remittanceExpectation.update({
+                where: { id: existingExpectation.id },
+                data: {
+                  expected_amount: { increment: Number(report.closing_balance) },
+                  shortage_amount: { increment: Number(report.closing_balance) }
+                }
+              });
+            } else {
+              await tx.remittanceExpectation.create({
+                data: {
+                  company_id: companyId,
+                  user_id: sharedSession.user_id,
+                  pos_session_id: sharedSession.id,
+                  expected_amount: Number(report.closing_balance),
+                  shortage_amount: Number(report.closing_balance),
+                  due_date: new Date(Date.now() + 24 * 60 * 60 * 1000),
+                  status: "PENDING",
+                }
+              });
+            }
+          }
+        }
+else {
           // 3. Standard return: set physical device status to INACTIVE so it can be re-assigned
           await tx.pos_devices.update({
             where: { id: report.pos_device.device_id },

@@ -39,3 +39,12 @@ export const prisma =
 if (!isProd) {
   globalForPrisma.prisma = prisma;
 }
+
+
+if (typeof window === "undefined") {
+  import("@/app/server/services/rules.service").then(({ ensureDefaultRules }) => {
+    ensureDefaultRules().catch((err) =>
+      console.error("[Startup] Failed to initialize default company rules:", err)
+    );
+  });
+}

@@ -22,9 +22,12 @@ export async function GET(req: NextRequest) {
     const toDate = searchParams.get("toDate");
     const type = searchParams.get("type"); // CREDIT, DEBIT, or ALL
 
-    const where: Prisma.Float_LedgerWhereInput = {};
+    const where: Prisma.Float_LedgerWhereInput = {
+      // Exclude internal system entries that are not actual financial transactions
+      reference_type: { notIn: ["SESSION_OPENING", "TOP_UP", "TOP_UP_CANCEL", "TOP_UP_DELETION"] }
+    };
 
-       // 1. Role-based scoping
+    // 1. Role-based scoping
     if (role === "TICKETER") {
       const userSessions = await prisma.posDeviceSession.findMany({
         where: { user_id: userId, company_id },

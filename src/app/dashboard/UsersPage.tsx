@@ -48,10 +48,10 @@ export default function UsersPage({ regToken }: { regToken: RegToken[] }) {
         }
       })
       .catch((err) => {
-        console.error(err);
-        if (!ignore) {
-          toast.error("Failed to load users");
-        }
+        if(err instanceof axios.AxiosError)
+        toast.error(err?.response?.data.message || "Error loading users");
+        else
+        toast.error("Error loading users");
       })
       .finally(() => {
         if (!ignore) {
@@ -67,7 +67,10 @@ export default function UsersPage({ regToken }: { regToken: RegToken[] }) {
         }
       })
       .catch((err) => {
-        console.error("Failed to load registration tokens:", err);
+        if(err instanceof axios.AxiosError)
+        toast.error(err?.response?.data.message || "Failed to load registration tokens");
+        else
+        toast.error("Failed to load registration tokens");
       });
 
     return () => {
@@ -79,9 +82,7 @@ const copyToClipboard = (text: string) => {
   if (typeof window !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(text)
       .then(() => toast.success("Token copied to clipboard"))
-      .catch((err) => {
-        console.error("Clipboard copy failed:", err);
-      });
+      .catch(() => toast.error("Clipboard copy failed"));
   } 
 };
 

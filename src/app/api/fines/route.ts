@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { fine_status, Prisma } from "@prisma/client";
 import { ApiError } from "@/app/lib/ApiError";
+import { checkSupervisorFinePermission } from "@/app/server/services/rules.service";
 
 export async function GET(req: NextRequest) {
   try {
@@ -72,14 +73,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Defaulter user not found in this company" }, { status: 404 });
     }
 
-    // ENFORCE SUPERVISOR HIERARCHY
+    // ENFORCE SUPERVISOR HIERARCHY & PERMISSION
     if (role === "SUPERVISOR") {
-      if (defaulter.role !== "TICKETER" || defaulter.supervisor_id !== callerId) {
-        return NextResponse.json({ 
-          error: "Supervisors can only issue fines to ticketers under their direct supervision" 
-        }, { status: 403 });
-      }
-    }
+  const hasPermission = await checkSupervisorFinePermission(company_id);
+  if (!hasPermission) {
+    return NextResponse.json({ error: "Forbidden: Supervisors do not have permission to issue fines." }, { status: 403 });
+  }
+  if (defaulter.role !== "TICKETER" || defaulter.supervisor_id !== callerId) {
+    return NextResponse.json({ 
+      error: "Supervisors can only issue fines to ticketers under their direct supervision" 
+    }, { status: 403 });
+  }
+}
+
 
     const fine = await prisma.fine.create({
       data: {

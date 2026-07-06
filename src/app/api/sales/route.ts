@@ -63,7 +63,7 @@ export async function GET(req: NextRequest) {
     const limit = limitParam ? Math.min(100, Math.max(1, parseInt(limitParam, 10))) : 50; // Max 100, default 50
     const skip = (page - 1) * limit;
 
-    const reports = await prisma.salesReport.findMany({
+       const reports = await prisma.salesReport.findMany({
       where: { ...whereClause },
       orderBy: { submitted_at: "desc" },
       skip,
@@ -80,30 +80,69 @@ export async function GET(req: NextRequest) {
       }
     });
 
+    const reportsWithLedger = await Promise.all(
+      reports.map(async (r) => {
+        // 1. Fetch original session opening balance from ledger
+        const openingLedger = await prisma.float_Ledger.findFirst({
+          where: {
+            posSession: r.pos_session_id,
+            reference_type: "SESSION_OPENING",
+            entry_type: "CREDIT",
+            company_id,
+          },
+          select: { amount: true }
+        });
 
-    return NextResponse.json({
-      success: true,
-      reports: reports.map(r => {
         const topUp = r.pos_device.allocations_given.reduce(
           (sum, alloc) => sum + Number(alloc.amount_allocated),
           0
         );
+
+        let trueOpening = Number(r.opening_balance);
+        if (openingLedger) {
+          trueOpening = Number(openingLedger.amount);
+        } else {
+          // Fallback: If no ledger entry, check if this is the first sales report for the session
+          const previousReportsCount = await prisma.salesReport.count({
+            where: {
+              pos_session_id: r.pos_session_id,
+              company_id,
+              submitted_at: { lt: r.submitted_at },
+              status: { notIn: ["CANCELLED", "REJECTED"] }
+            }
+          });
+
+          if (previousReportsCount === 0) {
+            // First report: session's initial opening float (pos_float - topUps)
+            trueOpening = Math.max(0, Number(r.pos_device.pos_float) - topUp);
+          } else {
+            // Subsequent report: use the recorded opening balance
+            trueOpening = Number(r.opening_balance);
+          }
+        }
+
         return {
           id: r.id,
           ticketer_id: r.ticketer_id,
           user_name: `${r.ticketer.first_name} ${r.ticketer.last_name}`.trim(),
           pos_session_id: r.pos_device.device.name,
           location_id: r.location.name,
-          opening_balance: r.opening_balance,
-          closing_balance: r.closing_balance,
-          total_sold: r.total_sold,
+          opening_balance: trueOpening,
+          closing_balance: Number(r.closing_balance),
+          total_sold: Number(r.total_sold),
           top_up: topUp,
           submitted_at: r.submitted_at.toISOString(),
           report_date: r.report_date.toISOString(),
           status: r.status
         };
       })
+    );
+
+    return NextResponse.json({
+      success: true,
+      reports: reportsWithLedger
     });
+
   } catch (error) {
     console.error("GET /api/sales error:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
@@ -223,27 +262,38 @@ export async function POST(req: NextRequest) {
         }
       });
 
-      // Sum all remittances submitted for this session (both pending and confirmed)
+           // Sum only CONFIRMED remittances for this session
       const remittances = await tx.remittance.aggregate({
         where: {
           company_id,
-          status: { in: ["CONFIRMED", "PENDING", "ACCEPTED_BY_SUPERVISOR", "PENDING_SUPERVISOR_ACCEPTANCE"] },
+          status: "CONFIRMED",
           pos_session_id: posSessionId
         },
         _sum: { amount: true }
       });
-      const totalRemitted = Number(remittances._sum.amount ?? 0);
+      const totalConfirmed = Number(remittances._sum.amount ?? 0);
 
       const expectedCash = openVal - closeVal; // equivalent to soldVal
-      const shortageAmount = Math.max(0, expectedCash - totalRemitted);
+      const shortageAmount = Math.max(0, expectedCash - totalConfirmed);
 
-      // 4. Determine status: if due date passed and cash is not fully remitted, mark as OVERDUE
+      // Determine status: if due date passed and cash is not fully remitted, mark as OVERDUE
       const now = new Date();
-      let expectationStatus: "PAID" | "PENDING" | "OVERDUE" = "PENDING";
-      if (totalRemitted >= expectedCash) {
+      let expectationStatus: "PAID" | "PENDING" | "OVERDUE" | "SUBMITTED" = "PENDING";
+      if (totalConfirmed >= expectedCash) {
         expectationStatus = "PAID";
-      } else if (dueDate < now) {
-        expectationStatus = "OVERDUE";
+      } else {
+        const pendingCount = await tx.remittance.count({
+          where: {
+            company_id,
+            pos_session_id: posSessionId,
+            status: { in: ["PENDING", "PENDING_SUPERVISOR_ACCEPTANCE", "ACCEPTED_BY_SUPERVISOR", "DEPOSITED"] }
+          }
+        });
+        if (pendingCount > 0) {
+          expectationStatus = "SUBMITTED";
+        } else if (dueDate < now) {
+          expectationStatus = "OVERDUE";
+        }
       }
 
       // Create or Update Remittance Expectation immediately on report submission
@@ -274,6 +324,7 @@ export async function POST(req: NextRequest) {
           }
         });
       }
+
 
       // Audit logging
       await tx.auditLog.create({

@@ -149,7 +149,11 @@ export default function LocationsPage({ role = 'TICKETER' }: { role?: string }) 
         setTicketers(list.filter((u) => !u.restricted));
       }
     } catch (e) {
-      console.error(e);
+     if(e instanceof axios.AxiosError){
+      toast.error(e?.response?.data.message || "Failed to load ticketers.");
+     }else{
+      toast.error("Failed to load ticketers.");
+     }
     }
   }, [userRole]);
 
