@@ -3,6 +3,7 @@ import { NextResponse, NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { ApiError } from "@/lib/ApiError";
+import { sendNotification } from "@/app/server/services/notification.service";
 
 // POST: Submit cash holdings as DEPOSITED to bank
 export async function POST(req: NextRequest) {
@@ -69,6 +70,16 @@ export async function POST(req: NextRequest) {
         }
       });
 
+       await sendNotification({
+        companyId: company_id,
+        message: `Supervisor deposited ${idsToUpdate.length} cash holdings to the bank. Payment Reference: ${payment_reference || "N/A"}.`,
+        type: "REMITTANCE_CREATED",
+        target: {
+          roles: ["ADMIN"], // Notifies Admins to verify it
+          userIds: [userId], // Notifies the supervisor to update their UI
+        },
+      });
+
       return { count: updated.count, ids: idsToUpdate };
     });
 
@@ -120,6 +131,16 @@ export async function PATCH(req: NextRequest) {
     { status: 409 }
   );
 }
+
+await sendNotification({
+        companyId: company_id,
+        message: `Deposit reversed by supervisor.`,
+        type: "REMITTANCE_REVERSED",
+        target: {
+          roles: ["ADMIN"],
+          userIds: [userId], 
+        },
+      });
 
     return NextResponse.json({ success: true, data: result });
   } catch (error) {

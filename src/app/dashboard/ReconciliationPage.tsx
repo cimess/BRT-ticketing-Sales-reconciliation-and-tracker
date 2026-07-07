@@ -305,27 +305,28 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
         supervisor_id: (payMethod === 'CASH' && userRole === 'TICKETER') ? paySupervisorId : undefined,
       });
 
-
-      if (!res.data.success) {
-        throw new Error(res.data.error || 'Failed to submit reconciliation payment');
-      }
-
-      setActionSuccess('Payment submitted successfully for verification!');
+      if(res.data.success){
+        setActionSuccess('Payment submitted successfully for verification!');
+      
       setTimeout(() => {
         setSelectedExpectation(null);
         setActionSuccess(null);
         fetchReconciliationData();
       }, 1500);
-    } catch (err: unknown) {
-      const message = err instanceof axios.AxiosError ? err.response?.data.message : 'An error occurred during submission';
-      setActionError(message);
+    }
+    } catch (err) {
+      if(err instanceof axios.AxiosError){
+        setActionError(err?.response?.data.message || err?.response?.data.error || "Failed to submit payment.");
+        toast.error(err?.response?.data.message || err?.response?.data.error || "Failed to submit payment.");
+      }
     } finally {
       setActionLoading(false);
     }
   };
 
-  const handleProcessRemittance = async (action: 'VERIFY' | 'REJECT') => {
-    if (!selectedRemittance) return;
+   // Replace the existing handleProcessRemittance definition around line 327:
+  const handleProcessRemittance = async (remittance: ReconciliationRemittance | null, action: 'VERIFY' | 'REJECT') => {
+    if (!remittance) return;
 
     if (!["ADMIN"].includes(userRole)) {
       setActionError('Unauthorized');
@@ -337,7 +338,7 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
       setActionError(null);
       setActionSuccess(null);
 
-      const res = await api.patch(`/reconcile/${selectedRemittance.id}`, {
+      const res = await api.patch(`/reconcile/${remittance.id}`, {
         action,
       });
 
@@ -348,6 +349,7 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
       setActionSuccess(`Remittance ${action === 'VERIFY' ? 'verified' : 'rejected'} successfully!`);
       setTimeout(() => {
         setSelectedRemittance(null);
+        setSelectedExpectation(null); // Clear selected expectation too in case it was open
         setActionSuccess(null);
         fetchReconciliationData();
         refreshMetrics()
@@ -359,6 +361,7 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
       setActionLoading(false);
     }
   };
+
 
   const handleAcceptHandover = async (id: string, action: 'ACCEPT' | 'REJECT', customAmount?: number) => {
     setActionLoading(true);
@@ -506,6 +509,26 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
     }
   }, [activeTab, fetchFines]);
 
+  // Real-time Auto-Refresh: Listen for notification events and reload all lists
+  useEffect(() => {
+    const handleSSE = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const type = customEvent.detail?.type;
+      if (type === "FINE_CREATED" || type === "SHORTAGE_CREATED" || type === "REMITTANCE_CREATED") {
+        fetchReconciliationData();
+        fetchSupervisorHandovers();
+        if (activeTab === 'FINES') {
+          fetchFines();
+        }
+      }
+    };
+
+    window.addEventListener("sse", handleSSE);
+    return () => {
+      window.removeEventListener("sse", handleSSE);
+    };
+  }, [fetchReconciliationData, fetchSupervisorHandovers, activeTab, fetchFines]);
+
 
   const filteredExpectations = useMemo(() => {
     return expectations.filter((e) => {
@@ -524,6 +547,11 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
       return matchesSearch;
     });
   }, [remittances, q]);
+
+  const associatedRemittances = useMemo(() => {
+    if (!selectedExpectation) return [];
+    return remittances.filter((r) => r.pos_session_id === selectedExpectation.pos_session_id);
+  }, [selectedExpectation, remittances]);
 
   const totalOutstandingShortage = useMemo(() => {
     return expectations.reduce((acc, e) => acc + Number(e.shortage_amount), 0);
@@ -987,7 +1015,7 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
       </PageScaffold>
 
       {/* Drawer for Submitting Shortage Payment */}
-      {["TICKETER", "SUPERVISOR"].includes(userRole) && (<Drawer
+      {["TICKETER", "SUPERVISOR", "ADMIN"].includes(userRole) && (<Drawer
         open={Boolean(selectedExpectation)}
         title="Reconcile Shortage"
         subtitle={selectedExpectation ? `User: ${selectedExpectation.user?.first_name || ''} ${selectedExpectation.user?.last_name || ''}` : undefined}
@@ -1092,12 +1120,84 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
                       {actionLoading ? 'Submitting...' : 'Submit Reconciliation Payment'}
                     </button>
                   </form>
-                ) : (
-                  <div className="p-4 rounded-xl bg-white/5 border border-white/10 text-xs text-slate-300 space-y-2">
-                    <p className="font-semibold text-amber-400">ℹ️ Read-Only Audit View</p>
-                    <p>Supervisors do not make payments here. The ticketer must remit overdue funds directly or hand over physical cash.</p>
+                              ) : (
+                  <div className="space-y-4 pt-2">
+                    {associatedRemittances.length > 0 ? (
+                      <div className="space-y-3">
+                        <h4 className="text-xs font-semibold text-slate-400">Payments Submitted for this Shortage</h4>
+                        <div className="space-y-2">
+                          {associatedRemittances.map((rem) => (
+                            <div key={rem.id} className="p-3 rounded-xl border border-white/5 bg-white/3 space-y-2 text-xs text-slate-300">
+                              <div className="flex justify-between">
+                                <span>Amount:</span>
+                                <span className="font-mono font-bold text-emerald-400">{formatMoney(Number(rem.amount))}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Method:</span>
+                                <span className="font-semibold">{rem.method}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Status:</span>
+                                <Badge variant={remittanceStatusVariant(rem.status)}>{rem.status}</Badge>
+                              </div>
+                              {rem.payment_reference && (
+                                <div className="flex justify-between">
+                                  <span>Ref:</span>
+                                  <span>{rem.payment_reference}</span>
+                                </div>
+                              )}
+
+                              {/* Admin verification buttons if the individual remittance is pending and user is Admin/Auditor */}
+                              {(userRole === 'ADMIN' || userRole === 'AUDITOR') && 
+                               ["PENDING", "ACCEPTED_BY_SUPERVISOR", "DEPOSITED", "PENDING_SUPERVISOR_ACCEPTANCE"].includes(rem.status) && (
+                                <div className="space-y-2 pt-2 border-t border-white/5">
+                                  {actionError && (
+                                    <div className="p-3 rounded-xl border border-red-500/20 bg-red-500/10 text-red-300 text-xs">
+                                      {actionError}
+                                    </div>
+                                  )}
+                                  {actionSuccess && (
+                                    <div className="p-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 text-emerald-300 text-xs">
+                                      {actionSuccess}
+                                    </div>
+                                  )}
+                                  {rem.method === 'CASH' && rem.status !== 'DEPOSITED' ? (
+                                    <div className="p-3 rounded-xl border border-amber-500/20 bg-amber-500/10 text-amber-300 text-xs">
+                                      ⏳ Cash must be deposited by Supervisor before Admin verification.
+                                    </div>
+                                  ) : (
+                                    <div className="flex gap-2">
+                                      <button
+                                        onClick={() => handleProcessRemittance(rem, 'VERIFY')}
+                                        disabled={actionLoading}
+                                        className="flex-1 px-3 py-2 bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 text-xs font-bold rounded-xl border border-emerald-500/30 transition disabled:opacity-50"
+                                      >
+                                        Verify/Accept
+                                      </button>
+                                      <button
+                                        onClick={() => handleProcessRemittance(rem, 'REJECT')}
+                                        disabled={actionLoading}
+                                        className="flex-1 px-3 py-2 bg-red-500/20 text-red-300 hover:bg-red-500/30 text-xs font-bold rounded-xl border border-red-500/30 transition disabled:opacity-50"
+                                      >
+                                        Reject
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-4 rounded-xl bg-white/5 border border-white/10 text-xs text-slate-300 space-y-2">
+                        <p className="font-semibold text-amber-400">ℹ | Read-Only Audit View</p>
+                        <p>No reconciliation payments have been submitted yet for this shortage. The ticketer must remit overdue funds directly or hand over physical cash.</p>
+                      </div>
+                    )}
                   </div>
                 )
+
 
               },
             ]}
@@ -1110,7 +1210,7 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
       <Drawer
         open={Boolean(selectedRemittance)}
         title="Remittance Details"
-        subtitle={selectedRemittance ? `ID: ${selectedRemittance.id}` : undefined}
+        subtitle={selectedRemittance && role === 'ADMIN' ? `ID: ${selectedRemittance.id}` : undefined}
         onClose={() => setSelectedRemittance(null)}
       >
         {selectedRemittance && (
@@ -1151,19 +1251,45 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
                       </div>
                     )}
 
-                    {(userRole === 'ADMIN' || userRole === 'AUDITOR') ? (
-                      <div className="pt-2">
-                        <p className="text-xs text-slate-400 italic">
-                          Please verify or reject this remittance from the main Remittances page.
-                        </p>
+                                    {(userRole === 'ADMIN' || userRole === 'AUDITOR') && 
+                     (selectedRemittance.status !== 'CONFIRMED' && selectedRemittance.status !== 'REJECTED') ? (
+                      <div className="pt-2 space-y-3">
+                        {selectedRemittance.method === 'CASH' && selectedRemittance.status !== 'DEPOSITED' ? (
+                          <div className="p-3 rounded-xl border border-amber-500/20 bg-amber-500/10 text-amber-300 text-xs">
+                            ⏳ Cash must be deposited by Supervisor before Admin verification.
+                          </div>
+                        ) : (
+                                                  <div className="flex gap-2">
+                            <button
+                              onClick={() => handleProcessRemittance(selectedRemittance, 'VERIFY')}
+                              disabled={actionLoading}
+                              className="flex-1 px-4 py-2.5 bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 text-xs font-bold rounded-xl border border-emerald-500/30 transition disabled:opacity-50"
+                            >
+                              Verify/Accept Payment
+                            </button>
+                            <button
+                              onClick={() => handleProcessRemittance(selectedRemittance, 'REJECT')}
+                              disabled={actionLoading}
+                              className="flex-1 px-4 py-2.5 bg-red-500/20 text-red-300 hover:bg-red-500/30 text-xs font-bold rounded-xl border border-red-500/30 transition disabled:opacity-50"
+                            >
+                              Reject Payment
+                            </button>
+                          </div>
+
+                        )}
                       </div>
                     ) : (
-                      <p className="text-xs text-slate-400 italic">
-                        {selectedRemittance.status === 'CONFIRMED'
-                          ? 'This payment has been verified by Admin.'
-                          : 'Pending Admin verification.'}
-                      </p>
+                      <div className="pt-2">
+                        <p className="text-xs text-slate-400 italic">
+                          {selectedRemittance.status === 'CONFIRMED'
+                            ? 'This payment has been verified by Admin.'
+                            : selectedRemittance.status === 'REJECTED'
+                            ? 'This payment has been rejected.'
+                            : 'Pending Admin verification.'}
+                        </p>
+                      </div>
                     )}
+
 
                   </div>
                 ),

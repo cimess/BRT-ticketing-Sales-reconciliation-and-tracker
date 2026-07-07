@@ -45,6 +45,16 @@ export interface ReverseTopUp {
   user: { id: string, fullname: string, role: DashboardRoleUsers }
 }
 
+export interface SystemNotification {
+  id: string;
+  company_id: string;
+  user_id: string;
+  message: string;
+  type: string | null;
+  reference_id: string | null;
+  is_read: boolean;
+  created_at: string;
+}
 
 
 export interface Float_Alocation {
@@ -54,7 +64,7 @@ export interface Float_Alocation {
   top_up_id: AddTopUp["id"]
   to_role: User["role"]
   from_role: User["role"]
-
+  pre_allocation_float?: number
   amount_allocated: number
   amount_remaining: number
   allocated_at: string
@@ -100,7 +110,7 @@ export interface Remittance {
   remit_id: string;
   method: 'CASH' | 'TRANSFER';
   amount: number;
-  status: 'PENDING' | 'CONFIRMED' | 'REJECTED' | 'CANCELLED' | 'PENDING_SUPERVISOR_ACCEPTANCE'| 'ACCEPTED_BY_SUPERVISOR'| 'REJECTED_BY_SUPERVISOR'| 'DEPOSITED';
+  status: 'PENDING' | 'CONFIRMED' | 'REJECTED' | 'CANCELLED' | 'PENDING_SUPERVISOR_ACCEPTANCE' | 'ACCEPTED_BY_SUPERVISOR' | 'REJECTED_BY_SUPERVISOR' | 'DEPOSITED';
   proof_ref?: string;
   submitted_at: string;
   verified_at?: string;
@@ -223,7 +233,7 @@ export interface User_Full_Audit {
   remitance?: Remittance[];
   reconciliation?: ReconciliationRun[];
   locations?: Ticketer_Location_Assignment[];
- restricted?: boolean;
+  restricted?: boolean;
 
 }
 

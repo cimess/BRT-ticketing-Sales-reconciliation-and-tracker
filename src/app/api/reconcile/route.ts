@@ -6,6 +6,7 @@ import { Prisma } from "@prisma/client";
 import { ApiError } from "@/lib/ApiError";
 import { checkAndEscalateExpectations, checkSupervisorDepositViolations } from "@/server/services/escalation.service";
 import { checkSupervisorFinePermission } from "@/app/server/services/rules.service";
+import { sendNotification } from "@/app/server/services/notification.service";
 
 
 
@@ -292,6 +293,20 @@ export async function POST(req: NextRequest) {
             return newRemittance;
         });
 
+         const submitterName = session.user.name || "A User";
+        const formattedAmount = Number(remittance.amount).toLocaleString();
+        
+        await sendNotification({
+            companyId: company_id,
+            message: `${submitterName} submitted a reconciliation remittance of ₦${formattedAmount} (${method}).`,
+            type: "REMITTANCE_SUBMISSION",
+            referenceId: remittance.id,
+            target: {
+                userIds: remittance.received_by_supervisor_id ? [remittance.received_by_supervisor_id] : undefined,
+                roles: ["ADMIN"],
+                excludeUserId: callerId,
+            }
+        });
         return NextResponse.json({ success: true, remittance });
     } catch (error) {
         console.error("POST /api/reconcile error:", error);

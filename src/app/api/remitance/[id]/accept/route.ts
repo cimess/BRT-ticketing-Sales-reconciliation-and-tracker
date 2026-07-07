@@ -4,6 +4,8 @@ import { NextResponse, NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { ApiError } from "@/app/lib/ApiError";
+import { sendNotification } from "@/app/server/services/notification.service";
+
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -33,6 +35,20 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         }
       });
     });
+        // Send Notification
+    const supervisorName = session.user.name || "Supervisor";
+    const formattedAmount = Number(updated.amount).toLocaleString();
+    await sendNotification({
+      companyId: updated.company_id,
+      message: `Supervisor ${supervisorName} has ${action === "ACCEPT" ? "accepted" : "rejected"} your cash remittance of ₦${formattedAmount}.`,
+      type: action === "ACCEPT" ? "REMITTANCE_ACCEPTED" : "REMITTANCE_REJECTED",
+      referenceId: updated.id,
+      target: {
+        userIds: [updated.submitted_by],
+        roles: ["ADMIN"],
+      }
+    });
+
 
     return NextResponse.json({ success: true, data: updated });
   } catch (err) {

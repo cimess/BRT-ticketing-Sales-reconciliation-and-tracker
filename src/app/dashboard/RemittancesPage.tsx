@@ -106,6 +106,22 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
     };
   }, [fetchRemittances, fetchUsers, metrics?.posSessionId]);
 
+    // Real-time Auto-Refresh: Listen for notification events and reload table records
+  useEffect(() => {
+    const handleSSE = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail?.type === "REMITTANCE_CREATED"||customEvent.detail?.type === "FINE_ISSUED"||customEvent.detail?.type === "REMITTANCE_ACCEPTED"||customEvent.detail?.type === "REMITTANCE_REJECTED"||customEvent.detail?.type === "REMITTANCE_REVERSED") {
+        fetchRemittances();
+      }
+    };
+
+    window.addEventListener("sse", handleSSE);
+    return () => {
+      window.removeEventListener("sse", handleSSE);
+    };
+  }, [fetchRemittances]);
+
+
   const submitRemittance = async (amount: number, method: 'CASH' | 'TRANSFER', ticketerId?: string, supervisorId?: string) => {
     if (role === "TICKETER" && !posSession) {
       toast.error("POS Session is required");

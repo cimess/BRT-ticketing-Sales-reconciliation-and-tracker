@@ -4,10 +4,10 @@
 import "@/globals.css";
 import { OpsSidebar } from '../../components/OpsSidebar';
 import { OpsTopBar } from '../../components/OpsTopBar';
-import { useState, useRef, useEffect, createContext, useContext } from "react";
+import { useState, useRef, useEffect, createContext, useContext, useCallback } from "react";
 import { Suspense } from "react";
 import { useSession } from "next-auth/react";
-
+import { useEventStream } from "@/hooks/useEventStream";
 import api from "@/app/lib/axios";
 import { toast } from "react-toastify";
 import axios from "axios";
@@ -59,6 +59,7 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }>) {
   const { data: session } = useSession();
+  
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
 
@@ -72,21 +73,45 @@ export default function DashboardLayout({
 
   const sidebarRef = useRef<HTMLDivElement>(null);
 
-  const refreshMetrics = async () => {
+  // Wrap refreshMetrics in useCallback
+  const refreshMetrics = useCallback(async () => {
     try {
       const res = await api.get("/dashboard/metrics");
       if (res.data?.success) {
         setMetrics(res.data.metrics);
       }
     } catch (err) {
-      if(err instanceof axios.AxiosError)
-      toast.error(err?.response?.data.message || "Error loading dashboard metrics");
-      else
-      toast.error("Error loading dashboard metrics");
+      if (err instanceof axios.AxiosError) {
+        toast.error(err?.response?.data.message || "Error loading dashboard metrics");
+      } else {
+        toast.error("Error loading dashboard metrics");
+      }
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  // Memoize event handler to keep a stable reference
+const handleSSEEvent = useCallback((eventType: string) => {
+  if (eventType !== "CONNECTED") {
+    refreshMetrics();
+  }
+}, [refreshMetrics]);
+
+  useEventStream(session?.user?.role || "", handleSSEEvent);
+ useEffect(() => {
+    if (!session?.user) return;
+    let ignore = false;
+    Promise.resolve().then(() => {
+      if (!ignore) {
+        refreshMetrics();
+      }
+    });
+    return () => {
+      ignore = true;
+    };
+  }, [session, refreshMetrics]);
+
 
   useEffect(() => {
     if (!session?.user) return;

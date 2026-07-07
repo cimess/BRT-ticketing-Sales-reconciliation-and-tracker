@@ -3,6 +3,7 @@ import { NextResponse, NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { ApiError } from "@/lib/ApiError";
+import { sendNotification } from "@/app/server/services/notification.service";
 
 export async function PATCH(
   req: NextRequest,
@@ -192,6 +193,35 @@ export async function PATCH(
       return updatedRemittance;
     }
   });
+
+    // Send Notification
+  if (result) {
+    if (role === "TICKETER" || role === "SUPERVISOR") {
+      await sendNotification({
+        companyId: companyId,
+        message: `${session.user.name || "User"} cancelled a pending remittance of ₦${Number(result.amount).toLocaleString()}.`,
+        type: "REMITTANCE_CANCELLED",
+        referenceId: remittanceId,
+        target: {
+          roles: ["ADMIN"],
+          excludeUserId: userId,
+        }
+      });
+    } else {
+      await sendNotification({
+        companyId: companyId,
+        message: `Your remittance of ₦${Number(result.amount).toLocaleString()} has been reversed by the administrator.`,
+        type: "REMITTANCE_REVERSED",
+        referenceId: remittanceId,
+        target: {
+          userIds: [result.submitted_by],
+          roles: ["ADMIN"],
+          excludeUserId: userId,
+        }
+      });
+    }
+  }
+
 
     return NextResponse.json({ success: true, data: result });
   } catch (error) {

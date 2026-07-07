@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { ApiError } from "@/lib/ApiError";
 import { Prisma } from "@prisma/client";
+import { sendNotification } from "@/app/server/services/notification.service";
 
 export async function PATCH(
   req: NextRequest,
@@ -75,9 +76,18 @@ export async function PATCH(
             verified_at: new Date()
           }
         });
+
+        await sendNotification({
+          companyId: company_id,
+          message: `Reconciliation remittance of ₦${paidAmount.toLocaleString()} has been rejected.`,
+          type: "REMITTANCE_CREATED",
+          referenceId: remittanceId,
+          target: {
+            userIds: [remittance.submitted_by, callerId].filter(Boolean),
+          },
+        });
         return { remittance: rejectedRemittance };
       }
-
       // Action is VERIFY
       // A) Update remittance status
       const confirmedRemittance = await tx.remittance.update({
@@ -150,9 +160,20 @@ export async function PATCH(
       });
 
 
+      await sendNotification({
+        companyId: company_id,
+        message: `Reconciliation remittance of ₦${paidAmount.toLocaleString()} has been verified.`,
+        type: "REMITTANCE_CREATED",
+        referenceId: remittanceId,
+        target: {
+          userIds: [remittance.submitted_by, callerId].filter(Boolean),
+        },
+      });
+
       return { remittance: confirmedRemittance };
     });
 
+    
     return NextResponse.json({ success: true, result });
   } catch (error) {
     console.error("PATCH /api/reconcile/[id]/verify error:", error);

@@ -3,6 +3,7 @@ import { NextResponse, NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { ApiError } from "@/lib/ApiError";
+import { sendNotification } from "@/app/server/services/notification.service";
 
 export async function PATCH(
   req: NextRequest,
@@ -16,13 +17,13 @@ export async function PATCH(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const {company_id} = session.user;
-   
+    const { company_id } = session.user;
+
 
     const result = await prisma.$transaction(async (tx) => {
       // 1. Fetch the float allocation
       const allocation = await tx.float_allocations.findUnique({
-        where: { id: allocationId ,company_id}
+        where: { id: allocationId, company_id }
       });
 
       if (!allocation) {
@@ -35,7 +36,7 @@ export async function PATCH(
 
       // 2. Fetch the target POS session and verify it is active
       const posSession = await tx.posDeviceSession.findUnique({
-        where: { id: allocation.pos_device_id ,company_id}
+        where: { id: allocation.pos_device_id, company_id }
       });
 
       if (!posSession) {
@@ -54,7 +55,7 @@ export async function PATCH(
         );
       }
 
-           // 4. Verify no remittances have been submitted for this active session
+      // 4. Verify no remittances have been submitted for this active session
       const remittanceCount = await tx.remittance.count({
         where: {
           pos_session_id: allocation.pos_device_id,
@@ -69,13 +70,13 @@ export async function PATCH(
 
       // 5. Update the allocation status to CANCELLED
       const updatedAllocation = await tx.float_allocations.update({
-        where: { id: allocationId,company_id},
+        where: { id: allocationId, company_id },
         data: { status: "CANCELLED" }
       });
 
       // 6. Deduct float from the POS Session balance
       await tx.posDeviceSession.update({
-        where: { id: allocation.pos_device_id,company_id },
+        where: { id: allocation.pos_device_id, company_id },
         data: {
           pos_float: {
             decrement: allocation.amount_allocated
@@ -85,7 +86,7 @@ export async function PATCH(
 
       // 7. Refund the float back to the Company Vault
       await tx.companyFloat.update({
-        where: { id: "COMPANY_ACCOUNT",company_id },
+        where: { id: "COMPANY_ACCOUNT", company_id },
         data: {
           available_balance: {
             increment: allocation.amount_allocated
@@ -159,7 +160,15 @@ export async function PATCH(
           meta: { ip: req.headers.get("x-forwarded-for") || "" }
         }
       });
-
+      await sendNotification({
+        companyId: company_id,
+        message: `Float allocation of ₦${Number(allocation.amount_allocated).toLocaleString()} has been reversed/cancelled.`,
+        type: "FLOAT_UPDATED",
+        referenceId: allocationId,
+        target: {
+          userIds: [posSession.user_id], // Targets the ticketer
+        },
+      });
       return updatedAllocation;
     });
 

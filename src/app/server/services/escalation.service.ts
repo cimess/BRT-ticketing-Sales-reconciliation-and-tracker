@@ -1,5 +1,6 @@
 // src/app/server/services/escalation.service.ts
 import { prisma } from "@/lib/prisma";
+import { sendNotification } from "./notification.service";
 
 /**
  * Worker to check for overdue/violated remittance expectations
@@ -19,16 +20,28 @@ export async function checkAndEscalateExpectations(companyId: string) {
 
   const graceHours = shortageRule ? shortageRule.comparison_value : 24;
 
-  // Find all unresolved expectations
+  // 1. Include sales reports and locations to fetch closing hours if they exist
   const expectations = await prisma.remittanceExpectation.findMany({
     where: {
       company_id: companyId,
       status: { in: ["PENDING", "SUBMITTED", "OVERDUE"] }
     },
     include: {
-      pos_session: true
+      pos_session: {
+        include: {
+          sales_reports: {
+            where: { status: { notIn: ["CANCELLED", "REJECTED"] } },
+            orderBy: { submitted_at: "desc" },
+            take: 1,
+            include: {
+              location: true
+            }
+          }
+        }
+      }
     }
   });
+
 
   for (const exp of expectations) {
     const shortageAmount = Number(exp.shortage_amount);
@@ -41,12 +54,42 @@ export async function checkAndEscalateExpectations(companyId: string) {
     }
 
     const dueDate = new Date(exp.due_date);
-    const sessionAssignedAt = exp.pos_session?.assigned_at 
+    const sessionDate = exp.pos_session?.assigned_at 
       ? new Date(exp.pos_session.assigned_at) 
       : new Date(exp.created_at);
     
-    // Violation date = starting assignment timestamp + policy grace period
-    const violationDate = new Date(sessionAssignedAt.getTime() + graceHours * 60 * 60 * 1000);
+    // 2. Fetch the ticketer's location assignment for the assignment day
+    const startOfDay = new Date(sessionDate.getFullYear(), sessionDate.getMonth(), sessionDate.getDate());
+    const endOfDay = new Date(sessionDate.getFullYear(), sessionDate.getMonth(), sessionDate.getDate(), 23, 59, 59, 999);
+
+    const assignment = await prisma.ticketer_Location_Assignment.findFirst({
+      where: {
+        user_id: exp.user_id,
+        assigned_for: {
+          gte: startOfDay,
+          lte: endOfDay
+        }
+      },
+      include: {
+        location: true
+      }
+    });
+
+    const location = assignment?.location || exp.pos_session?.sales_reports?.[0]?.location;
+
+    // 3. Establish the base closing date-time of the session assignment day
+    const closingDateTime = new Date(sessionDate);
+    if (location?.closing_time) {
+      const [hours, minutes] = location.closing_time.split(":").map(Number);
+      closingDateTime.setHours(hours, minutes, 0, 0);
+    } else {
+      // Fallback: 6:00 PM on assignment day
+      closingDateTime.setHours(18, 0, 0, 0);
+    }
+
+    // 4. Violation date = closingDateTime + policy grace hours
+    const violationDate = new Date(closingDateTime.getTime() + graceHours * 60 * 60 * 1000);
+
 
     let targetStatus: "OVERDUE" | "VIOLATED" | null = null;
 
@@ -56,25 +99,22 @@ export async function checkAndEscalateExpectations(companyId: string) {
       targetStatus = "OVERDUE";
     }
 
-    if (targetStatus && targetStatus !== exp.status) {
-      await prisma.$transaction(async (tx) => {
+   if (targetStatus && targetStatus !== exp.status) {
+      const fineResult = await prisma.$transaction(async (tx) => {
         const currentExp = await tx.remittanceExpectation.findUnique({
           where: { id: exp.id }
         });
         if (!currentExp || currentExp.status === "PAID" || currentExp.status === targetStatus) {
-          return;
+          return null;
         }
-
         await tx.remittanceExpectation.update({
           where: { id: exp.id },
           data: { status: targetStatus }
         });
-
         const adminUser = await tx.user.findFirst({
           where: { company_id: companyId, role: "ADMIN" }
         });
         const systemUserId = adminUser ? adminUser.id : exp.user_id;
-
         await tx.auditLog.create({
           data: {
             company_id: companyId,
@@ -88,7 +128,7 @@ export async function checkAndEscalateExpectations(companyId: string) {
             }
           }
         });
-
+        let fineCreated = null;
         // Issue automated Fine if status escalates to VIOLATED
         if (targetStatus === "VIOLATED") {
           const fineReason = `Overdue Shortage Remittance: POS Session ${exp.pos_session_id}`;
@@ -100,11 +140,9 @@ export async function checkAndEscalateExpectations(companyId: string) {
               reason: fineReason
             }
           });
-
           if (!existingFine) {
             const fineAmount = shortageRule ? shortageRule.fine_amount : null;
-
-            await tx.fine.create({
+            fineCreated = await tx.fine.create({
               data: {
                 company_id: companyId,
                 defaulter_id: exp.user_id,
@@ -117,7 +155,22 @@ export async function checkAndEscalateExpectations(companyId: string) {
             console.log(`Issued automated Shortage Remittance fine to ticketer: ${exp.user_id}`);
           }
         }
+        return { fineCreated };
       });
+      if (fineResult?.fineCreated) {
+        const fine = fineResult.fineCreated;
+        const formattedAmount = fine.amount ? Number(fine.amount).toLocaleString() : "TBD";
+        await sendNotification({
+          companyId: companyId,
+          message: `System issued a late remittance fine of ₦${formattedAmount} for POS Session ${exp.pos_session_id}.`,
+          type: "FINE_ISSUED",
+          referenceId: fine.id,
+          target: {
+            userIds: [exp.user_id],
+            roles: ["ADMIN"],
+          }
+        });
+      }
     }
   }
 }
@@ -158,13 +211,14 @@ export async function checkSupervisorDepositViolations(companyId: string) {
     const deadline = new Date(acceptedAt.getTime() + depositDeadlineMs);
 
     if (now > deadline) {
-      await prisma.$transaction(async (tx) => {
+     
+      const fineResult = await prisma.$transaction(async (tx) => {
         const currentRemit = await tx.remittance.findUnique({
           where: { id: remit.id }
         });
         
         if (!currentRemit || currentRemit.status !== "ACCEPTED_BY_SUPERVISOR") {
-          return;
+          return null;
         }
 
         const fineReason = `Late bank deposit violation for Remittance ${remit.id}`;
@@ -177,6 +231,7 @@ export async function checkSupervisorDepositViolations(companyId: string) {
           }
         });
 
+        let fineCreated = null;
         if (!existingFine) {
           const adminUser = await tx.user.findFirst({
             where: { company_id: companyId, role: "ADMIN" }
@@ -184,7 +239,7 @@ export async function checkSupervisorDepositViolations(companyId: string) {
           const systemUserId = adminUser ? adminUser.id : remit.received_by_supervisor_id!;
           const fineAmount = depositRule ? depositRule.fine_amount : null;
 
-          await tx.fine.create({
+          fineCreated = await tx.fine.create({
             data: {
               company_id: companyId,
               defaulter_id: remit.received_by_supervisor_id!,
@@ -211,7 +266,24 @@ export async function checkSupervisorDepositViolations(companyId: string) {
           });
           console.log(`Issued automated Late Deposit fine to supervisor: ${remit.received_by_supervisor_id}`);
         }
+        return { fineCreated };
       });
+
+      if (fineResult?.fineCreated) {
+        const fine = fineResult.fineCreated;
+        const formattedAmount = fine.amount ? Number(fine.amount).toLocaleString() : "TBD";
+        await sendNotification({
+          companyId: companyId,
+          message: `System issued a late bank deposit fine of ₦${formattedAmount} for Remittance ${remit.id}.`,
+          type: "FINE_ISSUED",
+          referenceId: fine.id,
+          target: {
+            userIds: [remit.received_by_supervisor_id!],
+            roles: ["ADMIN"],
+          }
+        });
+      }
+
     }
   }
 }

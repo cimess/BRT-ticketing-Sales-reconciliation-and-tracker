@@ -2,6 +2,8 @@
 import { NextResponse, NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { sendNotification } from "@/app/server/services/notification.service";
+
 
 export async function POST(req: NextRequest) {
   try {
@@ -144,6 +146,20 @@ export async function POST(req: NextRequest) {
 
       return newRemittance;
     });
+
+        // Send Notification
+    const ticketerName = session.user.name || "A Ticketer";
+    await sendNotification({
+      companyId: company_id,
+      message: `${ticketerName} submitted a remittance of ₦${remittanceAmount.toLocaleString()} via ${method}.`,
+      type: "REMITTANCE_SUBMISSION",
+      referenceId: remitance.id,
+      target: {
+        roles: ["ADMIN"],
+        supervisorOfUserId: targetUserId,
+      }
+    });
+
 
     return NextResponse.json({ success: true, data: remitance });
   } catch (error) {

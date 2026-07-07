@@ -5,6 +5,8 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { ApiError } from "@/app/lib/ApiError";
 import { checkSupervisorFinePermission } from "@/app/server/services/rules.service";
+import { Roles } from "@prisma/client";
+import {sendNotification } from "@/app/server/services/notification.service"
 
 export async function PATCH(
   req: NextRequest,
@@ -221,6 +223,43 @@ export async function PATCH(
 
       return updatedFine;
     });
+
+        // Send Notification
+    if (result) {
+      let notifyMessage = "";
+      let targetUserIds: string[] = [];
+      let targetRoles: Roles[] = [];
+      
+      const offenderName = session.user.name || "User";
+      const formattedAmount = Number(result.amount).toLocaleString();
+
+      if (action === "DECLARE_PAID") {
+        notifyMessage = `New fine payment received.`;
+        targetRoles = ["ADMIN"];
+      } else if (action === "VERIFY_PAYMENT") {
+        notifyMessage = "Payment Verified";
+        targetUserIds = [result.defaulter_id];
+      } else if (action === "VOID") {
+        notifyMessage = `Your fine has been waived.`;
+        targetUserIds = [result.defaulter_id];
+      } else if (action === "REVERSE") {
+        notifyMessage = `Your fine payment has been reversed`;
+        targetUserIds = [result.defaulter_id];
+      }
+
+      if (notifyMessage) {
+        await sendNotification({
+          companyId: company_id,
+          message: notifyMessage,
+          type: "FINE_ISSUED",
+          referenceId: result.id,
+          target: {
+            userIds: targetUserIds.length > 0 ? targetUserIds : undefined,
+            roles: targetRoles.length > 0 ? targetRoles : undefined,
+          }
+        });
+      }
+    }
 
     return NextResponse.json({ success: true, fine: result });
   } catch (error) {

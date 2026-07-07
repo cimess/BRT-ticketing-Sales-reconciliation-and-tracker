@@ -118,7 +118,8 @@ export async function getRoleFinancialSnapshot(
       });
       expectedRemittance = Number(expectationAgg._sum.expected_amount ?? 0);
 
-// 6. Circulating POS Float (Sum of remaining float of all POS devices)
+
+           // 6. Circulating POS Float (Sum of remaining float of all POS devices)
       const posDevices = await prisma.pos_devices.findMany({
         where: { company_id: companyId },
         select: {
@@ -126,12 +127,18 @@ export async function getRoleFinancialSnapshot(
             orderBy: { assigned_at: "desc" },
             take: 1,
             select: {
+              id: true,
+              status: true,
               pos_float: true,
               sales_reports: {
                 where: { status: { notIn: ["CANCELLED", "REJECTED"] } },
                 orderBy: { submitted_at: "desc" },
                 take: 1,
                 select: { closing_balance: true }
+              },
+              remittances: {
+                where: { status: "CONFIRMED" },
+                select: { amount: true }
               }
             }
           }
@@ -141,10 +148,16 @@ export async function getRoleFinancialSnapshot(
         const latestSession = d.device_assignment[0];
         if (latestSession) {
           const latestReport = latestSession.sales_reports[0];
-          return sum + (latestReport ? Number(latestReport.closing_balance) : Number(latestSession.pos_float));
+          if (latestReport) {
+            return sum + Number(latestReport.closing_balance);
+          }
+          const totalConfirmedRemittances = latestSession.remittances.reduce((s, r) => s + Number(r.amount), 0);
+          const remainingActiveFloat = Math.max(0, Number(latestSession.pos_float) - totalConfirmedRemittances);
+          return sum + remainingActiveFloat;
         }
         return sum;
       }, 0);
+
       
       // 7. Supervisor Cash Holdings (Physical Cash currently accepted & held by Supervisors)
            const supervisorCashAgg = await prisma.remittance.aggregate({
@@ -203,6 +216,8 @@ export async function getRoleFinancialSnapshot(
             orderBy: { assigned_at: "desc" },
             take: 1,
             select: {
+              id: true,
+              status: true,
               pos_float: true,
               user: { select: { supervisor_id: true } },
               sales_reports: {
@@ -210,6 +225,10 @@ export async function getRoleFinancialSnapshot(
                 orderBy: { submitted_at: "desc" },
                 take: 1,
                 select: { closing_balance: true }
+              },
+              remittances: {
+                where: { status: "CONFIRMED" },
+                select: { amount: true }
               }
             }
           }
@@ -219,10 +238,16 @@ export async function getRoleFinancialSnapshot(
         const latestSession = d.device_assignment[0];
         if (latestSession && latestSession.user?.supervisor_id === userId) {
           const latestReport = latestSession.sales_reports[0];
-          return sum + (latestReport ? Number(latestReport.closing_balance) : Number(latestSession.pos_float));
+          if (latestReport) {
+            return sum + Number(latestReport.closing_balance);
+          }
+          const totalConfirmedRemittances = latestSession.remittances.reduce((s, r) => s + Number(r.amount), 0);
+          const remainingActiveFloat = Math.max(0, Number(latestSession.pos_float) - totalConfirmedRemittances);
+          return sum + remainingActiveFloat;
         }
         return sum;
       }, 0);
+
            // 6. Supervisor Cash Holdings (Cash currently accepted & held in hand)
       const supervisorCashAgg = await prisma.remittance.aggregate({
         where: {

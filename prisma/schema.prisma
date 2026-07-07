@@ -28,6 +28,7 @@ model Company {
   commission_earnings     CommissionEarning[]
   fines                   Fine[]
   locations               Location[]
+  notifications        Notification[]
   top_ups                 TopUp[]
   reconciliation_reports  Reconciliation_reports[]
   audit_logs              AuditLog[]
@@ -75,6 +76,7 @@ model User {
   ticket_assignments   Ticketer_Location_Assignment[] @relation("TicketerAssignment")
 
   received_remittances Remittance[] @relation("SupervisorRemittances")
+  notifications        Notification[]
   remittance_expectations RemittanceExpectation[]
   company              Company             @relation(fields: [company_id], references: [id])
   @@unique([email, company_id])
@@ -375,6 +377,24 @@ model Location {
   ticket_assignments Ticketer_Location_Assignment[]
   company              Company             @relation(fields: [company_id], references: [id])
 }
+
+model Notification {
+  id           String   @id @default(cuid())
+  company_id   String
+  user_id      String
+  message      String
+  type         String?  // e.g., "REMITTANCE_SUBMISSION", "REMITTANCE_ACCEPTED", "REMITTANCE_REJECTED", "FINE_ISSUED"
+  reference_id String?  // e.g., remittanceId or fineId to enable UI details linking
+  is_read      Boolean  @default(false)
+  created_at   DateTime @default(now())
+
+  // Relations
+  user         User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  company      Company  @relation(fields: [company_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, company_id])
+}
+
 
 
 enum SalesReportStatus{

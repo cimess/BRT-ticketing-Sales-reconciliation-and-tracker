@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { ApiError } from "@/lib/ApiError";
 import { Prisma } from "@prisma/client";
+import { sendNotification } from "@/app/server/services/notification.service";
 
 export async function POST(req: NextRequest) {
   try {
@@ -128,7 +129,20 @@ export async function POST(req: NextRequest) {
         }
       });
 
-      return { shortage: discrepancy > 0 ? discrepancy : 0 };
+      return { shortage: discrepancy > 0 ? discrepancy : 0,ticketerId:sessionRecord.user_id };
+    });
+
+        // Send Notification to ticketer
+    await sendNotification({
+      companyId: company_id,
+      message: `Your active session has been force-reconciled and released by the admin.`,
+      type: "SALE_VERIFIED",
+      referenceId: posSessionId,
+      target: {
+        userIds: [result.ticketerId],
+        roles: ["ADMIN"],
+        excludeUserId: adminId,
+      }
     });
 
     return NextResponse.json({ success: true, ...result });

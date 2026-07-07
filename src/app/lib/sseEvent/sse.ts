@@ -1,4 +1,5 @@
-import { toast } from "react-toastify";
+// src/app/lib/sseEvent/sse.ts
+import { EventEmitter } from "node:events";
 
 export type SystemEvent =
   | "TOPUP_CREATED"
@@ -7,39 +8,26 @@ export type SystemEvent =
   | "FINE_CREATED"
   | "FLOAT_UPDATED"
   | "SHORTAGE_CREATED"
+  | "NOTIFICATION_CREATED"
   | "CONNECTED";
 
-type Client = {
-  controller: ReadableStreamDefaultController;
-  role: string;
+// 1. Singleton EventEmitter on globalThis
+const globalForSse = globalThis as unknown as {
+  sseEventBus: EventEmitter | undefined;
 };
 
-const clients = new Map<string, Set<Client>>();
-
-export function addClient(role: string, controller: ReadableStreamDefaultController) {
-  if (!clients.has(role)) {
-    clients.set(role, new Set());
-  }
-
-  clients.get(role)!.add({ controller, role });
+if (!globalForSse.sseEventBus) {
+  globalForSse.sseEventBus = new EventEmitter();
+  globalForSse.sseEventBus.setMaxListeners(200); // Allow many concurrent SSE clients
 }
 
-export function removeClient(role: string, controller: ReadableStreamDefaultController) {
-  const set = clients.get(role);
-  if (!set) return;
+export const eventBus = globalForSse.sseEventBus;
 
-  for (const client of set) {
-    if (client.controller === controller) {
-      set.delete(client);
-      break;
-    }
-  }
-}
-
+// 2. Broadcast function — emits an event on the bus (used by API routes / notification service)
 export function broadcast(
   event: SystemEvent,
   payload: unknown,
-  targetRoles: string[] = []
+  target?: { userIds?: string[]; roles?: string[] }
 ) {
   const message = {
     event,
@@ -47,27 +35,5 @@ export function broadcast(
     timestamp: Date.now(),
   };
 
-  const encoded =
-    `data: ${JSON.stringify(message)}\n\n`;
-
-  const buffer = new TextEncoder().encode(encoded);
-
-  const rolesToSend =
-    targetRoles.length > 0
-      ? targetRoles
-      : Array.from(clients.keys());
-
-  for (const role of rolesToSend) {
-    const set = clients.get(role);
-    if (!set) continue;
-
-    for (const client of set) {
-      try{
-      client.controller.enqueue(buffer);
-      }catch(error){
-        toast.error(`Error en el envio del SSE ${error}`)
-        set.delete(client)
-      }
-    }
-  }
+  eventBus.emit("sse-broadcast", { message, target });
 }

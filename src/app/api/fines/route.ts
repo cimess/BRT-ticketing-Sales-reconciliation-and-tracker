@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { fine_status, Prisma } from "@prisma/client";
 import { ApiError } from "@/app/lib/ApiError";
 import { checkSupervisorFinePermission } from "@/app/server/services/rules.service";
+import { sendNotification } from "@/app/server/services/notification.service";
+
 
 export async function GET(req: NextRequest) {
   try {
@@ -108,6 +110,20 @@ export async function POST(req: NextRequest) {
         after_state: fine 
       }
     });
+        // Send Notification
+    const issuerName = session.user.name || "System";
+    const formattedAmount = Number(amount).toLocaleString();
+    await sendNotification({
+      companyId: company_id,
+      message: "You have been issued a fine of ₦${formattedAmount}",
+      type: "FINE_ISSUED",
+      referenceId: fine.id,
+      target: {
+        userIds: [defaulterId],
+        roles: ["ADMIN"],
+      }
+    });
+
 
     return NextResponse.json({ success: true, fine });
   } catch (error) {

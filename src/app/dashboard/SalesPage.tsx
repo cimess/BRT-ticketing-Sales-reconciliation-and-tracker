@@ -382,6 +382,22 @@ export default function SalesPage({
     };
   }, [records, refreshKey]);
 
+    // Real-time Auto-Refresh: Listen for notification events and reload sales records
+  useEffect(() => {
+    const handleSSE = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail?.type === "SALE_CREATED") {
+        setRefreshKey((prev) => prev + 1);
+      }
+    };
+
+    window.addEventListener("sse", handleSSE);
+    return () => {
+      window.removeEventListener("sse", handleSSE);
+    };
+  }, []);
+
+
   // Effect to fetch company ticketers for handover selector
   useEffect(() => {
     if (role !== "ADMIN" && role !== "SUPERVISOR") return;

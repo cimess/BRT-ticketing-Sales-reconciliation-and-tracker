@@ -88,6 +88,24 @@ export default function TransactionsPage({ role }: TransactionsPageProps) {
     };
   }, [status, loadTransactions]);
 
+  // Real-time Auto-Refresh: Listen for notification events and reload transactions
+  useEffect(() => {
+    const handleSSE = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const type = customEvent.detail?.type;
+      if (type === "TOPUP_CREATED" || type === "REMITTANCE_CREATED") {
+        loadTransactions();
+      }
+    };
+
+    window.addEventListener("sse", handleSSE);
+    return () => {
+      window.removeEventListener("sse", handleSSE);
+    };
+  }, [loadTransactions]);
+
+
+
   // Auto-reset calendar when search query input transitions to empty
   useEffect(() => {
     let active = true;
@@ -341,10 +359,11 @@ export default function TransactionsPage({ role }: TransactionsPageProps) {
                   <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest block">User / Entity</label>
                   <span className="text-xs font-semibold text-slate-200 mt-1 block">{selectedDetailsTx.user}</span>
                 </div>
+                {role === 'ADMIN' && 
                 <div>
                   <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest block">Transaction ID</label>
                   <span className="text-[10px] font-mono text-slate-400 mt-1 block break-all">{selectedDetailsTx.id}</span>
-                </div>
+                </div>}
               </div>
 
               <div className="grid grid-cols-2 gap-4 pt-2 border-t border-white/5">

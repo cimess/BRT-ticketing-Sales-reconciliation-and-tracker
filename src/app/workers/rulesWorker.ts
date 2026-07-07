@@ -2,6 +2,7 @@
 import { Worker, WorkerOptions } from "bullmq"; 
 import IORedis from "ioredis";
 import { prisma } from "@/app/lib/prisma";
+import { sendNotification } from "../server/services/notification.service";
 
 export async function runRuleEvaluation(payload: { event: string; reportId: string; companyId: string }) {
   const { event, reportId, companyId } = payload;
@@ -68,8 +69,8 @@ export async function runRuleEvaluation(payload: { event: string; reportId: stri
       }
     });
 
-    if (!existingFine) {
-      await prisma.fine.create({
+      if (!existingFine) {
+      const fine = await prisma.fine.create({
         data: {
           company_id: companyId,
           defaulter_id: report.ticketer_id,
@@ -80,6 +81,18 @@ export async function runRuleEvaluation(payload: { event: string; reportId: stri
         }
       });
       console.log(`Successfully issued automated fine for Late Report Submission to ticketer: ${report.ticketer_id}`);
+      // Send automated fine notification
+      const formattedAmount = Number(rule.fine_amount).toLocaleString();
+      await sendNotification({
+        companyId: companyId,
+        message: `System issued a late report submission fine of ₦${formattedAmount} for POS Session ${report.pos_session_id}.`,
+        type: "FINE_ISSUED",
+        referenceId: fine.id,
+        target: {
+          userIds: [report.ticketer_id],
+          roles: ["ADMIN"],
+        }
+      });
     }
   }
 }

@@ -6,6 +6,7 @@ import { ApiError } from "@/lib/ApiError";
 import { Prisma } from "@prisma/client";
 import { rulesQueue } from "@/lib/queue";
 import { runRuleEvaluation } from "@/app/workers/rulesWorker";
+import { sendNotification } from "@/app/server/services/notification.service";
 
 export async function GET(req: NextRequest) {
   try {
@@ -353,6 +354,19 @@ export async function POST(req: NextRequest) {
       // Synchronous fallback
       await runRuleEvaluation(jobPayload);
     }
+    // Send Notification to supervisor and admin
+    const ticketerName = session.user.name || "A Ticketer";
+    await sendNotification({
+      companyId: company_id,
+      message: `${ticketerName} submitted a sales report of ₦${soldVal.toLocaleString()} for session ${posSessionId}.`,
+      type: "SALE_CREATED",
+      referenceId: report.id,
+      target: {
+        roles: ["ADMIN"],
+        supervisorOfUserId: ticketerId,
+        excludeUserId: callerId,
+      }
+    });
 
     return NextResponse.json({ success: true, report });
   } catch (error) {

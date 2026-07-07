@@ -53,7 +53,7 @@ export default function FloatLedgerPage({
 }: FloatLedgerPageProps) {
 
 
-    // Add at the beginning of the FloatLedgerPage component:
+  // Add at the beginning of the FloatLedgerPage component:
   interface QuickStatusDevice {
     id: string;
     name: string;
@@ -88,7 +88,7 @@ export default function FloatLedgerPage({
         setQuickDevices(res.data.devices);
       }
     } catch (err) {
-      if(err instanceof axios.AxiosError){
+      if (err instanceof axios.AxiosError) {
         toast.error(err?.response?.data.message || "Failed to load database audit logs.");
       }
       toast.error("Failed to load active POS sessions");
@@ -103,7 +103,23 @@ export default function FloatLedgerPage({
       }, 0);
       return () => clearTimeout(timer);
     }
-  }, [role, entries,fetchQuickDevices]);
+  }, [role, entries, fetchQuickDevices]);
+
+  // Real-time Auto-Refresh: Listen for notification events and reload ledger entries
+  useEffect(() => {
+    const handleSSE = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail?.type === "TOPUP_CREATED"|| customEvent.detail?.type === "FLOAT_UPDATED") {
+        if (onRefresh) onRefresh();
+        fetchQuickDevices();
+      }
+    };
+
+    window.addEventListener("sse", handleSSE);
+    return () => {
+      window.removeEventListener("sse", handleSSE);
+    };
+  }, [onRefresh, fetchQuickDevices]);
 
 
 
@@ -121,7 +137,7 @@ export default function FloatLedgerPage({
 
   // Refresh dashboard metrics
   const { refreshMetrics, metrics } = useDashboard();
-  
+
   // Tab switcher for Admin
   const [activeTab, setActiveTab] = useState<'COMPANY' | 'POS'>('POS');
 
@@ -146,7 +162,7 @@ export default function FloatLedgerPage({
             }
           }
         } catch (err) {
-         
+
           toast.error("Failed to load active POS sessions");
         }
       };
@@ -265,7 +281,7 @@ export default function FloatLedgerPage({
         toast.error(res.data?.message || "Failed to reverse allocation");
       }
     } catch (err) {
-     (err);
+      (err);
       if (axios.isAxiosError(err)) {
         toast.error(err.response?.data?.error || err.response?.data?.message || err?.message || "An error occurred");
       }
@@ -363,14 +379,14 @@ export default function FloatLedgerPage({
           </div>
         )}
 
-                {role === 'SUPERVISOR' && quickDevices.length > 0 && (
+        {role === 'SUPERVISOR' && quickDevices.length > 0 && (
           <div className="bg-white/3 border border-white/5 rounded-3xl p-6 mb-6">
             <div className="flex justify-between items-center mb-5">
               <div>
                 <h3 className="text-sm font-bold text-white uppercase tracking-wider">Quick POS Allocation Dashboard</h3>
                 <p className="text-[11px] text-slate-400 mt-1">Assign inactive devices and allocate float instantly to the last holder.</p>
               </div>
-              <button 
+              <button
                 onClick={fetchQuickDevices}
                 className="text-[10px] text-blue-400 font-bold uppercase tracking-wider hover:underline"
               >
@@ -384,17 +400,16 @@ export default function FloatLedgerPage({
                 const lastHolder = device.lastSession?.userName || "N/A";
                 const currentHolder = device.activeSession?.userName || lastHolder;
                 const currentFloat = isDeviceActive ? (device.activeSession?.currentFloat ?? 0) : (device.lastSession?.lastFloat ?? 0);
-                
+
                 return (
-                  <div 
-                    key={device.id} 
-                    className={`rounded-2xl border p-4 transition-all relative ${
-                      isDeviceActive 
-                        ? 'bg-blue-950/20 border-blue-500/30' 
-                        : device.status === 'MAINTENANCE' 
-                        ? 'bg-red-950/10 border-red-500/10 opacity-70' 
-                        : 'bg-white/3 border-white/5'
-                    }`}
+                  <div
+                    key={device.id}
+                    className={`rounded-2xl border p-4 transition-all relative ${isDeviceActive
+                        ? 'bg-blue-950/20 border-blue-500/30'
+                        : device.status === 'MAINTENANCE'
+                          ? 'bg-red-950/10 border-red-500/10 opacity-70'
+                          : 'bg-white/3 border-white/5'
+                      }`}
                   >
                     <div className="flex justify-between items-start mb-3">
                       <div>
@@ -491,7 +506,7 @@ export default function FloatLedgerPage({
             <div className="w-full sm:w-72 shrink-0">
               <Input value={q} onChange={setQ} placeholder="Search ledger entries..." />
             </div>
-            <div className="text-slate-500 text-xs font-medium z-50 w-full sm:w-auto">
+            <div className="text-slate-500 text-xs font-medium z-30 w-full sm:w-auto">
               <Calender
                 className="w-full"
                 range={dateRange ? { startDate: dateRange.start, endDate: dateRange.end } : undefined}
@@ -535,9 +550,8 @@ export default function FloatLedgerPage({
                       <span className="text-xs font-black text-white font-mono">
                         {formatMoney(item.amount_allocated)}
                       </span>
-                      <span className={`block text-[9px] font-black uppercase tracking-wider mt-0.5 ${
-                        item.status === 'SUCCESS' ? 'text-emerald-400' : item.status === 'CANCELLED' ? 'text-rose-400' : 'text-amber-400'
-                      }`}>
+                      <span className={`block text-[9px] font-black uppercase tracking-wider mt-0.5 ${item.status === 'SUCCESS' ? 'text-emerald-400' : item.status === 'CANCELLED' ? 'text-rose-400' : 'text-amber-400'
+                        }`}>
                         {item.status}
                       </span>
                     </div>
@@ -574,9 +588,8 @@ export default function FloatLedgerPage({
                       <span className="text-xs font-black text-white font-mono">
                         {formatMoney(item.amount_allocated)}
                       </span>
-                      <span className={`block text-[9px] font-black uppercase tracking-wider mt-0.5 ${
-                        item.status === 'SUCCESS' ? 'text-emerald-400' : item.status === 'CANCELLED' ? 'text-rose-400' : 'text-amber-400'
-                      }`}>
+                      <span className={`block text-[9px] font-black uppercase tracking-wider mt-0.5 ${item.status === 'SUCCESS' ? 'text-emerald-400' : item.status === 'CANCELLED' ? 'text-rose-400' : 'text-amber-400'
+                        }`}>
                         {item.status}
                       </span>
                     </div>
@@ -630,16 +643,29 @@ export default function FloatLedgerPage({
               </div>
 
               <div className="grid grid-cols-2 gap-4 pt-2">
-                <div>
+               { role === 'ADMIN' && <div>
                   <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest block">Allocation ID</label>
                   <span className="text-[10px] font-mono text-slate-400 mt-1 block break-all">{selectedDetailsFloat.id}</span>
-                </div>
+                </div>}
                 <div>
+               
                   <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest block">Timestamp</label>
                   <span className="text-xs text-slate-400 mt-1 block">{formatDateTime(selectedDetailsFloat.allocated_at)}</span>
                 </div>
               </div>
+
+              {selectedDetailsFloat.pre_allocation_float !== undefined && (
+                <div className="border-t border-white/5 pt-3">
+                  <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest block">
+                    POS Drawer Balance (Before Allocation)
+                  </label>
+                  <span className="text-xs font-semibold text-slate-200 font-mono mt-1 block">
+                    {formatMoney(selectedDetailsFloat.pre_allocation_float)}
+                  </span>
+                </div>
+              )}
             </div>
+
 
             {/* Actions Section for Admins & Supervisors */}
             {activeTab === 'POS' && (role === 'ADMIN' || role === 'SUPERVISOR') && selectedDetailsFloat.status === 'SUCCESS' && (

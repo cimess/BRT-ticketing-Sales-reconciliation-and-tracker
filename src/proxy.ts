@@ -21,6 +21,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "/api/admin/commision-earnings",
     "/api/admin/commision-rules",
     "/api/fines",
+    "/api/events",
+    "/api/notifications"
   ],
   AUDITOR: [
     "/dashboard/admin",
@@ -36,6 +38,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "/api/sales", 
     "/api/reconcile",  
     "/api/admin/commision-earnings", 
+    "/api/events",
+    "/api/notifications"
   ],
   SUPERVISOR: [
     "/dashboard/supervisor",
@@ -50,7 +54,9 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "/api/sales",  
     "/api/reconcile", 
     "/api/admin/commision-earnings",
-    "/api/fines"
+    "/api/fines",
+    "/api/events",
+    "/api/notifications"
   ],
   TICKETER: [
     "/dashboard/ticketer",
@@ -63,7 +69,10 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "/api/sales",  
     "/api/reconcile",  
     "/api/admin/commision-earnings",
-    "/api/fines"
+    "/api/fines",
+    "/api/events",
+    "/api/notifications"
+    
   ],
 };
 

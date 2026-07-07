@@ -4,6 +4,8 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { ApiError } from "@/lib/ApiError";
+import { sendNotification } from "@/app/server/services/notification.service";
+
 
 export async function GET(req: NextRequest) { // Updated signature
   try {
@@ -59,6 +61,39 @@ export async function GET(req: NextRequest) { // Updated signature
         }
       }
     });
+    // Fetch all related ledger entries to calculate pre-allocation balances dynamically
+    const sessionIds = Array.from(new Set(history.map((h) => h.pos_device_id)));
+    const ledgers = await prisma.float_Ledger.findMany({
+      where: {
+        account_id: { in: sessionIds },
+        account_type: "POS_DEVICE",
+        company_id,
+      },
+      orderBy: {
+        created_at: "asc",
+      },
+    });
+
+    const preAllocationBalances: Record<string, number> = {};
+    const sessionRunningBalances: Record<string, number> = {};
+
+    for (const entry of ledgers) {
+      const sessionId = entry.account_id;
+      const currentBal = sessionRunningBalances[sessionId] || 0;
+
+      if (entry.reference_type === "ALLOCATION") {
+        // Record the balance of the session BEFORE this allocation was added
+        preAllocationBalances[entry.reference_id] = currentBal;
+      }
+
+      const amount = Number(entry.amount);
+      if (entry.entry_type === "CREDIT") {
+        sessionRunningBalances[sessionId] = currentBal + amount;
+      } else {
+        sessionRunningBalances[sessionId] = currentBal - amount;
+      }
+    }
+
 
     return NextResponse.json({
       success: true,
@@ -79,7 +114,8 @@ export async function GET(req: NextRequest) { // Updated signature
         amount_allocated: Number(h.amount_allocated),
         amount_remaining: Number(h.amount_allocated),
         status: h.status,
-        allocated_at: h.allocated_at.toISOString()
+        allocated_at: h.allocated_at.toISOString(),
+        pre_allocation_float: preAllocationBalances[h.id] ?? 0
       }))
     });
   } catch (error) {
@@ -109,7 +145,7 @@ export async function POST(req: Request) {
     }
 
     const allocationAmount = new Prisma.Decimal(amount);
-
+    let targetUserId = "";
     const result = await prisma.$transaction(async (tx) => {
       // 1. Get and verify company float
       const companyFloat = await tx.companyFloat.findUnique({
@@ -121,7 +157,7 @@ export async function POST(req: Request) {
       }
 
       let activeSessionId = posSessionId;
-      let targetUserId = "";
+       targetUserId = "";
 
       if (deviceId) {
         const device = await tx.pos_devices.findUnique({
@@ -391,6 +427,18 @@ export async function POST(req: Request) {
         allocation,
         availableCompanyBalance: Number(updatedCompanyFloat.available_balance)
       };
+    });
+
+    await sendNotification({
+      companyId: company_id,
+      message: `Float top-up of ₦${Number(amount).toLocaleString()} has been allocated to your POS device.`,
+      type: "TOPUP_CREATED",
+      referenceId: result.allocation.id,
+      target: {
+        userIds: [targetUserId].filter(Boolean),
+        roles: ["ADMIN"],
+        excludeUserId: session.user.id!,
+      }
     });
 
     return NextResponse.json({

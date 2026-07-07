@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { ApiError } from "@/lib/ApiError";
 import { PosDeviceSession, Prisma } from "@prisma/client";
+import { sendNotification } from "@/app/server/services/notification.service";
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -28,6 +29,19 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
           rejection_reason: rejectionReason || "Rejected by supervisor"
         }
       });
+            // Send Notification to ticketer
+      await sendNotification({
+        companyId: companyId,
+        message: `Your sales report has been rejected by the supervisor: ${rejectionReason || "No reason specified"}.`,
+        type: "SALE_REJECTED",
+        referenceId: reportId,
+        target: {
+          userIds: [rejectedReport.ticketer_id],
+          roles: ["ADMIN"],
+          excludeUserId: verifierId,
+        }
+      });
+
       return NextResponse.json({ success: true, report: rejectedReport });
     }
 
@@ -284,6 +298,18 @@ else {
       });
 
       return { report: verifiedReport, newSession, reactivatedSession };
+    });
+     // Send Notification to ticketer
+    await sendNotification({
+      companyId: companyId,
+      message: `Your sales report has been verified and approved.`,
+      type: "SALE_VERIFIED",
+      referenceId: result.report.id,
+      target: {
+        userIds: [result.report.ticketer_id],
+        roles: ["ADMIN"],
+        excludeUserId: verifierId,
+      }
     });
 
     return NextResponse.json({ success: true, ...result });

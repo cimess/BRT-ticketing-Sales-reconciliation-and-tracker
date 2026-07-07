@@ -3,6 +3,7 @@ import { NextResponse, NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { ApiError } from "@/lib/ApiError";
+import { sendNotification } from "@/app/server/services/notification.service";
 
 export async function PATCH(
   req: NextRequest,
@@ -241,6 +242,19 @@ export async function PATCH(
 
       return updatedRemittance;
     });
+        // Send Notification to ticketer
+    await sendNotification({
+      companyId: company_id,
+      message: `Your remittance of ₦${Number(result.amount).toLocaleString()} has been ${status === "CONFIRMED" ? "verified and approved" : "rejected"} by the admin.`,
+      type: status === "CONFIRMED" ? "REMITTANCE_ACCEPTED" : "REMITTANCE_REJECTED",
+      referenceId: result.id,
+      target: {
+        userIds: [result.submitted_by],
+        roles: ["ADMIN"],
+        excludeUserId: userId,
+      }
+    });
+
 
     return NextResponse.json({ success: true, data: result });
   } catch (error) {
