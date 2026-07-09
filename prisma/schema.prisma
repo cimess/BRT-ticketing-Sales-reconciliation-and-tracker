@@ -143,6 +143,7 @@ model Remittance {
   verified_at       DateTime?
   pos_session_id    String?
   received_by_supervisor_id String?
+  receipt_images    String[]          // Array of Cloudflare R2 storage keys (e.g., "receipts/clxx/uuid-filename.jpg")
   company_id           String
   supervisor_receiver       User?   @relation("SupervisorRemittances", fields: [received_by_supervisor_id], references: [id])
 

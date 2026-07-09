@@ -13,26 +13,26 @@ export async function POST(req: NextRequest) {
     const userId = session.user.id;
     const role = session.user.role;
     const company_id = session.user.company_id;
-       // 🔒 1. Strict Role Guard: Only Ticketers can submit remittances
+    // 🔒 1. Strict Role Guard: Only Ticketers can submit remittances
     if (role !== "TICKETER") {
-      return NextResponse.json({ 
-        error: "Unauthorized. Only ticketers can submit remittances for active POS sessions." 
+      return NextResponse.json({
+        error: "Unauthorized. Only ticketers can submit remittances for active POS sessions."
       }, { status: 403 });
     }
 
     const body = await req.json();
     const ip = req.headers.get('x-forwarded-for') || "Unknown";
-    const { amount, method, payment_reference, remittance_date, supervisor_id, pos_id } = body;
+    const { amount, method, payment_reference, remittance_date, supervisor_id, pos_id, receipt_images } = body;
 
     const remittanceAmount = Number(amount);
     if (isNaN(remittanceAmount) || remittanceAmount <= 10 || !method || !remittance_date) {
-      return NextResponse.json({ 
+      return NextResponse.json({
         error: isNaN(remittanceAmount) || remittanceAmount <= 10 ? "Invalid amount" : "Missing required fields",
-        message: remittanceAmount > 0 ? "Missing required fields" : "Invalid amount" 
+        message: remittanceAmount > 0 ? "Missing required fields" : "Invalid amount"
       }, { status: 400 });
     }
 
-    const targetUserId = userId; 
+    const targetUserId = userId;
     let receivedBySupId = null;
 
     // 💡 If Cash, track assigned supervisor
@@ -97,9 +97,9 @@ export async function POST(req: NextRequest) {
       }
 
 
-         // 3. CREATE REMITTANCE RECORD
+      // 3. CREATE REMITTANCE RECORD
 
-         const initialStatus = (method === "CASH" && receivedBySupId)
+      const initialStatus = (method === "CASH" && receivedBySupId)
         ? "PENDING_SUPERVISOR_ACCEPTANCE"
         : "PENDING";
 
@@ -113,7 +113,8 @@ export async function POST(req: NextRequest) {
           payment_reference: payment_reference || null,
           remittance_date: new Date(remittance_date),
           status: initialStatus,
-          pos_session_id: activeSessionId
+          pos_session_id: activeSessionId,
+          receipt_images: Array.isArray(receipt_images) ? receipt_images : []
         }
       });
 
@@ -147,7 +148,7 @@ export async function POST(req: NextRequest) {
       return newRemittance;
     });
 
-        // Send Notification
+    // Send Notification
     const ticketerName = session.user.name || "A Ticketer";
     await sendNotification({
       companyId: company_id,
@@ -177,8 +178,8 @@ export async function GET(req: NextRequest) {
   try {
     const session = await auth();
     if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    
-    const { id: userId, role,company_id } = session.user;
+
+    const { id: userId, role, company_id } = session.user;
 
     // 1️⃣ Parse optional date and pagination query params
     const { searchParams } = new URL(req.url);
@@ -215,18 +216,18 @@ export async function GET(req: NextRequest) {
         }
       };
     }
-    
+
     // 3️⃣ Build role-based WHERE clause
     let roleFilter: Record<string, unknown> = {};
     if (role === "TICKETER") {
       roleFilter = { submitted_by: userId };
     } else if (role === "SUPERVISOR") {
-      const ticketers = await prisma.user.findMany({ 
-        where: { supervisor_id: userId,company_id }, 
-        select: { id: true } 
+      const ticketers = await prisma.user.findMany({
+        where: { supervisor_id: userId, company_id },
+        select: { id: true }
       });
       const ids = ticketers.map(t => t.id);
-      ids.push(userId); 
+      ids.push(userId);
       roleFilter = { submitted_by: { in: ids } };
     }
     // ADMIN sees all — no roleFilter needed
@@ -239,22 +240,22 @@ export async function GET(req: NextRequest) {
 
     // 6️⃣ Query database with pagination (skip/take)
 
-       const remittances = await prisma.remittance.findMany({
-      where:{...where,company_id},
+    const remittances = await prisma.remittance.findMany({
+      where: { ...where, company_id },
       orderBy: { created_at: "desc" },
       skip,
       take: limit,
       include: {
         ticketer: { select: { first_name: true, last_name: true } },
         supervisor_receiver: { select: { first_name: true, last_name: true } },
-        pos_session: { 
-          select: { 
+        pos_session: {
+          select: {
             id: true,
-            device: { select: { name: true } } ,
+            device: { select: { name: true } },
             remittance_expectation: {
               select: { status: true }
             }
-          } 
+          }
         }
       }
     });
@@ -262,13 +263,13 @@ export async function GET(req: NextRequest) {
 
     // 7️⃣ Fetch total outstanding expectations for the active role view
 
-     let outstandingFilter = {};
+    let outstandingFilter = {};
     if (role === "TICKETER") {
       outstandingFilter = { user_id: userId };
     } else if (role === "SUPERVISOR") {
-      const ticketers = await prisma.user.findMany({ 
-        where: { supervisor_id: userId, company_id }, 
-        select: { id: true } 
+      const ticketers = await prisma.user.findMany({
+        where: { supervisor_id: userId, company_id },
+        select: { id: true }
       });
       const ids = ticketers.map(t => t.id);
       // Supervisors see their team's + their own outstanding shortages
@@ -278,11 +279,11 @@ export async function GET(req: NextRequest) {
       outstandingFilter = {};
     }
 
-  const outstandingExpectationAgg = await prisma.remittanceExpectation.aggregate({
+    const outstandingExpectationAgg = await prisma.remittanceExpectation.aggregate({
       where: {
         ...outstandingFilter,
         company_id,
-        status: { in: ["PENDING", "OVERDUE","VIOLATED","SUBMITTED"] },
+        status: { in: ["PENDING", "OVERDUE", "VIOLATED", "SUBMITTED"] },
         pos_session: {
           sales_reports: {
             some: {
@@ -296,12 +297,12 @@ export async function GET(req: NextRequest) {
     const totalOutstanding = Number(outstandingExpectationAgg._sum.shortage_amount ?? 0);
     // 8️⃣ Fetch current outstanding expectations for each user who has a remittance in this list
     const uniqueUserIds = Array.from(new Set(remittances.map(r => r.submitted_by)));
-       const userExpectations = await prisma.remittanceExpectation.groupBy({
+    const userExpectations = await prisma.remittanceExpectation.groupBy({
       by: ['user_id'],
       where: {
         company_id,
         user_id: { in: uniqueUserIds },
-        status: { in: ["PENDING", "OVERDUE","VIOLATED","SUBMITTED"] },
+        status: { in: ["PENDING", "OVERDUE", "VIOLATED", "SUBMITTED"] },
         pos_session: {
           sales_reports: {
             some: {
@@ -319,15 +320,15 @@ export async function GET(req: NextRequest) {
     }
 
 
-// 9️⃣ Map and include ticketer_outstanding
+    // 9️⃣ Map and include ticketer_outstanding
     const mapped = remittances.map(r => ({
       id: r.id,
       amount: Number(r.amount),
       method: r.method,
       status: r.status,
       payment_reference: r.payment_reference,
-      received_by_supervisor: r.supervisor_receiver 
-        ? `${r.supervisor_receiver.first_name} ${r.supervisor_receiver.last_name}` 
+      received_by_supervisor: r.supervisor_receiver
+        ? `${r.supervisor_receiver.first_name} ${r.supervisor_receiver.last_name}`
         : null,
       remittance_date: r.remittance_date.toISOString(),
       created_at: r.created_at.toISOString(),
@@ -338,9 +339,10 @@ export async function GET(req: NextRequest) {
 
       ticketer_outstanding: outstandingMap.get(r.submitted_by) || 0,
       is_reconciliation: ["OVERDUE", "VIOLATED"].includes(r.pos_session?.remittance_expectation?.status || ""),
+      receipt_images: r.receipt_images || [], 
     }));
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       data: mapped,
       totalOutstanding,
       pagination: {

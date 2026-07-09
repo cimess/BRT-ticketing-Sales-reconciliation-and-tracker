@@ -22,6 +22,10 @@ import { toast } from 'react-toastify';
 import axios from 'axios';
 import { useDashboard } from './layout';
 import { useSession } from 'next-auth/react';
+import ReceiptViewerModal from '@/components/ReceiptViewerModal';
+
+
+
 
 export interface FineRecord {
   id: string;
@@ -90,7 +94,7 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
 
   const [fines, setFines] = useState<FineRecord[]>([]);
   const { data: session } = useSession();
-   const [supervisorCanFine, setSupervisorCanFine] = useState(false);
+  const [supervisorCanFine, setSupervisorCanFine] = useState(false);
 
   // Manual Fine States
   const [fineUsers, setFineUsers] = useState<{ id: string; name: string }[]>([]);
@@ -100,7 +104,8 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
   const [fineReason, setFineReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-
+const [viewerOpen, setViewerOpen] = useState(false);
+const [activeRemittanceId, setActiveRemittanceId] = useState<string | null>(null);
   // Place with your other useState declarations in ReconciliationPage.tsx
   const [supervisorHandovers, setSupervisorHandovers] = useState<ReconciliationRemittance[]>([]);
 
@@ -117,7 +122,7 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
         setSupervisorHandovers(result.data || []);
       }
     } catch (err) {
-      if(err instanceof axios.AxiosError){
+      if (err instanceof axios.AxiosError) {
         toast.error(err?.response?.data.message || "Failed to load supervisor cash handovers.");
       }
     }
@@ -199,7 +204,7 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
           setSupervisors(res.data.data || []);
         }
       } catch (err) {
-        if(err instanceof axios.AxiosError){
+        if (err instanceof axios.AxiosError) {
           toast.error(err?.response?.data.message || "Failed to load supervisors.");
         }
       }
@@ -231,7 +236,7 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
         }
       }
     } catch (err) {
-      if(err instanceof axios.AxiosError){
+      if (err instanceof axios.AxiosError) {
         toast.error(err?.response?.data.message || "Failed to load users for fine dropdown.");
       }
     }
@@ -267,7 +272,7 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
         toast.error(res.data?.error || "Failed to issue fine");
       }
     } catch (err) {
-      if(err instanceof axios.AxiosError){
+      if (err instanceof axios.AxiosError) {
         toast.error(err?.response?.data.message || "Failed to issue fine.");
       }
     } finally {
@@ -305,17 +310,17 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
         supervisor_id: (payMethod === 'CASH' && userRole === 'TICKETER') ? paySupervisorId : undefined,
       });
 
-      if(res.data.success){
+      if (res.data.success) {
         setActionSuccess('Payment submitted successfully for verification!');
-      
-      setTimeout(() => {
-        setSelectedExpectation(null);
-        setActionSuccess(null);
-        fetchReconciliationData();
-      }, 1500);
-    }
+
+        setTimeout(() => {
+          setSelectedExpectation(null);
+          setActionSuccess(null);
+          fetchReconciliationData();
+        }, 1500);
+      }
     } catch (err) {
-      if(err instanceof axios.AxiosError){
+      if (err instanceof axios.AxiosError) {
         setActionError(err?.response?.data.message || err?.response?.data.error || "Failed to submit payment.");
         toast.error(err?.response?.data.message || err?.response?.data.error || "Failed to submit payment.");
       }
@@ -324,7 +329,7 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
     }
   };
 
-   // Replace the existing handleProcessRemittance definition around line 327:
+  // Replace the existing handleProcessRemittance definition around line 327:
   const handleProcessRemittance = async (remittance: ReconciliationRemittance | null, action: 'VERIFY' | 'REJECT') => {
     if (!remittance) return;
 
@@ -497,7 +502,7 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
         setFines(result.fines || []);
       }
     } catch (err) {
-      if(err instanceof axios.AxiosError){
+      if (err instanceof axios.AxiosError) {
         toast.error(err?.response?.data.message || "Failed to load fines.");
       }
     }
@@ -557,12 +562,12 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
     return expectations.reduce((acc, e) => acc + Number(e.shortage_amount), 0);
   }, [expectations]);
 
- const totalPendingRemittances = useMemo(() => {
+  const totalPendingRemittances = useMemo(() => {
     return remittances
-      .filter((r) => 
-        r.status === 'PENDING' || 
-        r.status === 'PENDING_SUPERVISOR_ACCEPTANCE' || 
-        r.status === 'ACCEPTED_BY_SUPERVISOR' || 
+      .filter((r) =>
+        r.status === 'PENDING' ||
+        r.status === 'PENDING_SUPERVISOR_ACCEPTANCE' ||
+        r.status === 'ACCEPTED_BY_SUPERVISOR' ||
         r.status === 'DEPOSITED'
       )
       .reduce((acc, r) => acc + Number(r.amount), 0);
@@ -764,7 +769,7 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
       header: 'Issued Date',
       cell: (row) => <span className="text-slate-400">{row?.created_at && new Date(row.created_at).toLocaleDateString()}</span>,
     },
-       {
+    {
       id: 'actions',
       header: 'Actions',
       cell: (row) => {
@@ -820,7 +825,7 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
               </button>
             )}
 
-                       {/* Set / Edit Amount Button: Admin/Issuer supervisor on unpaid fine */}
+            {/* Set / Edit Amount Button: Admin/Issuer supervisor on unpaid fine */}
             {isUnpaid && (userRole === 'ADMIN' || (userRole === 'SUPERVISOR' && supervisorCanFine && row.issued_by === session?.user?.id)) && (
               <button
                 onClick={(e) => {
@@ -1120,7 +1125,7 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
                       {actionLoading ? 'Submitting...' : 'Submit Reconciliation Payment'}
                     </button>
                   </form>
-                              ) : (
+                ) : (
                   <div className="space-y-4 pt-2">
                     {associatedRemittances.length > 0 ? (
                       <div className="space-y-3">
@@ -1148,43 +1153,43 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
                               )}
 
                               {/* Admin verification buttons if the individual remittance is pending and user is Admin/Auditor */}
-                              {(userRole === 'ADMIN' || userRole === 'AUDITOR') && 
-                               ["PENDING", "ACCEPTED_BY_SUPERVISOR", "DEPOSITED", "PENDING_SUPERVISOR_ACCEPTANCE"].includes(rem.status) && (
-                                <div className="space-y-2 pt-2 border-t border-white/5">
-                                  {actionError && (
-                                    <div className="p-3 rounded-xl border border-red-500/20 bg-red-500/10 text-red-300 text-xs">
-                                      {actionError}
-                                    </div>
-                                  )}
-                                  {actionSuccess && (
-                                    <div className="p-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 text-emerald-300 text-xs">
-                                      {actionSuccess}
-                                    </div>
-                                  )}
-                                  {rem.method === 'CASH' && rem.status !== 'DEPOSITED' ? (
-                                    <div className="p-3 rounded-xl border border-amber-500/20 bg-amber-500/10 text-amber-300 text-xs">
-                                      ⏳ Cash must be deposited by Supervisor before Admin verification.
-                                    </div>
-                                  ) : (
-                                    <div className="flex gap-2">
-                                      <button
-                                        onClick={() => handleProcessRemittance(rem, 'VERIFY')}
-                                        disabled={actionLoading}
-                                        className="flex-1 px-3 py-2 bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 text-xs font-bold rounded-xl border border-emerald-500/30 transition disabled:opacity-50"
-                                      >
-                                        Verify/Accept
-                                      </button>
-                                      <button
-                                        onClick={() => handleProcessRemittance(rem, 'REJECT')}
-                                        disabled={actionLoading}
-                                        className="flex-1 px-3 py-2 bg-red-500/20 text-red-300 hover:bg-red-500/30 text-xs font-bold rounded-xl border border-red-500/30 transition disabled:opacity-50"
-                                      >
-                                        Reject
-                                      </button>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
+                              {(userRole === 'ADMIN' || userRole === 'AUDITOR') &&
+                                ["PENDING", "ACCEPTED_BY_SUPERVISOR", "DEPOSITED", "PENDING_SUPERVISOR_ACCEPTANCE"].includes(rem.status) && (
+                                  <div className="space-y-2 pt-2 border-t border-white/5">
+                                    {actionError && (
+                                      <div className="p-3 rounded-xl border border-red-500/20 bg-red-500/10 text-red-300 text-xs">
+                                        {actionError}
+                                      </div>
+                                    )}
+                                    {actionSuccess && (
+                                      <div className="p-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 text-emerald-300 text-xs">
+                                        {actionSuccess}
+                                      </div>
+                                    )}
+                                    {rem.method === 'CASH' && rem.status !== 'DEPOSITED' ? (
+                                      <div className="p-3 rounded-xl border border-amber-500/20 bg-amber-500/10 text-amber-300 text-xs">
+                                        ⏳ Cash must be deposited by Supervisor before Admin verification.
+                                      </div>
+                                    ) : (
+                                      <div className="flex gap-2">
+                                        <button
+                                          onClick={() => handleProcessRemittance(rem, 'VERIFY')}
+                                          disabled={actionLoading}
+                                          className="flex-1 px-3 py-2 bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 text-xs font-bold rounded-xl border border-emerald-500/30 transition disabled:opacity-50"
+                                        >
+                                          Verify/Accept
+                                        </button>
+                                        <button
+                                          onClick={() => handleProcessRemittance(rem, 'REJECT')}
+                                          disabled={actionLoading}
+                                          className="flex-1 px-3 py-2 bg-red-500/20 text-red-300 hover:bg-red-500/30 text-xs font-bold rounded-xl border border-red-500/30 transition disabled:opacity-50"
+                                        >
+                                          Reject
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
                             </div>
                           ))}
                         </div>
@@ -1251,15 +1256,15 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
                       </div>
                     )}
 
-                                    {(userRole === 'ADMIN' || userRole === 'AUDITOR') && 
-                     (selectedRemittance.status !== 'CONFIRMED' && selectedRemittance.status !== 'REJECTED') ? (
+                    {(userRole === 'ADMIN' || userRole === 'AUDITOR') &&
+                      (selectedRemittance.status !== 'CONFIRMED' && selectedRemittance.status !== 'REJECTED') ? (
                       <div className="pt-2 space-y-3">
                         {selectedRemittance.method === 'CASH' && selectedRemittance.status !== 'DEPOSITED' ? (
                           <div className="p-3 rounded-xl border border-amber-500/20 bg-amber-500/10 text-amber-300 text-xs">
                             ⏳ Cash must be deposited by Supervisor before Admin verification.
                           </div>
                         ) : (
-                                                  <div className="flex gap-2">
+                          <div className="flex gap-2">
                             <button
                               onClick={() => handleProcessRemittance(selectedRemittance, 'VERIFY')}
                               disabled={actionLoading}
@@ -1284,20 +1289,41 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
                           {selectedRemittance.status === 'CONFIRMED'
                             ? 'This payment has been verified by Admin.'
                             : selectedRemittance.status === 'REJECTED'
-                            ? 'This payment has been rejected.'
-                            : 'Pending Admin verification.'}
+                              ? 'This payment has been rejected.'
+                              : 'Pending Admin verification.'}
                         </p>
                       </div>
                     )}
 
 
-                  </div>
+                                  </div>
                 ),
               },
+              ...(selectedRemittance.method !== 'CASH' && selectedRemittance.receipt_images && selectedRemittance.receipt_images.length > 0
+                ? [
+                    {
+                      title: 'Attachments',
+                      content: (
+                        <div className="pt-2">
+                          <button
+                            onClick={() => {
+                              setActiveRemittanceId(selectedRemittance.id);
+                              setViewerOpen(true);
+                            }}
+                            className="mt-2 inline-flex items-center gap-2 rounded-xl bg-cyan-500/10 border border-cyan-500/25 px-4 py-2.5 text-xs font-bold text-cyan-300 hover:bg-cyan-500/20 transition-all w-full justify-center"
+                          >
+                            View Receipt Images ({selectedRemittance.receipt_images.length})
+                          </button>
+                        </div>
+                      ),
+                    },
+                  ]
+                : []),
             ]}
           />
         )}
       </Drawer>
+
 
 
       {/* Issue Fine Drawer (Admin / Supervisor Only) */}
@@ -1365,6 +1391,17 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
           </button>
         </form>
       </Drawer>
+         {selectedRemittance?.method === 'TRANSFER' && (
+        <ReceiptViewerModal 
+          isOpen={viewerOpen}
+          onClose={() => {
+            setViewerOpen(false);
+            setActiveRemittanceId(null);
+          }}
+          remittanceId={activeRemittanceId || ""}
+        />
+      )}
+
 
     </>
   );

@@ -15,6 +15,9 @@ import Calendar from '@/components/Calender';
 import { useDashboard } from '@/app/dashboard/layout';
 import api from '../lib/axios';
 import axios from 'axios';
+import ReceiptUploader from '@/components/ReceiptUploader';
+import ReceiptViewerModal from '@/components/ReceiptViewerModal';
+
 
 export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }) {
   const user = (role?.toUpperCase() || 'TICKETER') as 'TICKETER' | 'SUPERVISOR' | 'ADMIN';
@@ -31,6 +34,10 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
   const [toDate, setToDate] = useState<Date | null>(null);
   const [posSession, setPosSession] = useState<string | null>(null);
   const [totalOutstanding, setTotalOutstanding] = useState(0);
+    const [uploadedKeys, setUploadedKeys] = useState<string[]>([]);
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [activeRemittanceId, setActiveRemittanceId] = useState<string | null>(null);
+
   const [selectedRemittance, setSelectedRemittance] = useState<Remittance | null>(null);
   const [message, setMessage] = useState<string|null>(null);
 
@@ -122,7 +129,7 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
   }, [fetchRemittances]);
 
 
-  const submitRemittance = async (amount: number, method: 'CASH' | 'TRANSFER', ticketerId?: string, supervisorId?: string) => {
+  const submitRemittance = async (amount: number, method: 'CASH' | 'TRANSFER', ticketerId?: string, supervisorId?: string, receiptImages?: string[]) => {
     if (role === "TICKETER" && !posSession) {
       toast.error("POS Session is required");
       return;
@@ -130,22 +137,29 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
     try {
       setSendingRequest(true);
       const res = await api.post('/remitance', {
-        amount, method, remittance_date: new Date().toISOString(), ticketer_id: ticketerId, supervisor_id: supervisorId, pos_id: posSession
+        amount, 
+        method, 
+        remittance_date: new Date().toISOString(), 
+        ticketer_id: ticketerId, 
+        supervisor_id: supervisorId, 
+        pos_id: posSession,
+        receipt_images: receiptImages || [] // <-- Send image keys array
       });
       if (res.data.success) {
         setOpenForm(false);
+        setUploadedKeys([]); // Clear uploaded files
         fetchRemittances();
         refreshMetrics();
         toast.success(`Remittance submitted successfully`);
       }
     } catch (err) {
-      
       const errorMessage = err instanceof axios.AxiosError ? err.response?.data.error : "An error occurred";
       setMessage(errorMessage);
     } finally {
       setSendingRequest(false);
     }
   };
+
 
   const handleVerify = async (id: string, actionStatus: 'CONFIRMED' | 'REJECTED') => {
     if (!confirm(`Are you sure you want to ${actionStatus} this remittance?`)) return;
@@ -496,9 +510,20 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
         )}
       </PageScaffold>
 
-      <Drawer open={openForm} title="Submit Remittance" subtitle={user === 'SUPERVISOR' ? "Log a cash handover from a ticketer" : "Hand over your cash or log a transfer"} onClose={() => {setOpenForm(false); setMessage("")}}>
-        <RemitForm onSubmit={submitRemittance} role={user} team={team} supervisors={supervisors} posSession={posSession} setposSession={setPosSession} message={message} />
+      <Drawer open={openForm} title="Submit Remittance" subtitle={user === 'SUPERVISOR' ? "Log a cash handover from a ticketer" : "Hand over your cash or log a transfer"} onClose={() => {setOpenForm(false); setMessage(""); setUploadedKeys([])}}>
+        <RemitForm 
+          onSubmit={(a, m, t, s) => submitRemittance(a, m, t, s, uploadedKeys)} 
+          role={user} 
+          team={team} 
+          supervisors={supervisors} 
+          posSession={posSession} 
+          setposSession={setPosSession} 
+          message={message} 
+          uploadedKeys={uploadedKeys}
+          setUploadedKeys={setUploadedKeys}
+        />
       </Drawer>
+
 
       {/* DRAWER: Remittance Details */}
       <Drawer
@@ -589,6 +614,40 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
                   </div>
                 )}
               </div>
+
+                            <div className="grid grid-cols-2 gap-4 pt-2 border-t border-white/5">
+                <div>
+                  <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest block">Submitted At</label>
+                  <span className="text-xs text-slate-400 mt-1 block">
+                    {selectedRemittance.created_at ? new Date(selectedRemittance.created_at).toLocaleString() : ''}
+                  </span>
+                </div>
+                {user === 'ADMIN' && (
+                  <div>
+                    <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest block">Remittance ID</label>
+                    <span className="text-[10px] font-mono text-slate-400 mt-1 block break-all">
+                      {selectedRemittance.id}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Receipt Images Section */}
+              {selectedRemittance.method !== 'CASH' && selectedRemittance.receipt_images && selectedRemittance.receipt_images.length > 0 && (
+                <div className="pt-2 border-t border-white/5">
+                  <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest block">Attachments</label>
+                  <button
+                    onClick={() => {
+                      setActiveRemittanceId(selectedRemittance.id);
+                      setViewerOpen(true);
+                    }}
+                    className="mt-2 inline-flex items-center gap-2 rounded-xl bg-cyan-500/10 border border-cyan-500/25 px-4 py-2 text-xs font-bold text-cyan-300 hover:bg-cyan-500/20 transition-all w-full justify-center"
+                  >
+                    View Receipt Images ({selectedRemittance.receipt_images.length})
+                  </button>
+                </div>
+              )}
+
             </div>
 
             {/* ACTION BUTTONS */}
@@ -668,12 +727,26 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
           </div>
         )}
       </Drawer>
+           {selectedRemittance?.method === 'TRANSFER' && (
+          <div className="mt-4 pt-4 border-t border-white/5">
+             <ReceiptViewerModal 
+        isOpen={viewerOpen}
+        onClose={() => {
+          setViewerOpen(false);
+          setActiveRemittanceId(null);
+        }}
+        remittanceId={activeRemittanceId || ""}
+      />
+          </div>
+        )}
     </>
   );
 }
 
 // 💡 The RemitForm must stay outside the main component!
-function RemitForm({ onSubmit, role, team, supervisors, posSession, setposSession,message }: { onSubmit: (amount: number, method: 'CASH' | 'TRANSFER', ticketerId?: string, supervisorId?: string) => Promise<void> | void, role: string, team: User[], supervisors?: User[], posSession?: string | null, setposSession?: (value: string) => void,message?:string|null }) {
+function RemitForm({ onSubmit, role, team, supervisors, posSession, setposSession,message, uploadedKeys,
+  setUploadedKeys  }: { onSubmit: (amount: number, method: 'CASH' | 'TRANSFER', ticketerId?: string, supervisorId?: string) => Promise<void> | void, role: string, team: User[], supervisors?: User[], posSession?: string | null, setposSession?: (value: string) => void,message?:string|null,uploadedKeys: string[],
+  setUploadedKeys: React.Dispatch<React.SetStateAction<string[]>> }) {
   const [amount, setAmount] = useState('');
   const [method, setMethod] = useState<'CASH' | 'TRANSFER'>('CASH');
   const [ticketerId, setTicketerId] = useState('');
@@ -728,6 +801,14 @@ function RemitForm({ onSubmit, role, team, supervisors, posSession, setposSessio
             </select>
           </div>
         )}
+
+        {method === 'TRANSFER' && <div className="mt-4 pt-4 border-t border-white/5">
+        <ReceiptUploader 
+            uploadedKeys={uploadedKeys}
+            setUploadedKeys={setUploadedKeys}
+            onUploadComplete={() => {}}
+          />
+        </div>}
 
         {role === 'TICKETER' &&
           <div className="mb-4">

@@ -123,6 +123,7 @@ export interface Remittance {
   created_at: string;
   ticketer_outstanding?: number;
   is_reconciliation?: boolean;
+  receipt_images?: string[];
 }
 
 export interface Sales_Record {
@@ -327,6 +328,7 @@ export interface ReconciliationRemittance {
   created_at: string;
   ticketer: UserSummary;
   pos_session?: PosSessionSummary | null;
+  receipt_images?: string[];
 }
 
 export interface ReconcileApiResponse {
