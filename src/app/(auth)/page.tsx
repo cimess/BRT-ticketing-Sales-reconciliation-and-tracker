@@ -8,7 +8,8 @@ import { Eye, EyeOff } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { redirectByRole } from "@/lib/redirectByRole";
 
-export default function Login({ loginUi = true }: { loginUi?: boolean }) {
+export default function Login() {
+  const loginUi = true;
   const [showLoader, setShowLoader] = useState(false);
   const [shake, setShake] = useState(false);
   const [message, setMessage] = useState("Welcome");

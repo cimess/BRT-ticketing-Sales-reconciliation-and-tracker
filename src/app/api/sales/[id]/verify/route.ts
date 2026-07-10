@@ -7,7 +7,7 @@ import { PosDeviceSession, Prisma } from "@prisma/client";
 import { sendNotification } from "@/app/server/services/notification.service";
 import { cacheInvalidate } from "@/app/lib/redis";
 
-export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await auth();
     // Allow Supervisors or Admins to verify

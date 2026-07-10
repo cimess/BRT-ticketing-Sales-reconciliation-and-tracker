@@ -7,7 +7,7 @@ import { sendNotification } from "@/app/server/services/notification.service";
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth();
@@ -225,7 +225,7 @@ export async function PATCH(
 
     return NextResponse.json({ success: true, data: result });
   } catch (error) {
-    console.error(`PATCH /api/remitance/${params.id}/reverse error:`, error);
+    console.error(`PATCH /api/remitance/reverse error:`, error);
 
     if (error instanceof ApiError) {
       return NextResponse.json({ error: error.message }, { status: error.statusCode });

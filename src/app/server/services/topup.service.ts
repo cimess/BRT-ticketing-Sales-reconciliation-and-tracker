@@ -81,7 +81,8 @@ export async function addTopUp(
       topUpId: topUp.id,
       amount,
       allocated_from,
-    }, ["ADMIN", "SUPERVISOR"]);
+    }, { roles: ["ADMIN", "SUPERVISOR"] });
+
 
     return {
       success: true,

@@ -6,14 +6,15 @@ import { ApiError } from "@/lib/ApiError";
 import { Prisma } from "@prisma/client";
 import { cacheInvalidate } from "@/app/lib/redis";
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+
   try {
     const session = await auth();
-    if (!session?.user || !session.user.id ||session.user.role !== "TICKETER") {
+    if (!session?.user || !session.user.id || session.user.role !== "TICKETER") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     const { id: callerId, company_id: companyId } = session.user;
-    const { id: reportId } = params;
+    const { id: reportId } = await params;
 
     const result = await prisma.$transaction(async (tx) => {
       // 1. Fetch Sales Report

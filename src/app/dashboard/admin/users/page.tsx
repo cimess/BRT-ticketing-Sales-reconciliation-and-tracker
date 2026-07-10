@@ -6,10 +6,11 @@ import { Roles } from "@prisma/client";
 export default async function UsersRoute({
   searchParams,
 }: {
-  searchParams: {
+  searchParams: Promise<{
     issued_by?: string;
-  };
+  }>;
 }) {
+
   const params = await searchParams;
   const session = await auth();
   if (!session?.user?.id) {

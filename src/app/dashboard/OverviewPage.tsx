@@ -2,9 +2,9 @@
 
 import { useSession } from "next-auth/react";
 import { useDashboard } from "@/app/dashboard/layout";
-import AdminOverview from "@/app/dashboard/admin/overview/page";
-import SupervisorOverview from "@/app/dashboard/supervisor/overview/page";
-import TicketerOverview from "@/app/dashboard/ticketer/overview/page";
+import AdminOverview from "@/app/dashboard/admin/overview/Overview";
+import SupervisorOverview from "@/app/dashboard/supervisor/overview/Overview";
+import TicketerOverview from "@/app/dashboard/ticketer/overview/Overview";
 
 const Spinner = ({ className = "h-8 w-8 text-sky-400" }) => (
   <div className={`animate-spin rounded-full border-2 border-current border-t-transparent ${className}`} />

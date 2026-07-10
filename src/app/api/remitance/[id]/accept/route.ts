@@ -7,7 +7,7 @@ import { ApiError } from "@/app/lib/ApiError";
 import { sendNotification } from "@/app/server/services/notification.service";
 
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, { params }: { params:Promise<{ id: string }> }) {
   try {
     const session = await auth();
     if (!session?.user?.id || session.user.role !== "SUPERVISOR") {
