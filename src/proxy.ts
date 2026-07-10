@@ -15,14 +15,15 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "/api/remitance",
     "/api/transaction",
     "/api/locations",
-    "/api/reconcile",  
-    "/api/sales", 
+    "/api/reconcile",
+    "/api/sales",
     "/api/commision",
     "/api/admin/commision-earnings",
     "/api/admin/commision-rules",
     "/api/fines",
     "/api/events",
-    "/api/notifications"
+    "/api/notifications",
+    "/api/reports"
   ],
   AUDITOR: [
     "/dashboard/admin",
@@ -35,11 +36,12 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "/api/remitance",
     "/api/transaction",
     "/api/locations",
-    "/api/sales", 
-    "/api/reconcile",  
-    "/api/admin/commision-earnings", 
+    "/api/sales",
+    "/api/reconcile",
+    "/api/admin/commision-earnings",
     "/api/events",
-    "/api/notifications"
+    "/api/notifications",
+    "/api/reports"
   ],
   SUPERVISOR: [
     "/dashboard/supervisor",
@@ -51,12 +53,13 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "/api/remitance",
     "/api/transaction",
     "/api/locations",
-    "/api/sales",  
-    "/api/reconcile", 
+    "/api/sales",
+    "/api/reconcile",
     "/api/admin/commision-earnings",
     "/api/fines",
     "/api/events",
-    "/api/notifications"
+    "/api/notifications",
+    "/api/reports"
   ],
   TICKETER: [
     "/dashboard/ticketer",
@@ -66,20 +69,20 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "/api/remitance",
     "/api/transaction",
     "/api/locations",
-    "/api/sales",  
-    "/api/reconcile",  
+    "/api/sales",
+    "/api/reconcile",
     "/api/admin/commision-earnings",
     "/api/fines",
     "/api/events",
     "/api/notifications"
-    
+
   ],
 };
 
 
 export async function proxy(req: NextRequest) {
-  const token = await getToken({ 
-    req , 
+  const token = await getToken({
+    req,
     secret: process.env.AUTH_SECRET
   });
   const path = req.nextUrl.pathname;

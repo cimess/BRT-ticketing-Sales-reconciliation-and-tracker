@@ -4,6 +4,8 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { getRoleFinancialSnapshot, getRoleSalesSnapshot } from "@/server/services/getCompanyFloatSnapshot.service";
 import { checkAndEscalateExpectations, checkSupervisorDepositViolations } from "@/server/services/escalation.service";
+import { rulesQueue } from "@/lib/queue";
+import { cacheGet, cacheSet } from "@/app/lib/redis";
 
 export async function GET() {
   try {
@@ -12,18 +14,27 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { id: userId, role,company_id:companyId } = session.user;
-    await checkAndEscalateExpectations(companyId);
-    await checkSupervisorDepositViolations(companyId);
+    const { id: userId, role, company_id: companyId } = session.user;
 
+    // 1. Try to fetch from Redis cache first
+    const cacheKey = `cache:metrics:${companyId}:${role}:${userId}`;
+    const cachedResponse = await cacheGet(cacheKey);
+    if (cachedResponse) {
+      return NextResponse.json(cachedResponse);
+    }
 
-    // 1. Financial snapshot (company balance, topups, allocations, expected remittance)
-    const financialSnapshot = await getRoleFinancialSnapshot(role, userId,companyId);
+    // 2. Synchronous fallback for local development without Redis
+    if (!rulesQueue) {
+      console.log("[Metrics] No Redis queue. Executing escalation checks synchronously.");
+      await checkAndEscalateExpectations(companyId);
+      await checkSupervisorDepositViolations(companyId);
+    }
 
-    // 2. Sales snapshot (total sales, confirmed remitted, pending remittance)
-    const salesSnapshot = await getRoleSalesSnapshot(role, userId,companyId);
+    // 3. Query snapshots and compute metrics
+    const financialSnapshot = await getRoleFinancialSnapshot(role, userId, companyId);
+    const salesSnapshot = await getRoleSalesSnapshot(role, userId, companyId);
 
-      let alertCount = 0;
+    let alertCount = 0;
     let shortageCount = 0;
     
     if (role === "ADMIN" || role === "AUDITOR") {
@@ -32,8 +43,7 @@ export async function GET() {
         where: { company_id: companyId, status: { in: ["OVERDUE", "VIOLATED"] } }
       });
     }   
-      else if (role === "SUPERVISOR") {
-      // Count both fines issued BY them and fines issued TO them
+    else if (role === "SUPERVISOR") {
       alertCount = await prisma.fine.count({ 
         where: { 
           company_id: companyId, 
@@ -49,7 +59,7 @@ export async function GET() {
         select: { id: true }
       });
       const supervisedIds = supervisedUsers.map(u => u.id);
-      supervisedIds.push(userId); // Include supervisor's own shortages
+      supervisedIds.push(userId);
       shortageCount = await prisma.remittanceExpectation.count({
         where: {
           company_id: companyId,
@@ -58,7 +68,7 @@ export async function GET() {
         }
       });
     }
- else if (role === "TICKETER") {
+    else if (role === "TICKETER") {
       alertCount = await prisma.fine.count({ where: { defaulter_id: userId, company_id: companyId, status: "UNPAID" } });
       shortageCount = await prisma.remittanceExpectation.count({
         where: {
@@ -68,14 +78,15 @@ export async function GET() {
         }
       });
     }
+
     const totalAlertCount = alertCount + shortageCount;
-    return NextResponse.json({
+    const responsePayload = {
       success: true,
       metrics: {
         availableFloat: financialSnapshot.data.companyBalance,
         salesToday: salesSnapshot.data.totalSales,
         pendingRemittances: salesSnapshot.data.pendingRemittance,
-        alertCount:totalAlertCount,
+        alertCount: totalAlertCount,
         totalTopUps: financialSnapshot.data.totalTopUp,
         totalAllocated: financialSnapshot.data.totalAllocated,
         expectedRemittance: financialSnapshot.data.expectedRemittance,
@@ -88,7 +99,12 @@ export async function GET() {
           ledgerReconciliation: financialSnapshot.data.ledgerReconciliation,
         }),
       },
-    });
+    };
+
+    // 4. Cache metrics for 30 seconds
+    await cacheSet(cacheKey, responsePayload, 30);
+
+    return NextResponse.json(responsePayload);
 
   } catch (error) {
     console.error("GET /api/dashboard/metrics error:", error);

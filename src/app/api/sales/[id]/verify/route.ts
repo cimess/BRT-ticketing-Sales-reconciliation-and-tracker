@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { ApiError } from "@/lib/ApiError";
 import { PosDeviceSession, Prisma } from "@prisma/client";
 import { sendNotification } from "@/app/server/services/notification.service";
+import { cacheInvalidate } from "@/app/lib/redis";
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -311,6 +312,8 @@ else {
         excludeUserId: verifierId,
       }
     });
+
+     await cacheInvalidate(`cache:sales:${companyId}:*`);
 
     return NextResponse.json({ success: true, ...result });
   } catch (error) {

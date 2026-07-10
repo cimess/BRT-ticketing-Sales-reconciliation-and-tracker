@@ -3,6 +3,7 @@ import { NextResponse, NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { Roles } from "@prisma/client";
+import { cacheGet, cacheSet, cacheInvalidate } from "@/app/lib/redis";
 
 // Get active commission rules
 export async function GET() {
@@ -10,6 +11,14 @@ export async function GET() {
     const session = await auth();
     if (!session?.user || session.user.role !== "ADMIN") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const cacheKey = `cache:commission-rules:${session.user.company_id}`;
+
+    // 1. Try cache first
+    const cachedRules = await cacheGet(cacheKey);
+    if (cachedRules) {
+      return NextResponse.json(cachedRules);
     }
 
     const rules = await prisma.commission_rules.findMany({
@@ -54,6 +63,9 @@ export async function POST(req: NextRequest) {
         is_active: true
       }
     });
+
+        // Invalidate the cache
+    await cacheInvalidate(`cache:commission-rules:${companyId}`);
 
     return NextResponse.json({ success: true, rule: newRule });
   } catch (error) {

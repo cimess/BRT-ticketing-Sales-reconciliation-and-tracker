@@ -2,6 +2,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import {cacheGet, cacheSet} from "@/app/lib/redis";
 
 export async function GET(req: NextRequest) {
   try {
@@ -20,6 +21,13 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const startDateParam = searchParams.get("startDate");
     const endDateParam = searchParams.get("endDate");
+
+        const cacheKey = `cache:audit:${company_id}:${startDateParam || "today"}:${endDateParam || "today"}`;
+    const cachedAudit = await cacheGet(cacheKey);
+    if (cachedAudit) {
+      return NextResponse.json(cachedAudit);
+    }
+
 
     let start: Date;
     let end: Date;
@@ -160,7 +168,7 @@ export async function GET(req: NextRequest) {
       }),
     ]);
 
-    return NextResponse.json({
+ const responsePayload = {
       success: true,
       data: {
         reconciliationReports,
@@ -170,7 +178,9 @@ export async function GET(req: NextRequest) {
         fines,
         commissionEarnings,
       },
-    });
+    };
+    await cacheSet(cacheKey, responsePayload, 60); // 1 min TTL
+    return NextResponse.json(responsePayload);
   } catch (error) {
     console.error("Failed to fetch audit records:", error);
     return NextResponse.json({ error: "Failed to fetch audit records" }, { status: 500 });

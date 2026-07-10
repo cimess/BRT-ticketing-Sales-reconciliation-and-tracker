@@ -1,6 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { cacheGet, cacheSet, cacheInvalidate } from "@/app/lib/redis";
 
 // GET /api/locations - Fetch all locations
 export async function GET() {
@@ -10,6 +11,14 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     const { company_id } = session.user;
+    
+    const cacheKey = `cache:locations:${company_id}`;
+    
+        // 1. Try cache first
+    const cachedRules = await cacheGet(cacheKey);
+    if (cachedRules) {
+      return NextResponse.json(cachedRules);
+    }
 
     const locations = await prisma.location.findMany({
       where: { company_id },
@@ -59,6 +68,9 @@ export async function POST(req: NextRequest) {
         company_id,
       },
     });
+
+    // Invalidate the cache
+    await cacheInvalidate(`cache:locations:${company_id}`);
 
     return NextResponse.json({ success: true, data: newLocation });
   } catch (error) {
@@ -116,6 +128,9 @@ export async function PATCH(req: NextRequest) {
         company_id,
       },
     });
+
+    // Invalidate the cache
+    await cacheInvalidate(`cache:locations:${company_id}`);
 
     return NextResponse.json({ success: true, data: updatedLocation });
   } catch (error) {

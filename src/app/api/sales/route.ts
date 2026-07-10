@@ -7,6 +7,7 @@ import { Prisma } from "@prisma/client";
 import { rulesQueue } from "@/lib/queue";
 import { runRuleEvaluation } from "@/app/workers/rulesWorker";
 import { sendNotification } from "@/app/server/services/notification.service";
+import { cacheGet, cacheSet, cacheInvalidate } from "@/app/lib/redis";
 
 export async function GET(req: NextRequest) {
   try {
@@ -63,6 +64,14 @@ export async function GET(req: NextRequest) {
     const page = pageParam ? Math.max(1, parseInt(pageParam, 10)) : 1;
     const limit = limitParam ? Math.min(100, Math.max(1, parseInt(limitParam, 10))) : 50; // Max 100, default 50
     const skip = (page - 1) * limit;
+
+
+        // 1. Dynamic Cache Key based on filters and roles
+    const cacheKey = `cache:sales:${company_id}:${role}:${userId}:${startDate || "all"}:${endDate || "all"}:${filterTicketerId || "all"}:${page}:${limit}`;
+    const cachedSales = await cacheGet(cacheKey);
+    if (cachedSales) {
+      return NextResponse.json(cachedSales);
+    }
 
        const reports = await prisma.salesReport.findMany({
       where: { ...whereClause },
@@ -139,10 +148,13 @@ export async function GET(req: NextRequest) {
       })
     );
 
-    return NextResponse.json({
+    const responsePayload = {
       success: true,
       reports: reportsWithLedger
-    });
+    };
+
+    await cacheSet(cacheKey, responsePayload, 3600);
+    return NextResponse.json(responsePayload);
 
   } catch (error) {
     console.error("GET /api/sales error:", error);
@@ -367,6 +379,8 @@ export async function POST(req: NextRequest) {
         excludeUserId: callerId,
       }
     });
+
+      await cacheInvalidate(`cache:sales:${company_id}:*`);
 
     return NextResponse.json({ success: true, report });
   } catch (error) {

@@ -5,6 +5,7 @@ import { fine_status, Prisma } from "@prisma/client";
 import { ApiError } from "@/app/lib/ApiError";
 import { checkSupervisorFinePermission } from "@/app/server/services/rules.service";
 import { sendNotification } from "@/app/server/services/notification.service";
+import { cacheGet, cacheSet, cacheInvalidate } from "@/app/lib/redis";
 
 
 export async function GET(req: NextRequest) {
@@ -17,6 +18,13 @@ export async function GET(req: NextRequest) {
     const { id: userId, role, company_id } = session.user;
     const { searchParams } = new URL(req.url);
     const statusFilter = searchParams.get("status");
+
+     
+    const cacheKey = `cache:fines:${company_id}:${role}:${userId}:${statusFilter || "all"}`;
+    const cachedFines = await cacheGet(cacheKey);
+    if (cachedFines) {
+      return NextResponse.json(cachedFines);
+    }
 
     const where:Prisma.FineWhereInput= { company_id };
     if (statusFilter) where.status = statusFilter as fine_status
@@ -46,7 +54,9 @@ export async function GET(req: NextRequest) {
       orderBy: { created_at: "desc" }
     });
 
-    return NextResponse.json({ success: true, fines });
+    const responsePayload = { success: true, fines };
+    await cacheSet(cacheKey, responsePayload, 30); // 30s TTL
+    return NextResponse.json(responsePayload);
   } catch (error) {
     console.error("GET /api/fines error:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
@@ -124,7 +134,7 @@ export async function POST(req: NextRequest) {
       }
     });
 
-
+    await cacheInvalidate(`cache:fines:${company_id}:*`);
     return NextResponse.json({ success: true, fine });
   } catch (error) {
     console.error("POST /api/fines error:", error);

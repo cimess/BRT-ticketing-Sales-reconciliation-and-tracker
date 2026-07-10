@@ -397,10 +397,35 @@ export default function AuditorPage() {
   const [endDate, setEndDate] = useState('');
 
   // SQL  States
-  const [sqlQuery, setSqlQuery] = useState(`SELECT id, first_name, last_name, role \nFROM "User" \nWHERE company_id = '${session?.user?.company_id || 'cmqlzhetb00000cj243lbzpl0'}';`);
+   const [sqlQuery, setSqlQuery] = useState(`SELECT * \nFROM reports_csv \nWHERE company_id = '${session?.user?.company_id || ''}';`);
   const [queryResults, setQueryResults] = useState<Record<string, string>[] | null>(null);
   const [queryError, setQueryError] = useState<string | null>(null);
   const [queryLoading, setQueryLoading] = useState(false);
+
+  const handleExecuteQuery = async () => {
+    setQueryLoading(true);
+    setQueryError(null);
+    setQueryResults(null);
+    try {
+      const res = await api.post('/admin/query/r2', { query: sqlQuery });
+      if (res.data.success) {
+        setQueryResults((res.data.results as Record<string, string>[]) || []);
+      } else {
+        setQueryError((res.data.error as string) || "Query execution failed.");
+      }
+    } catch (err: unknown) {
+      if (axios.isAxiosError(err)) {
+        setQueryError(((err.response?.data as Record<string, string>)?.error) || "Error executing SQL query");
+      } else if (err instanceof Error) {
+        setQueryError(err.message);
+      } else {
+        setQueryError("An unknown error occurred");
+      }
+    } finally {
+      setQueryLoading(false);
+    }
+  };
+
 
 
 
@@ -450,30 +475,7 @@ export default function AuditorPage() {
     }
   }, [session, startDate, endDate]);
 
-  const handleExecuteQuery = async () => {
-    setQueryLoading(true);
-    setQueryError(null);
-    setQueryResults(null);
-    try {
-      const res = await api.post('/admin/query', { query: sqlQuery });
-      if (res.data.success) {
-        setQueryResults((res.data.results as Record<string, string>[]) || []);
-
-      } else {
-        setQueryError((res.data.error as string) || "Query execution failed.");
-      }
-    } catch (err: unknown) {
-      if (axios.isAxiosError(err)) {
-        setQueryError(((err.response?.data as Record<string, string>)?.error) || "Error executing SQL query");
-      } else if (err instanceof Error) {
-        setQueryError(err.message);
-      } else {
-        setQueryError("An unknown error occurred");
-      }
-    } finally {
-      setQueryLoading(false);
-    }
-  };
+ 
 
   // Filter based on selected scope
   const filtered = dbAuditLogs.filter((finding) => (scope === 'ALL' ? true : finding.category === scope));
@@ -646,17 +648,17 @@ export default function AuditorPage() {
           </div>
         </div>
 
-        {/* Read-Only SQL Playground Box */}
+             {/* Read-Only SQL Playground Box */}
         {(
           <div className="glass-panel rounded-2xl border border-white/5 p-5 space-y-4 bg-slate-950/40">
             <div className="flex items-center gap-2 text-white font-bold text-base">
               <Database className="w-5 h-5 text-emerald-400" />
-              <span>Auditor SQL Query Interface</span>
-              <span className="text-[10px] tracking-wider uppercase font-semibold text-slate-400 px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">Read-Only</span>
+              <span>Auditor Historical Data Lake Console</span>
+              <span className="text-[10px] tracking-wider uppercase font-semibold text-slate-400 px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">R2 Storage</span>
             </div>
 
             <p className="text-xs text-slate-400">
-              Run custom database queries inside the read-only replica connection pool. Destructive commands are blocked automatically.
+              Run analytical SQL queries using DuckDB directly against historical reports and logs stored in Cloudflare R2. Destructive commands are blocked, and memory/CPU use is strictly capped.
             </p>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -665,14 +667,14 @@ export default function AuditorPage() {
                   value={sqlQuery}
                   onChange={(e) => setSqlQuery(e.target.value)}
                   className="w-full h-40 bg-black/50 border border-white/10 rounded-xl p-3 font-mono text-xs text-emerald-300 focus:outline-none focus:border-emerald-500/50 resize-y"
-                  placeholder="SELECT * FROM table..."
+                  placeholder="SELECT * FROM reports_csv..."
                 />
                 <div className="flex justify-between items-center">
                   <span className="text-[10px] text-slate-500 font-mono">Max limit: 100 rows</span>
                   <button
                     onClick={handleExecuteQuery}
                     disabled={queryLoading || !sqlQuery.trim()}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold uppercase rounded-xl transition duration-150"
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold uppercase rounded-xl transition duration-150 cursor-pointer"
                   >
                     <Play className="w-3.5 h-3.5 fill-current" />
                     {queryLoading ? "Running..." : "Run Query"}
@@ -680,14 +682,14 @@ export default function AuditorPage() {
                 </div>
               </div>
 
-              {/* Schema Documentation Reference */}
+              {/* Dynamic Schema Reference */}
               <div className="bg-black/20 border border-white/5 rounded-xl p-4 text-[11px] font-mono text-slate-400 overflow-y-auto max-h-48 space-y-2">
-                <div className="font-bold text-slate-300 border-b border-white/5 pb-1">Available Schema Tables</div>
-                <div>• <span className="text-emerald-400">`&quot;User&quot;`</span> (id, role, company_id)</div>
-                <div>• <span className="text-emerald-400">`&quot;Fine&quot;`</span> (id, amount, status, company_id)</div>
-                <div>• <span className="text-emerald-400">`&quot;Remittance&quot;`</span> (id, amount, status, company_id)</div>
-                <div>• <span className="text-emerald-400">`&quot;Float_Ledger&quot;`</span> (id, amount, company_id)</div>
-                <div>• <span className="text-emerald-400">`&quot;Sales_Record&quot;`</span> (id, total_sold, company_id)</div>
+                <div className="font-bold text-slate-300 border-b border-white/5 pb-1">Available R2 Views</div>
+                <div>• <span className="text-emerald-400">`reports_csv`</span> (Historical CSV reports)</div>
+                <div>• <span className="text-emerald-400">`reports_parquet`</span> (Analytical Parquet files)</div>
+                <div className="text-[10px] text-slate-500 mt-2">
+                  💡 DuckDB parses headers and schema components automatically on the fly.
+                </div>
               </div>
             </div>
 
@@ -734,7 +736,7 @@ export default function AuditorPage() {
                             ))}
                           </tr>
                         ))}
-                      </tbody>
+                       </tbody>
                     </table>
                   )}
                 </div>
@@ -742,6 +744,7 @@ export default function AuditorPage() {
             )}
           </div>
         )}
+
 
         <FilterRow>
           <Input value={q} onChange={setQ} placeholder="Search subject / actor..." />

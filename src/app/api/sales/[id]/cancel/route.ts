@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { ApiError } from "@/lib/ApiError";
 import { Prisma } from "@prisma/client";
+import { cacheInvalidate } from "@/app/lib/redis";
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -73,6 +74,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
       return cancelledReport;
     });
+
+    await cacheInvalidate(`cache:sales:${companyId}:*`);
 
     return NextResponse.json({ success: true, report: result });
   } catch (error) {

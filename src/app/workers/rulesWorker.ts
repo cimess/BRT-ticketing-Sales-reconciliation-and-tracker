@@ -3,6 +3,7 @@ import { Worker, WorkerOptions } from "bullmq";
 import IORedis from "ioredis";
 import { prisma } from "@/app/lib/prisma";
 import { sendNotification } from "../server/services/notification.service";
+import { checkAndEscalateExpectations, checkSupervisorDepositViolations } from "../server/services/escalation.service";
 
 export async function runRuleEvaluation(payload: { event: string; reportId: string; companyId: string }) {
   const { event, reportId, companyId } = payload;
@@ -101,8 +102,22 @@ const REDIS_URL = process.env.REDIS_URL;
 if (REDIS_URL) {
   const connection = new IORedis(REDIS_URL, { maxRetriesPerRequest: null });
   new Worker("rules-queue", async (job) => {
-    console.log(`Processing rule job ${job.id} for event: ${job.data.event}`);
-    await runRuleEvaluation(job.data);
+    if (job.name === "escalate-rules") {
+      console.log(`[Scheduler] Processing automated rules escalation job ${job.id}`);
+      try {
+        const companies = await prisma.company.findMany({ select: { id: true } });
+        for (const company of companies) {
+          console.log(`[Scheduler] Running escalation checks for company ${company.id}`);
+          await checkAndEscalateExpectations(company.id);
+          await checkSupervisorDepositViolations(company.id);
+        }
+      } catch (err) {
+        console.error("[Scheduler] Error in automated escalation check:", err);
+      }
+    } else {
+      console.log(`Processing rule job ${job.id} for event: ${job.data.event}`);
+      await runRuleEvaluation(job.data);
+    }
   }, { 
     connection: connection as unknown as WorkerOptions["connection"] 
   });

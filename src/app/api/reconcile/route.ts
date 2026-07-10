@@ -7,23 +7,30 @@ import { ApiError } from "@/lib/ApiError";
 import { checkAndEscalateExpectations, checkSupervisorDepositViolations } from "@/server/services/escalation.service";
 import { checkSupervisorFinePermission } from "@/app/server/services/rules.service";
 import { sendNotification } from "@/app/server/services/notification.service";
+import { rulesQueue } from "@/lib/queue";
 
 
 
 export async function GET(req: NextRequest) {
     try {
 
-        
+
         const session = await auth();
         if (!session?.user || !session.user.id) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
         const { id: userId, role, company_id } = session.user;
+        // Add rulesQueue import at top:
 
-        await checkAndEscalateExpectations(company_id);
-        await checkSupervisorDepositViolations(company_id);
-         const supervisorCanFine = await checkSupervisorFinePermission(company_id);
+
+        if (!rulesQueue) {
+            console.log("[Reconcile] No Redis queue. Executing escalation checks synchronously.");
+            await checkAndEscalateExpectations(company_id);
+            await checkSupervisorDepositViolations(company_id);
+        }
+
+        const supervisorCanFine = await checkSupervisorFinePermission(company_id);
 
         if (role === "ADMIN" || role === "AUDITOR") {
             const expectations = await prisma.remittanceExpectation.findMany({
@@ -49,7 +56,7 @@ export async function GET(req: NextRequest) {
                 orderBy: { due_date: "asc" }
             });
 
-           const remittances = await prisma.remittance.findMany({
+            const remittances = await prisma.remittance.findMany({
                 where: {
                     company_id,
                     status: { in: ["PENDING", "ACCEPTED_BY_SUPERVISOR", "DEPOSITED", "PENDING_SUPERVISOR_ACCEPTANCE"] },
@@ -70,11 +77,11 @@ export async function GET(req: NextRequest) {
                 orderBy: { created_at: "desc" }
             });
 
-            return NextResponse.json({ success: true, expectations, remittances,supervisorCanFine });
+            return NextResponse.json({ success: true, expectations, remittances, supervisorCanFine });
         }
 
         if (role === "SUPERVISOR") {
-                      const expectations = await prisma.remittanceExpectation.findMany({
+            const expectations = await prisma.remittanceExpectation.findMany({
                 where: {
                     company_id,
                     status: { in: ["OVERDUE", "VIOLATED"] },
@@ -102,7 +109,7 @@ export async function GET(req: NextRequest) {
                 orderBy: { due_date: "asc" }
             });
 
-                       const remittances = await prisma.remittance.findMany({
+            const remittances = await prisma.remittance.findMany({
                 where: {
                     company_id,
                     status: { in: ["PENDING", "ACCEPTED_BY_SUPERVISOR", "PENDING_SUPERVISOR_ACCEPTANCE", "DEPOSITED"] },
@@ -129,11 +136,11 @@ export async function GET(req: NextRequest) {
 
 
 
-            return NextResponse.json({ success: true, expectations, remittances,supervisorCanFine });
+            return NextResponse.json({ success: true, expectations, remittances, supervisorCanFine });
         }
 
         if (role === "TICKETER") {
-                       const expectations = await prisma.remittanceExpectation.findMany({
+            const expectations = await prisma.remittanceExpectation.findMany({
                 where: {
                     company_id,
                     user_id: userId,
@@ -162,10 +169,10 @@ export async function GET(req: NextRequest) {
                 where: {
                     company_id,
                     submitted_by: userId,
-                    status: { in: ["PENDING", "ACCEPTED_BY_SUPERVISOR", "PENDING_SUPERVISOR_ACCEPTANCE","CONFIRMED"] },
+                    status: { in: ["PENDING", "ACCEPTED_BY_SUPERVISOR", "PENDING_SUPERVISOR_ACCEPTANCE", "CONFIRMED"] },
                     pos_session: {
                         remittance_expectation: {
-                            status: { in: ["OVERDUE", "VIOLATED", "SUBMITTED","PAID"] }
+                            status: { in: ["OVERDUE", "VIOLATED", "SUBMITTED", "PAID"] }
                         }
                     }
                 },
@@ -181,10 +188,10 @@ export async function GET(req: NextRequest) {
             });
 
 
-            return NextResponse.json({ success: true, expectations, remittances,supervisorCanFine });
+            return NextResponse.json({ success: true, expectations, remittances, supervisorCanFine });
         }
 
-        return NextResponse.json({ success: true, expectations: [], remittances: [],supervisorCanFine });
+        return NextResponse.json({ success: true, expectations: [], remittances: [], supervisorCanFine });
     } catch (error) {
         console.error("GET /api/reconcile error:", error);
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
@@ -202,8 +209,8 @@ export async function POST(req: NextRequest) {
 
         // 🔒 Strictly restrict reconciliation payment submission to TICKETERS and SUPERVISORS
         if (role !== "TICKETER" && role !== "SUPERVISOR") {
-            return NextResponse.json({ 
-                error: "Unauthorized. Only ticketers and supervisors can submit reconciliation payments for their expectations." 
+            return NextResponse.json({
+                error: "Unauthorized. Only ticketers and supervisors can submit reconciliation payments for their expectations."
             }, { status: 403 });
         }
 
@@ -246,8 +253,8 @@ export async function POST(req: NextRequest) {
             });
 
             const pendingTotal = Number(existingPending._sum.amount || 0);
-            const targetAmount = Number(expectation.shortage_amount) > 0 
-                ? Number(expectation.shortage_amount) 
+            const targetAmount = Number(expectation.shortage_amount) > 0
+                ? Number(expectation.shortage_amount)
                 : Number(expectation.expected_amount);
             const remainingDue = targetAmount - pendingTotal;
 
@@ -258,7 +265,7 @@ export async function POST(req: NextRequest) {
                 );
             }
 
-             let receivedBySupId: string | null = null;
+            let receivedBySupId: string | null = null;
             // 1. Add "DEPOSITED" to the allowed type here:
             let initialStatus: "PENDING" | "PENDING_SUPERVISOR_ACCEPTANCE" | "DEPOSITED" = "PENDING";
             if (method === "CASH") {
@@ -293,9 +300,9 @@ export async function POST(req: NextRequest) {
             return newRemittance;
         });
 
-         const submitterName = session.user.name || "A User";
+        const submitterName = session.user.name || "A User";
         const formattedAmount = Number(remittance.amount).toLocaleString();
-        
+
         await sendNotification({
             companyId: company_id,
             message: `${submitterName} submitted a reconciliation remittance of ₦${formattedAmount} (${method}).`,

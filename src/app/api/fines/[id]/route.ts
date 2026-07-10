@@ -7,6 +7,7 @@ import { ApiError } from "@/app/lib/ApiError";
 import { checkSupervisorFinePermission } from "@/app/server/services/rules.service";
 import { Roles } from "@prisma/client";
 import {sendNotification } from "@/app/server/services/notification.service"
+import { cacheInvalidate} from "@/app/lib/redis";
 
 export async function PATCH(
   req: NextRequest,
@@ -260,6 +261,8 @@ export async function PATCH(
         });
       }
     }
+
+        await cacheInvalidate(`cache:fines:${company_id}:*`);
 
     return NextResponse.json({ success: true, fine: result });
   } catch (error) {

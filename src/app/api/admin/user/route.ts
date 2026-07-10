@@ -2,6 +2,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { cacheGet, cacheSet, cacheInvalidate } from "@/app/lib/redis";
 
 // 1. FETCH USERS WITH AUDIT LOGS, FINES AND REMITTANCES
 export async function GET(req: NextRequest) {
@@ -19,6 +20,12 @@ export async function GET(req: NextRequest) {
     // Security check: Force non-admins (like TICKETER) to only fetch supervisors
     if (!["ADMIN", "AUDITOR"].includes(userRole)) {
       roleFilter = "SUPERVISOR";
+    }
+
+        const cacheKey = `cache:users-audit:${session.user.company_id}:${roleFilter || "all"}`;
+    const cachedData = await cacheGet(cacheKey);
+    if (cachedData) {
+      return NextResponse.json(cachedData);
     }
 
     const whereCondition: Record<string, string> = {};
@@ -88,7 +95,9 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    return NextResponse.json({ success: true, data: mappedUsers });
+ const responsePayload = { success: true, data: mappedUsers };
+    await cacheSet(cacheKey, responsePayload, 60); // 1 min TTL
+    return NextResponse.json(responsePayload);
   } catch (error) {
     console.error("GET /api/admin/user error:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
@@ -129,6 +138,12 @@ export async function PATCH(req: NextRequest) {
         company_id: session.user.company_id,
       }
     });
+
+    // Add before returning updated response:
+await cacheInvalidate(
+  `cache:users-audit:${session.user.company_id}:*`,
+  `cache:supervisor-team:*` // Clear supervisor teams in case hierarchy changed
+);
 
     return NextResponse.json({ success: true, data: updatedUser });
   } catch (error) {

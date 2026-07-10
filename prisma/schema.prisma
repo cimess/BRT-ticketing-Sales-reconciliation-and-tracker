@@ -36,6 +36,7 @@ model Company {
   commission_rules        Commission_rules[]
   ticketer_location_assignments Ticketer_Location_Assignment[]
   company_rules           CompanyRule[]
+  report_tasks            ReportTask[]
   
 }
 
@@ -82,6 +83,10 @@ model User {
   @@unique([email, company_id])
 
   created_assignments  Ticketer_Location_Assignment[] @relation("AssignmentCreator")
+  report_tasks            ReportTask[]
+
+  @@index([company_id, supervisor_id])
+  @@index([company_id, role])
 
 }
 model RegistrationToken {
@@ -107,6 +112,7 @@ model TopUp{
   date_received    DateTime     @default(now())
   company_id           String
   company              Company             @relation(fields: [company_id], references: [id])
+  @@index([company_id, date_received])
 }
 
 model CompanyFloat{
@@ -127,6 +133,10 @@ model Float_allocations {
   supervisor       User         @relation("AllocationFrom", fields: [from_user], references: [id])
   pos_device       PosDeviceSession       @relation("AllocationTo", fields: [pos_device_id], references: [id])
   company              Company             @relation(fields: [company_id], references: [id])
+
+  @@index([company_id, from_user, status])
+  @@index([company_id, pos_device_id, status])
+  @@index([company_id, allocated_at])
 }
 
 
@@ -152,6 +162,11 @@ model Remittance {
   company              Company             @relation(fields: [company_id], references: [id])
 
   pos_session       PosDeviceSession?  @relation(fields: [pos_session_id], references: [id])
+  
+  @@index([company_id, status])
+  @@index([company_id, submitted_by, created_at])
+  @@index([company_id, pos_session_id, status])
+  @@index([company_id, received_by_supervisor_id, status])
 }
 model Reconciliation_reports {
   id                String       @id @default(cuid())
@@ -165,6 +180,7 @@ model Reconciliation_reports {
   generated_at      DateTime     @default(now())
   company_id           String
   company              Company             @relation(fields: [company_id], references: [id])
+  @@index([company_id, generated_at])
 }
 
 model RemittanceExpectation {
@@ -193,6 +209,9 @@ model RemittanceExpectation {
   user              User              @relation(fields: [user_id], references: [id])
   pos_session       PosDeviceSession?  @relation(fields: [pos_session_id], references: [id])
   company              Company             @relation(fields: [company_id], references: [id])
+
+  @@index([company_id, status])
+  @@index([company_id, user_id, status])
 }
 
 
@@ -209,6 +228,7 @@ model AuditLog {
   company_id           String
   user         User     @relation(fields: [user_id], references: [id])
   company              Company             @relation(fields: [company_id], references: [id])
+  @@index([company_id, created_at])
 }
 
 model Float_Ledger {
@@ -225,6 +245,10 @@ model Float_Ledger {
   company_id           String
   posDevice   PosDeviceSession? @relation("PosDeviceLedger", fields: [posSession], references: [id])
   company              Company             @relation(fields: [company_id], references: [id])
+  
+  @@index([company_id, account_id, account_type])
+  @@index([company_id, posSession, reference_type])
+  @@index([company_id, created_at])
 }
 
 model Pos_devices {
@@ -259,6 +283,9 @@ model PosDeviceSession {
   company              Company             @relation(fields: [company_id], references: [id])
   remittance_expectation RemittanceExpectation?
   remittances            Remittance[]
+
+  @@index([company_id, user_id, status])
+@@index([company_id, device_id, status])
 }
 
 model SalesReport {
@@ -282,6 +309,11 @@ model SalesReport {
   pos_device   PosDeviceSession @relation(fields: [pos_session_id], references: [id])
   ticketer     User             @relation(fields: [ticketer_id], references: [id])
   company              Company             @relation(fields: [company_id], references: [id])
+
+  @@index([company_id, ticketer_id, status])
+  @@index([company_id, pos_session_id, status])
+  @@index([company_id, submitted_at])
+  @@index([company_id, ticketer_id, verified_at])
 }
 
 model Commission_rules {
@@ -293,6 +325,7 @@ model Commission_rules {
   created_at   DateTime @default(now())
   company_id           String
   company              Company             @relation(fields: [company_id], references: [id])
+  @@index([company_id,is_active])
 }
 
 model CompanyRule {
@@ -309,6 +342,7 @@ model CompanyRule {
   
   company_id        String
   company           Company  @relation(fields: [company_id], references: [id])
+  @@index([company_id, name, is_active])
 }
 
 
@@ -327,6 +361,8 @@ model CommissionEarning {
   company_id           String
   user              User         @relation(fields: [user_id], references: [id])
   company              Company             @relation(fields: [company_id], references: [id])
+  @@index([company_id, user_id])
+  @@index([company_id, created_at])
 }
 
 model Fine {
@@ -343,6 +379,9 @@ model Fine {
   //the user who received the fine
   defaulter       User        @relation("FineReceiver", fields: [defaulter_id], references: [id])
   company              Company             @relation(fields: [company_id], references: [id])
+
+  @@index([company_id, defaulter_id, status])
+  @@index([company_id, status, created_at])
 }
 
 
@@ -362,6 +401,7 @@ model Ticketer_Location_Assignment {
   creator       User         @relation("AssignmentCreator", fields: [created_by_id], references: [id])
 
   @@unique([user_id, assigned_for, session])
+  @@index([company_id, user_id, assigned_for])
 }
 
 
@@ -377,6 +417,7 @@ model Location {
   sales_reports SalesReport[]
   ticket_assignments Ticketer_Location_Assignment[]
   company              Company             @relation(fields: [company_id], references: [id])
+  @@index([company_id])
 }
 
 model Notification {
@@ -394,6 +435,48 @@ model Notification {
   company      Company  @relation(fields: [company_id], references: [id], onDelete: Cascade)
 
   @@index([user_id, company_id])
+}
+
+// Append this to prisma/schema.prisma
+
+model ReportTask {
+  id            String       @id @default(cuid())
+  company_id    String
+  name          String       // e.g., "Monthly Sales Report - July 2026"
+  type          ReportType
+  period_start  DateTime
+  period_end    DateTime
+  status        ReportStatus @default(PENDING)
+  format        ExportFormat @default(CSV)
+  storage_key   String?      // R2 Key using Hive Partitioning: reports/company_id=X/year=Y/month=M/day=D/file.csv
+  created_by_id String
+  created_at    DateTime     @default(now())
+  completed_at  DateTime?
+  error_message String?
+
+  // Relations
+  company       Company      @relation(fields: [company_id], references: [id])
+  created_by    User         @relation(fields: [created_by_id], references: [id])
+
+  @@index([company_id, status])
+}
+
+enum ReportType {
+  MONTHLY_SALES
+  MONTHLY_FLOAT
+  LOCATION_SALES
+}
+
+enum ReportStatus {
+  PENDING
+  RUNNING
+  READY
+  FAILED
+}
+
+enum ExportFormat {
+  CSV
+  PDF
 }
 
 

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { ApiError } from "@/lib/ApiError";
+import { cacheGet, cacheSet } from "@/app/lib/redis";
 
 export async function GET() {
   try {
@@ -12,6 +13,12 @@ export async function GET() {
     }
 
     const { id: supervisorId, role, company_id: companyId } = session.user;
+
+      const cacheKey = `cache:quick-status:${companyId}:${supervisorId}`;
+    const cachedStatus = await cacheGet(cacheKey);
+    if (cachedStatus) {
+      return NextResponse.json(cachedStatus);
+    }
 
     // Fetch all registered POS devices
     const devices = await prisma.pos_devices.findMany({
@@ -245,10 +252,12 @@ export async function GET() {
       })
     );
 
-    return NextResponse.json({
+  const responsePayload = {
       success: true,
       devices: result,
-    });
+    };
+    await cacheSet(cacheKey, responsePayload, 15); // 15s TTL (Short due to high real-time state requirements)
+    return NextResponse.json(responsePayload);
   } catch (error) {
     console.error("GET /api/supervisor/device/quick-status error:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

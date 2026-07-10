@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { cacheGet, cacheSet, cacheInvalidate } from "@/app/lib/redis";
 
 
 export async function GET() {
@@ -10,6 +11,14 @@ export async function GET() {
     if (!session?.user || session.user.role !== "ADMIN") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+     const companyId = session.user.company_id;
+    const cacheKey = `cache:devices:${companyId}`;
+    const cachedDevices = await cacheGet(cacheKey);
+    if (cachedDevices) {
+      return NextResponse.json(cachedDevices);
+    }
+
 
     // Fetch all registered POS devices
     const devices = await prisma.pos_devices.findMany({
@@ -72,7 +81,7 @@ export async function GET() {
       supervisorMap.set(sup.id, `${sup.first_name} ${sup.last_name}`.trim());
     });
 
-    return NextResponse.json({
+    const responsePayload = {
       success: true,
       devices,
       sessions: sessions.map((s) => ({
@@ -92,7 +101,10 @@ export async function GET() {
         status: s.status,
       })),
       availableUsers,
-    });
+    };
+     // 3. Cache the devices list for 5 minutes (300s)
+    await cacheSet(cacheKey, responsePayload, 300);
+    return NextResponse.json(responsePayload);
   } catch (error) {
     console.error("GET /api/admin/devices error:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
@@ -136,6 +148,9 @@ export async function POST(req: Request) {
         status: status || "INACTIVE",
       },
     });
+
+    // Invalidate the cache
+ await cacheInvalidate(`cache:devices:${session.user.company_id}`);
 
     return NextResponse.json({
       success: true,

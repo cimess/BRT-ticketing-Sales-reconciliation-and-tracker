@@ -4,7 +4,7 @@ import { NextResponse, NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { ensureCompanyRules, DEFAULT_RULES } from "@/app/server/services/rules.service";
-
+import { cacheGet, cacheSet } from "@/app/lib/redis";
 
 
 export async function GET() {
@@ -15,6 +15,13 @@ export async function GET() {
     }
 
     const companyId = session.user.company_id;
+
+       const cacheKey = `cache:rules:${companyId}`;
+    // 1. Try cache first
+    const cachedRules = await cacheGet(cacheKey);
+    if (cachedRules) {
+      return NextResponse.json(cachedRules);
+    }
 
     // 1. Fetch the rules
     let rules = await prisma.companyRule.findMany({
@@ -33,8 +40,10 @@ export async function GET() {
       });
     }
 
-    // 3. Return immediately (Common case: exactly 1 database query)
-    return NextResponse.json({ success: true, data: rules });
+    const responsePayload = { success: true, data: rules };
+    // 3. Cache rules for 5 minutes (300s)
+    await cacheSet(cacheKey, responsePayload, 300);
+    return NextResponse.json(responsePayload);
   } catch (error) {
     console.error("Failed to list rules:", error);
     return NextResponse.json({ error: "Failed to list rules" }, { status: 500 });

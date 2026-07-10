@@ -3,6 +3,7 @@ import { NextResponse, NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
+import { cacheInvalidate } from "@/app/lib/redis";
 
 export async function PUT(
   req: NextRequest,
@@ -27,6 +28,10 @@ export async function PUT(
       where: { id, company_id: session.user.company_id },
       data,
     });
+
+        // Invalidate the cache so the UI fetches fresh data immediately
+    const cacheKey = `cache:rules:${session.user.company_id}`;
+    await cacheInvalidate(cacheKey);
 
     return NextResponse.json({ success: true, data: updated });
   } catch (error) {
