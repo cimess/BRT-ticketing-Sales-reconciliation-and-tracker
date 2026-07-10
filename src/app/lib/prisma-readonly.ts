@@ -9,7 +9,14 @@ const isProd = process.env.NODE_ENV === "production";
 
 // Use dedicated readonly URL or fallback to main URL (for local dev)
 const connectionString = process.env.READONLY_DATABASE_URL || 
-  (isProd ? process.env.DATABASE_URL : process.env.LOCAL_DATABASE_URL);
+  ((isProd && process.env.DATABASE_URL) ? process.env.DATABASE_URL : (process.env.DATABASE_URL || process.env.LOCAL_DATABASE_URL));
+
+// Auto-detect SSL based on connection string or environment
+const sslConfig = connectionString?.includes("sslmode=disable")
+  ? false
+  : (connectionString?.includes("sslmode=require") || isProd)
+    ? { rejectUnauthorized: false }
+    : false;
 
 const globalForReadonly = globalThis as unknown as {
   readonlyPrisma: PrismaClient | undefined;
@@ -20,7 +27,7 @@ const pool =
   globalForReadonly.readonlyPool ??
   new Pool({
     connectionString,
-    ssl: isProd ? { rejectUnauthorized: false } : false,
+    ssl: sslConfig,
     statement_timeout: 2000, // Safety: Automatically kill any query taking > 2 seconds!
   });
 

@@ -7,9 +7,17 @@ const { Pool } = pg;
 
 const isProd = process.env.NODE_ENV === "production";
 
-const datasource = isProd
+// Fallback to local database url if DATABASE_URL is empty
+const datasource = (isProd && process.env.DATABASE_URL)
   ? process.env.DATABASE_URL
-  : process.env.LOCAL_DATABASE_URL;
+  : (process.env.DATABASE_URL || process.env.LOCAL_DATABASE_URL);
+
+// Auto-detect SSL based on connection string or environment
+const sslConfig = datasource?.includes("sslmode=disable")
+  ? false
+  : (datasource?.includes("sslmode=require") || isProd)
+    ? { rejectUnauthorized: false }
+    : false;
 
 // Extend the global object to cache both the prisma client and the pg pool
 const globalForPrisma = globalThis as unknown as {
@@ -22,7 +30,7 @@ const pool =
   globalForPrisma.pool ??
   new Pool({
     connectionString: datasource,
-    ssl: isProd ? { rejectUnauthorized: false } : false,
+    ssl: sslConfig,
   });
 
 if (!isProd) {
@@ -40,8 +48,8 @@ if (!isProd) {
   globalForPrisma.prisma = prisma;
 }
 
-
-if (typeof window === "undefined") {
+// Prevent running rules initialization queries during Next.js static build phase
+if (typeof window === "undefined" && process.env.NEXT_PHASE !== "phase-production-build") {
   import("@/app/server/services/rules.service").then(({ ensureDefaultRules }) => {
     ensureDefaultRules().catch((err) =>
       console.error("[Startup] Failed to initialize default company rules:", err)
