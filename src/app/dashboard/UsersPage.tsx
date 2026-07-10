@@ -12,7 +12,7 @@ import { Badge } from '@/components/Badge';
 import api from '@/lib/axios';
 import { toast } from 'react-toastify';
 import axios from 'axios';
-import { Roles } from '@prisma/client';
+import type{  Roles } from '@prisma/client';
 
 export interface RegToken {
   id: string;
@@ -140,7 +140,8 @@ const generateRegToken = async () => {
     return rows.filter((r) => (scope === 'ALL' ? true : r.role === scope));
   }, [rows, scope]);
 
-  const rolesToMap: Roles[] = [Roles.TICKETER, Roles.SUPERVISOR, Roles.ADMIN, Roles.AUDITOR];
+const rolesToMap: Roles[] = ['TICKETER', 'SUPERVISOR', 'ADMIN', 'AUDITOR'];
+
 
   return (
     <>

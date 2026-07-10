@@ -6,7 +6,7 @@ import { useRouter, usePathname, redirect } from "next/navigation";
 import { useSession } from "next-auth/react"
 import { useEffect } from 'react';
 import { Roles } from '@prisma/client';
-import { Role } from '../app/lib/modules';
+import type{ Role } from '../app/lib/modules';
 
 const groupIcon: Record<ModuleItem['group'], React.ReactNode> = {
   Operations: <ClipboardList className="w-4 h-4" strokeWidth={1.5} />,

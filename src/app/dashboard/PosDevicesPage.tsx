@@ -9,7 +9,7 @@ import { Drawer } from '@/components/Drawer';
 import api from '@/lib/axios';
 import { toast } from 'react-toastify';
 import axios from 'axios';
-import { Device_Status } from '@prisma/client';
+import type { Device_Status } from '@prisma/client';
 import { formatDateTime } from '@/lib/utils';
 import { useDashboard } from './layout';
 

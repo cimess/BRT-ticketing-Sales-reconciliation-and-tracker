@@ -9,15 +9,15 @@ const nextConfig: NextConfig = {
   },
 
   /* config options here */
-  allowedDevOrigins: ['192.168.0.197:3000', '192.168.0.197'],
+  allowedDevOrigins: ['192.168.0.197:3000', '192.168.0.197', process.env.NEXTAUTH_URL || "https://cimessinvest.com"],
 
+  serverExternalPackages: ["duckdb"],
   experimental: {
     // Limits the entry files processed immediately upon boot
-    preloadEntriesOnStart: false, 
+    preloadEntriesOnStart: false,
     // Forces Next.js to spin up temporary compilation threads that drop memory once done
-    webpackBuildWorker: true 
+    webpackBuildWorker: true
   }
 };
 
 export default nextConfig;
-  
