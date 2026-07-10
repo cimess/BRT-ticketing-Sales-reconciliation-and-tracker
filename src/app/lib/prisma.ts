@@ -64,7 +64,7 @@ const pool =
   new Pool({
     connectionString: datasource,
     ssl: sslConfig,
-    max: isProd ? 15 : 10, // Leave slots open for migrations & dashboards
+    max: isProd ? 3 : 10, // Leave slots open for migrations & dashboards
     connectionTimeoutMillis: 15000,
     idleTimeoutMillis: 30000,
   });

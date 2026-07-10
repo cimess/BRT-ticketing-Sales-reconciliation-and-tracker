@@ -58,7 +58,7 @@ const pool =
   new Pool({
     connectionString,
     ssl: sslConfig,
-    max: isProd ? 15 : 10,
+    max: isProd ? 2 : 10,
     connectionTimeoutMillis: 15000,
     idleTimeoutMillis: 30000,
     statement_timeout: 2000, // Safety: Automatically kill any query taking > 2 seconds!
