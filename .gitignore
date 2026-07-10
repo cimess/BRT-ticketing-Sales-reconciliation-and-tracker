@@ -39,3 +39,25 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local Database backups and SQL dumps
+*.sql
+*.sql.gz
+*.sql.tar
+*.dump
+*.db
+*.sqlite
+*.sqlite3
+# DuckDB persistent caches & temp files
+*.duckdb
+*.duckdb.tmp
+.duckdb/
+# Key files, credentials & certificates
+*.key
+credentials.json
+service-account*.json
+r2-credentials.json
+# Local IDE configuration overrides (optional, prevents leaking absolute local paths)
+.vscode/settings.json
+.vscode/tasks.json
+.vscode/launch.json
