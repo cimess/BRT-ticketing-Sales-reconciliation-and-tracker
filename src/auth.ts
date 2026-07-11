@@ -8,8 +8,7 @@ import { DashboardRoleUsers } from "@/types/types";
 // Determine if secure cookies are required (Production/HTTPS environments)
 const useSecureCookies = 
   process.env.NODE_ENV === "production" && 
-  !process.env.NEXTAUTH_URL?.startsWith("http://localhost") && 
-  !process.env.NEXTAUTH_URL?.startsWith("http://192.168.0.197");
+  !process.env.NEXTAUTH_URL?.startsWith("http://");
 
 // Define custom error classes
 class CompanyCodeInvalidError extends CredentialsSignin {
@@ -93,35 +92,35 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
 
   // Force secure flags explicitly in production to solve invalid prefix errors
-  cookies: useSecureCookies ? {
+  cookies: {
     sessionToken: {
-      name: `__Secure-authjs.session-token`,
+      name: useSecureCookies ? `__Secure-next-auth.session-token` : `next-auth.session-token`,
       options: {
         httpOnly: true,
         sameSite: "lax",
         path: "/",
-        secure: true,
+        secure: useSecureCookies,
       },
     },
     callbackUrl: {
-      name: `__Secure-authjs.callback-url`,
+      name: useSecureCookies ? `__Secure-next-auth.callback-url` : `next-auth.callback-url`,
       options: {
         httpOnly: true,
         sameSite: "lax",
         path: "/",
-        secure: true,
+        secure: useSecureCookies,
       },
     },
     csrfToken: {
-      name: `__Host-authjs.csrf-token`,
+      name: useSecureCookies ? `__Host-next-auth.csrf-token` : `next-auth.csrf-token`,
       options: {
         httpOnly: true,
         sameSite: "lax",
         path: "/",
-        secure: true,
+        secure: useSecureCookies,
       },
     },
-  } : undefined,
+  },
 
   session: {
     strategy: "jwt",
