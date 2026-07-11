@@ -123,7 +123,11 @@ export async function proxy(req: NextRequest) {
 
     const sessionExpiredResponse = NextResponse.redirect(new URL("/", req.url));
     sessionExpiredResponse.cookies.delete("next-auth.session-token");
-    sessionExpiredResponse.cookies.delete("__Secure-next-auth.session-token");
+    sessionExpiredResponse.cookies.delete({
+      name: "__Secure-next-auth.session-token",
+      secure: true,
+      path: "/",
+    });
     sessionExpiredResponse.cookies.delete("authjs.session-token");
     return addSecurityHeaders(sessionExpiredResponse);
   }
