@@ -90,40 +90,38 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       },
     }),
   ],
-  // Inside the NextAuth config object in src/auth.ts (around line 95)
   trustHost: true,
+  useSecureCookies: useSecureCookies,
 
-  cookies: {
+cookies: {
     sessionToken: {
-      name: `__Secure-next-auth.session-token`,
+      name: useSecureCookies ? `__Secure-next-auth.session-token` : `next-auth.session-token`,
       options: {
         httpOnly: true,
         sameSite: "lax",
         path: "/",
-        secure: true,
+        secure: useSecureCookies,
       },
     },
     callbackUrl: {
-      name: `__Secure-next-auth.callback-url`,
+      name: useSecureCookies ? `__Secure-next-auth.callback-url` : `next-auth.callback-url`,
       options: {
         httpOnly: true,
         sameSite: "lax",
         path: "/",
-        secure: true,
+        secure: useSecureCookies,
       },
     },
     csrfToken: {
-      name: `__Host-next-auth.csrf-token`,
+      name: useSecureCookies ? `__Host-next-auth.csrf-token` : `next-auth.csrf-token`,
       options: {
         httpOnly: true,
         sameSite: "lax",
         path: "/",
-        secure: true,
+        secure: useSecureCookies,
       },
     },
   },
-
-
   session: {
     strategy: "jwt",
     maxAge: 24 * 60 * 60,
