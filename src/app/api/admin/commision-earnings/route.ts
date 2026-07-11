@@ -48,8 +48,9 @@ export async function GET(req: NextRequest) {
     const activeRules = await prisma.commission_rules.findMany({
       where: { company_id: companyId, is_active: true }
     });
-    const ticketerRule = activeRules.find(r => r.role === "TICKETER");
-    const supervisorRule = activeRules.find(r => r.role === "SUPERVISOR");
+    const ticketerRule = activeRules.find((r: { role: string }) => r.role === "TICKETER");
+    const supervisorRule = activeRules.find((r: { role: string }) => r.role === "SUPERVISOR");
+
 
     // Fetch active users (Admin sees all; supervisors/ticketers see themselves)
     const users = await prisma.user.findMany({
@@ -297,8 +298,9 @@ export async function POST(req: NextRequest) {
     const activeRules = await prisma.commission_rules.findMany({
       where: { company_id: companyId, is_active: true }
     });
-    const ticketerRule = activeRules.find(r => r.role === "TICKETER");
-    const supervisorRule = activeRules.find(r => r.role === "SUPERVISOR");
+    const ticketerRule = activeRules.find((r: { role: string }) => r.role === "TICKETER");
+    const supervisorRule = activeRules.find((r: { role: string }) => r.role === "SUPERVISOR");
+
 
     const users = await prisma.user.findMany({
       where: { company_id: companyId, role: { in: ["TICKETER", "SUPERVISOR"] } }
