@@ -45,7 +45,7 @@ export async function GET() {
       where: { status: "ACTIVE",company_id },
       select: { user_id: true },
     });
-    const activeUserIds = activeSessions.map((s) => s.user_id);
+    const activeUserIds = activeSessions.map((s: { user_id: string }) => s.user_id);
 
     // 2. Available users are ANY ticketers who do not have an active session
     const availableUsers = await prisma.user.findMany({
@@ -86,7 +86,30 @@ export async function GET() {
     return NextResponse.json({
       success: true,
       devices,
-      sessions: sessions.map((s) => ({
+      sessions: sessions.map((s: {
+        id: string;
+        device_id: string;
+        device: {
+          name: string;
+          serial_number: string;
+        };
+        user_id: string;
+        user: {
+          first_name: string;
+          last_name: string;
+          role: string;
+        };
+        sales_reports: {
+          closing_balance: number | object;
+        }[];
+        pos_float: number | object;
+        assigned_at: Date;
+        unassigned_at: Date | null;
+        assigned_by: string;
+        unassigned_by: string | null;
+        unassigned_reason: string | null;
+        status: string;
+      }) => ({
         id: s.id,
         deviceId: s.device_id,
         deviceName: s.device.name,

@@ -62,7 +62,7 @@ export async function GET(req: NextRequest) { // Updated signature
       }
     });
     // Fetch all related ledger entries to calculate pre-allocation balances dynamically
-    const sessionIds = Array.from(new Set(history.map((h) => h.pos_device_id)));
+    const sessionIds = Array.from(new Set(history.map((h: { pos_device_id: string }) => h.pos_device_id)));
     const ledgers = await prisma.float_Ledger.findMany({
       where: {
         account_id: { in: sessionIds },
@@ -97,14 +97,44 @@ export async function GET(req: NextRequest) { // Updated signature
 
     return NextResponse.json({
       success: true,
-      sessions: activeSessions.map(s => ({
+      sessions: activeSessions.map((s: {
+        id: string;
+        device: {
+          name: string;
+        };
+        user: {
+          id: string;
+          first_name: string;
+          last_name: string;
+        };
+        pos_float: number | object;
+      }) => ({
         id: s.id,
         deviceName: s.device.name,
         ticketerId: s.user.id,
         ticketerName: `${s.user.first_name || ""} ${s.user.last_name || ""}`.trim(),
         currentFloat: Number(s.pos_float)
       })),
-      history: history.map(h => ({
+      history: history.map((h: {
+        id: string;
+        supervisor: {
+          first_name: string;
+          last_name: string;
+          role: string;
+        };
+        pos_device: {
+          user: {
+            first_name: string;
+            last_name: string;
+          };
+          device: {
+            name: string;
+          };
+        };
+        amount_allocated: number | object;
+        status: string;
+        allocated_at: Date;
+      }) => ({
         id: h.id,
         top_up_id: h.id,
         from_user: `${h.supervisor.first_name || ""} ${h.supervisor.last_name || ""}`.trim(),

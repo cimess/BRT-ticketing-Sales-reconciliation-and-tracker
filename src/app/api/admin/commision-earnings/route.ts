@@ -82,7 +82,7 @@ export async function GET(req: NextRequest) {
         const team = await prisma.user.findMany({
           where: { company_id: companyId, supervisor_id: user.id }
         });
-        const teamIds = team.map(t => t.id);
+        const teamIds = team.map((t: { id: string }) => t.id);
 
         if (teamIds.length > 0) {
           const reports = await prisma.salesReport.findMany({
@@ -231,7 +231,7 @@ export async function PATCH(req: NextRequest) {
       });
       if (unpaidFines.length > 0) {
         await prisma.fine.updateMany({
-          where: { id: { in: unpaidFines.map(f => f.id) } },
+          where: { id: { in: unpaidFines.map((f: { id: string }) => f.id) } },
           data: { status: "PAID" }
         });
       }
@@ -254,7 +254,7 @@ export async function PATCH(req: NextRequest) {
         });
         if (unpaidFines.length > 0) {
           await prisma.fine.updateMany({
-            where: { id: { in: unpaidFines.map(f => f.id) } },
+            where: { id: { in: unpaidFines.map((f: { id: string }) => f.id) } },
             data: { status: "PAID" }
           });
         }
@@ -330,7 +330,7 @@ export async function POST(req: NextRequest) {
         const team = await prisma.user.findMany({
           where: { company_id: companyId, supervisor_id: user.id }
         });
-        const teamIds = team.map(t => t.id);
+        const teamIds = team.map((t: { id: string }) => t.id);
 
         if (teamIds.length > 0) {
           const reports = await prisma.salesReport.findMany({
@@ -402,7 +402,7 @@ export async function POST(req: NextRequest) {
 
       if (unpaidFines.length > 0) {
         await prisma.fine.updateMany({
-          where: { id: { in: unpaidFines.map(f => f.id) } },
+          where: { id: { in: unpaidFines.map((f: { id: string }) => f.id) } },
           data: { status: "PAID" }
         });
       }

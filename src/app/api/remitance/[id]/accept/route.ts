@@ -133,7 +133,29 @@ export async function GET(req: NextRequest) {
     ]);
 
     // 5. Format Response for Frontend Components
-    const data = remittances.map((r) => ({
+    const data = remittances.map((r: {
+      id: string;
+      amount: number | object;
+      method: string;
+      status: string;
+      payment_reference: string | null;
+      remittance_date: Date;
+      created_at: Date;
+      verified_at: Date | null;
+      pos_session_id: string | null;
+      ticketer: {
+        id: string;
+        first_name: string;
+        last_name: string;
+        role: string;
+      };
+      pos_session: {
+        id: string;
+        device: {
+          name: string;
+        } | null;
+      } | null;
+    }) => ({
       id: r.id,
       amount: Number(r.amount),
       method: r.method,

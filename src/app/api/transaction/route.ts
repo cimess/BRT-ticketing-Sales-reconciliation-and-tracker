@@ -107,7 +107,7 @@ export async function GET(req: NextRequest) {
 
     // Resolve user display names for non-device accounts (e.g. remittances, fines)
     const userIds = entries
-      .filter(e => e.account_type === "TICKETER" || e.account_type === "SUPERVISOR")
+      .filter((e: { account_type: string }) => e.account_type === "TICKETER" || e.account_type === "SUPERVISOR")
       .map(e => e.account_id);
 
     const users = await prisma.user.findMany({

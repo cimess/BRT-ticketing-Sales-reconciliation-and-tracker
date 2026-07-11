@@ -33,7 +33,15 @@ export async function GET(req: NextRequest) {
       orderBy: { assigned_for: "desc" },
     });
 
-    const locations = dbLocations.map((la) => ({
+    const locations = dbLocations.map((la: {
+      id: string;
+      location_id: string;
+      location: {
+        name: string;
+        address: string | null;
+      };
+      assigned_for: Date;
+    }) => ({
       id: la.id,
       assignmentId: la.id,
       locationId: la.location_id,
@@ -61,7 +69,30 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      sessions: sessions.map((s) => ({
+      sessions: sessions.map((s: {
+        id: string;
+        device_id: string;
+        device: {
+          name: string;
+          serial_number: string;
+        };
+        user_id: string;
+        user: {
+          first_name: string;
+          last_name: string;
+          role: string;
+        };
+        sales_reports: {
+          closing_balance: number | object;
+        }[];
+        pos_float: number | object;
+        assigned_at: Date;
+        unassigned_at: Date | null;
+        assigned_by: string;
+        unassigned_by: string | null;
+        unassigned_reason: string | null;
+        status: string;
+      }) => ({
         id: s.id,
         deviceId: s.device_id,
         deviceName: s.device.name,

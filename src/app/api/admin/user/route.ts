@@ -56,8 +56,31 @@ export async function GET(req: NextRequest) {
     });
 
     // Map DB structures to match the frontend User_Full_Audit interface
-    const mappedUsers = users.map(user => {
-      const userLiveExpectations = liveExpectations.filter(r => r.user_id === user.id);
+    const mappedUsers = users.map((user: {
+      id: string;
+      first_name: string;
+      last_name: string;
+      guarantor_name: string | null;
+      guarantor_phone: string | null;
+      guarantor_address: string | null;
+      role: string;
+      createdAt: Date;
+      address: string | null;
+      supervisor: { first_name: string; last_name: string } | null;
+      phone: string | null;
+      email: string;
+      restricted: boolean;
+      fines: {
+        id: string;
+        defaulter_id: string;
+        amount: number | object | null;
+        reason: string;
+        issued_by: string;
+        status: string;
+        created_at: Date;
+      }[];
+    }) => {
+      const userLiveExpectations = liveExpectations.filter((r: { user_id: string }) => r.user_id === user.id);
       return {
         user_id: user.id,
         username: `${user.first_name} ${user.last_name}`,
@@ -71,7 +94,15 @@ export async function GET(req: NextRequest) {
         phone: user.phone || undefined,
         email: user.email,
         restricted: user.restricted,
-        fines: user.fines.map(f => ({
+        fines: user.fines.map((f: {
+          id: string;
+          defaulter_id: string;
+          amount: number | object | null;
+          reason: string;
+          issued_by: string;
+          status: string;
+          created_at: Date;
+        }) => ({
           id: f.id,
           defaulter_id: f.defaulter_id,
           amount: Number(f.amount),
@@ -80,7 +111,13 @@ export async function GET(req: NextRequest) {
           status: f.status,
           created_at: f.created_at.toISOString(),
         })),
-        reconciliation: userLiveExpectations.map(e => ({
+        reconciliation: userLiveExpectations.map((e: {
+          id: string;
+          created_at: Date;
+          expected_amount: number | object;
+          shortage_amount: number | object;
+          status: string;
+        }) => ({
           run_id: e.id,
           actor: `${user.first_name} ${user.last_name}`,
           date: e.created_at.toISOString().split("T")[0],

@@ -90,7 +90,29 @@ export async function GET(req: NextRequest) {
       take: 300,
     });
 
-    const mappedData = assignments.map((la) => ({
+    const mappedData = assignments.map((la: {
+      id: string;
+      location_id: string;
+      user_id: string;
+      session: string;
+      assigned_for: Date;
+      created_by_id: string;
+      location: {
+        id: string;
+        name: string;
+        address: string | null;
+      };
+      user: {
+        id: string;
+        first_name: string;
+        last_name: string;
+        email: string;
+      };
+      creator: {
+        first_name: string;
+        last_name: string;
+      } | null;
+    }) => ({
       id: la.location.id,
       assignmentId: la.id,
       locationName: la.location.name,

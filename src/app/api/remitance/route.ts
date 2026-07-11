@@ -226,7 +226,7 @@ export async function GET(req: NextRequest) {
         where: { supervisor_id: userId, company_id },
         select: { id: true }
       });
-      const ids = ticketers.map(t => t.id);
+      const ids = ticketers.map((t: { id: string }) => t.id);
       ids.push(userId);
       roleFilter = { submitted_by: { in: ids } };
     }
@@ -271,7 +271,7 @@ export async function GET(req: NextRequest) {
         where: { supervisor_id: userId, company_id },
         select: { id: true }
       });
-      const ids = ticketers.map(t => t.id);
+      const ids = ticketers.map((t: { id: string }) => t.id);
       // Supervisors see their team's + their own outstanding shortages
       outstandingFilter = { user_id: { in: [...ids, userId] } };
     } else {
@@ -296,7 +296,7 @@ export async function GET(req: NextRequest) {
     });
     const totalOutstanding = Number(outstandingExpectationAgg._sum.shortage_amount ?? 0);
     // 8️⃣ Fetch current outstanding expectations for each user who has a remittance in this list
-    const uniqueUserIds = Array.from(new Set(remittances.map(r => r.submitted_by)));
+    const uniqueUserIds = Array.from(new Set(remittances.map((r: { submitted_by: string }) => r.submitted_by)));
     const userExpectations = await prisma.remittanceExpectation.groupBy({
       by: ['user_id'],
       where: {
@@ -321,7 +321,21 @@ export async function GET(req: NextRequest) {
 
 
     // 9️⃣ Map and include ticketer_outstanding
-    const mapped = remittances.map(r => ({
+    const mapped = remittances.map((r: {
+      id: string;
+      amount: number | object;
+      method: string;
+      status: string;
+      payment_reference: string | null;
+      supervisor_receiver: { first_name: string; last_name: string } | null;
+      remittance_date: Date;
+      created_at: Date;
+      ticketer: { first_name: string; last_name: string };
+      verified_at: Date | null;
+      pos_session: { id: string; device: { name: string } | null; remittance_expectation: { status: string } | null } | null;
+      receipt_images: string[] | null;
+      submitted_by: string;
+    }) => ({
       id: r.id,
       amount: Number(r.amount),
       method: r.method,

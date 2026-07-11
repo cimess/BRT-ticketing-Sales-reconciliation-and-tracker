@@ -27,7 +27,12 @@ export async function GET() {
     });
 
     const result = await Promise.all(
-      devices.map(async (device) => {
+      devices.map(async (device: {
+        id: string;
+        name: string;
+        serial_number: string;
+        status: string;
+      }) => {
         // Fetch the last session for this device
         const lastSession = await prisma.posDeviceSession.findFirst({
           where: { device_id: device.id, company_id: companyId },

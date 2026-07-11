@@ -91,7 +91,24 @@ export async function GET(req: NextRequest) {
     });
 
     const reportsWithLedger = await Promise.all(
-      reports.map(async (r) => {
+      reports.map(async (r: {
+        id: string;
+        ticketer_id: string;
+        pos_session_id: string;
+        opening_balance: number | object;
+        closing_balance: number | object;
+        total_sold: number | object;
+        submitted_at: Date;
+        report_date: Date;
+        status: string;
+        location: { name: string };
+        pos_device: {
+          pos_float: number | object;
+          device: { name: string };
+          allocations_given: { amount_allocated: number | { toString(): string } }[];
+        };
+        ticketer: { first_name: string; last_name: string };
+      }) => {
         // 1. Fetch original session opening balance from ledger
         const openingLedger = await prisma.float_Ledger.findFirst({
           where: {
@@ -104,7 +121,7 @@ export async function GET(req: NextRequest) {
         });
 
         const topUp = r.pos_device.allocations_given.reduce(
-          (sum, alloc) => sum + Number(alloc.amount_allocated),
+          (sum: number, alloc: { amount_allocated: number | { toString(): string } }) => sum + Number(alloc.amount_allocated),
           0
         );
 

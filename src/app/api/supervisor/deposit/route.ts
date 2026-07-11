@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
           },
           select: { id: true }
         });
-        idsToUpdate = pendingRecords.map(r => r.id);
+        idsToUpdate = pendingRecords.map((r: { id: string }) => r.id);
       } else if (Array.isArray(remittance_ids) && remittance_ids.length > 0) {
         idsToUpdate = remittance_ids;
       } else {

@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
         where: { supervisor_id: userId, company_id },
         select: { id: true }
       });
-      const supervisedIds = supervisedUsers.map(u => u.id);
+      const supervisedIds = supervisedUsers.map((u: { id: string }) => u.id);
       where.OR = [
         { issued_by: userId },
         { defaulter_id: userId }, 

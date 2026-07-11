@@ -58,7 +58,7 @@ export async function GET() {
         where: { supervisor_id: userId, company_id: companyId },
         select: { id: true }
       });
-      const supervisedIds = supervisedUsers.map(u => u.id);
+      const supervisedIds = supervisedUsers.map((u: { id: string }) => u.id);
       supervisedIds.push(userId);
       shortageCount = await prisma.remittanceExpectation.count({
         where: {
