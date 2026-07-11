@@ -81,11 +81,25 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
 
 
 export async function proxy(req: NextRequest) {
+  // 1. Dynamic cookie name detection (handles Secure/Dev & Authjs/NextAuth variations)
+  const cookieNames = [
+    "__Secure-authjs.session-token",
+    "authjs.session-token",
+    "__Secure-next-auth.session-token",
+    "next-auth.session-token"
+  ];
+  const activeCookieName = cookieNames.find(name => req.cookies.has(name));
+
+  // 2. Fetch and decrypt token using the detected cookie name and its corresponding salt
   const token = await getToken({
     req,
-    secret: process.env.AUTH_SECRET
+    secret: process.env.AUTH_SECRET,
+    cookieName: activeCookieName,
+    salt: activeCookieName,
   });
+  
   const path = req.nextUrl.pathname;
+
 
   // 2. PUBLIC/STATIC ALLOWLIST (Bypass checks for core Next.js processes & Auth endpoints)
   if (
