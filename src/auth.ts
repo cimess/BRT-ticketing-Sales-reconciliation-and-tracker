@@ -90,10 +90,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       },
     }),
   ],
+  // Inside the NextAuth config object in src/auth.ts (around line 95)
   trustHost: true,
 
-  // Force secure flags explicitly in production to solve invalid prefix errors
-  cookies: useSecureCookies ? {
+  cookies: {
     sessionToken: {
       name: `__Secure-next-auth.session-token`,
       options: {
@@ -113,7 +113,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       },
     },
     csrfToken: {
-      name: `__Host-authjs.csrf-token`,
+      name: `__Host-next-auth.csrf-token`,
       options: {
         httpOnly: true,
         sameSite: "lax",
@@ -121,7 +121,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         secure: true,
       },
     },
-  } : undefined,
+  },
+
 
   session: {
     strategy: "jwt",
