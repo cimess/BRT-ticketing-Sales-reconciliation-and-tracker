@@ -6,9 +6,9 @@ import bcrypt from "bcrypt";
 import { DashboardRoleUsers } from "@/types/types";
 
 // Determine if secure cookies are required (Production/HTTPS environments)
-const useSecureCookies = 
-  process.env.NODE_ENV === "production" && 
-  !process.env.AUTH_URL?.startsWith("http://localhost") && 
+const useSecureCookies =
+  process.env.NODE_ENV === "production" &&
+  !process.env.AUTH_URL?.startsWith("http://localhost") &&
   !process.env.AUTH_URL?.startsWith("http://192.168.0.197");
 
 // Define custom error classes
@@ -38,10 +38,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const email = credentials.email as string;
         const password = credentials.password as string;
         const companyCode = credentials.companyCode as string;
+        console.log("🔑 authorize request for:", { email, companyCode });
 
         // Find the user by email
         const user = await prisma.user.findFirst({
-          where: { company: {code: companyCode},email },
+          where: {
+            email: { equals: email, mode: 'insensitive' },
+          },
           include: { company: true },
         });
 
