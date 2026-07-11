@@ -8,8 +8,9 @@ import { DashboardRoleUsers } from "@/types/types";
 // Determine if secure cookies are required (Production/HTTPS environments)
 const useSecureCookies = 
   process.env.NODE_ENV === "production" && 
-  !process.env.NEXTAUTH_URL?.startsWith("http://localhost") && 
-  !process.env.NEXTAUTH_URL?.startsWith("http://192.168.0.197");
+  !process.env.AUTH_URL?.startsWith("http://localhost") && 
+  !process.env.AUTH_URL?.startsWith("http://192.168.0.197");
+console.log("AUTH_URL", process.env.AUTH_URL, useSecureCookies);
 
 // Define custom error classes
 class CompanyCodeInvalidError extends CredentialsSignin {
