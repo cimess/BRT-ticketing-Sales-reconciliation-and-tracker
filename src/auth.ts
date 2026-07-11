@@ -10,7 +10,6 @@ const useSecureCookies =
   process.env.NODE_ENV === "production" && 
   !process.env.AUTH_URL?.startsWith("http://localhost") && 
   !process.env.AUTH_URL?.startsWith("http://192.168.0.197");
-console.log("AUTH_URL", process.env.AUTH_URL, useSecureCookies);
 
 // Define custom error classes
 class CompanyCodeInvalidError extends CredentialsSignin {
@@ -38,45 +37,42 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         const email = credentials.email as string;
         const password = credentials.password as string;
-        const companyCode = (credentials.companyCode as string).toUpperCase();
+        const companyCode = credentials.companyCode as string;
 
-        console.log("🔑 authorize request for:", { email, companyCode });
-
+        // Find the user by email
         const user = await prisma.user.findFirst({
-          where: {
-            email,
-          },
+          where: { company: {code: companyCode},email },
           include: { company: true },
         });
 
         if (!user) {
-          console.log("❌ authorize: user not found in DB with email:", email);
+          console.log("❌ authorize: user not found in DB");
           return null;
         }
 
-        console.log("👤 authorize: user found in DB:", { 
-          id: user.id, 
-          email: user.email, 
+        console.log("👤 authorize: user found in DB:", {
+          id: user.id,
+          email: user.email,
           role: user.role,
-          companyCodeInDb: user.company?.code 
+          companyCodeInDb: user.company?.code,
         });
 
-        // Throw custom Company Code mismatch error
-        if (user.company.code !== companyCode) {
-          console.log("❌ authorize: company code mismatch. DB:", user.company.code, "Provided:", companyCode);
+        // Validate company code
+        if (user.company?.code.toUpperCase() !== companyCode.toUpperCase()) {
+          console.log("❌ authorize: company code invalid");
           throw new CompanyCodeInvalidError();
         }
 
-        // Check password
-        const isValid = await bcrypt.compare(password, user.password);
-        if (!isValid) {
-          console.log("❌ authorize: password validation failed");
+        // Verify password
+        const isValidPassword = await bcrypt.compare(password, user.password);
+        if (!isValidPassword) {
+          console.log("❌ authorize: password invalid");
           return null;
         }
 
-        // Throw custom Restricted User error
+        // Check if user account is restricted/inactive
         if (user.restricted) {
-          console.log("❌ authorize: user is restricted");
+          console.log("❌ authorize: user account restricted");
           throw new RestrictedUserError();
         }
 
@@ -92,37 +88,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   trustHost: true,
-  useSecureCookies: useSecureCookies,
+  useSecureCookies: useSecureCookies, // Forces secure cookies in prod using default names
 
-cookies: {
-    sessionToken: {
-      name: useSecureCookies ? `__Secure-next-auth.session-token` : `next-auth.session-token`,
-      options: {
-        httpOnly: true,
-        sameSite: "lax",
-        path: "/",
-        secure: useSecureCookies,
-      },
-    },
-    callbackUrl: {
-      name: useSecureCookies ? `__Secure-next-auth.callback-url` : `next-auth.callback-url`,
-      options: {
-        httpOnly: true,
-        sameSite: "lax",
-        path: "/",
-        secure: useSecureCookies,
-      },
-    },
-    csrfToken: {
-      name: useSecureCookies ? `__Host-next-auth.csrf-token` : `next-auth.csrf-token`,
-      options: {
-        httpOnly: true,
-        sameSite: "lax",
-        path: "/",
-        secure: useSecureCookies,
-      },
-    },
-  },
   session: {
     strategy: "jwt",
     maxAge: 24 * 60 * 60,
