@@ -5,6 +5,12 @@ import { prisma } from "@/lib/prisma";
 import bcrypt from "bcrypt";
 import { DashboardRoleUsers } from "@/types/types";
 
+// Determine if secure cookies are required (Production/HTTPS environments)
+const useSecureCookies = 
+  process.env.NODE_ENV === "production" && 
+  !process.env.NEXTAUTH_URL?.startsWith("http://localhost") && 
+  !process.env.NEXTAUTH_URL?.startsWith("http://192.168.0.197");
+
 // Define custom error classes
 class CompanyCodeInvalidError extends CredentialsSignin {
   code = "company_code_invalid";
@@ -23,7 +29,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         password: { label: "Password", type: "password" },
         companyCode: { label: "Company Code", type: "text" },
       },
-          async authorize(credentials) {
+      async authorize(credentials) {
         if (!credentials?.email || !credentials?.password || !credentials?.companyCode) {
           console.log("❌ authorize: missing fields", { credentials });
           return null;
@@ -82,10 +88,40 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           company_id: user.company_id,
         };
       },
-
     }),
   ],
   trustHost: true,
+
+  // Force secure flags explicitly in production to solve invalid prefix errors
+  cookies: useSecureCookies ? {
+    sessionToken: {
+      name: `__Secure-authjs.session-token`,
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: true,
+      },
+    },
+    callbackUrl: {
+      name: `__Secure-authjs.callback-url`,
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: true,
+      },
+    },
+    csrfToken: {
+      name: `__Host-authjs.csrf-token`,
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: true,
+      },
+    },
+  } : undefined,
 
   session: {
     strategy: "jwt",
@@ -97,7 +133,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (user) {
         token.id = user.id;
         token.role = user.role;
-        token.company_id = user.company_id; // <-- Propagate company_id to JWT
+        token.company_id = user.company_id;
       }
       return token;
     },
@@ -106,7 +142,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (session.user) {
         session.user.id = token.sub as string;
         session.user.role = token.role as DashboardRoleUsers;
-        session.user.company_id = token.company_id as string; // <-- Make company_id available in session
+        session.user.company_id = token.company_id as string;
       }
       return session;
     },

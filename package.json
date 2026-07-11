@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "fuser -k 3000/tcp || true; next dev",
     "build": "next build --webpack",
-    "start": "next start",
+    "start": "fuser -k 3000/tcp || true; next start",
     "lint": "eslint"
   },
   "dependencies": {
