@@ -76,7 +76,8 @@ export async function GET(req: NextRequest) {
             verified_at: { gte: liveStart, lte: liveEnd }
           }
         });
-        totalSales = reports.reduce((sum, r) => sum + r.total_sold, 0);
+        totalSales = reports.reduce((sum: number, r: { total_sold: number }) => sum + r.total_sold, 0);
+
       } else if (user.role === "SUPERVISOR") {
         const team = await prisma.user.findMany({
           where: { company_id: companyId, supervisor_id: user.id }
@@ -92,7 +93,8 @@ export async function GET(req: NextRequest) {
               verified_at: { gte: liveStart, lte: liveEnd }
             }
           });
-          totalSales = reports.reduce((sum, r) => sum + r.total_sold, 0);
+         totalSales = reports.reduce((sum: number, r: { total_sold: number }) => sum + r.total_sold, 0);
+
         }
       }
 
@@ -121,7 +123,8 @@ export async function GET(req: NextRequest) {
           created_at: { gte: liveStart, lte: liveEnd }
         }
       });
-      const totalFines = unpaidFines.reduce((sum, f) => sum + (f.amount ?? 0), 0);
+   const totalFines = unpaidFines.reduce((sum: number, f: { amount: number | null }) => sum + (f.amount ?? 0), 0);
+
 
       // Deduct shortages
       const expectationsWithShortages = await prisma.remittanceExpectation.findMany({
@@ -132,7 +135,8 @@ export async function GET(req: NextRequest) {
           created_at: { gte: liveStart, lte: liveEnd }
         }
       });
-      const totalShortages = expectationsWithShortages.reduce((sum, exp) => sum + exp.shortage_amount, 0);
+     const totalShortages = expectationsWithShortages.reduce((sum: number, exp: { shortage_amount: number }) => sum + exp.shortage_amount, 0);
+
 
       const netPay = Math.max(0, commissionEarned - totalFines - totalShortages);
 
@@ -320,7 +324,8 @@ export async function POST(req: NextRequest) {
             verified_at: { gte: start, lte: end }
           }
         });
-        totalSales = reports.reduce((sum, r) => sum + r.total_sold, 0);
+        totalSales = reports.reduce((sum: number, r: { total_sold: number }) => sum + r.total_sold, 0);
+
       } else if (user.role === "SUPERVISOR") {
         const team = await prisma.user.findMany({
           where: { company_id: companyId, supervisor_id: user.id }
@@ -336,7 +341,8 @@ export async function POST(req: NextRequest) {
               verified_at: { gte: start, lte: end }
             }
           });
-          totalSales = reports.reduce((sum, r) => sum + r.total_sold, 0);
+          totalSales = reports.reduce((sum: number, r: { total_sold: number }) => sum + r.total_sold, 0);
+
         }
       }
 
@@ -363,7 +369,8 @@ export async function POST(req: NextRequest) {
           created_at: { gte: start, lte: end }
         }
       });
-      const totalFines = unpaidFines.reduce((sum, f) => sum + (f.amount ?? 0), 0);
+     const totalFines = unpaidFines.reduce((sum: number, f: { amount: number | null }) => sum + (f.amount ?? 0), 0);
+
 
       const expectationsWithShortages = await prisma.remittanceExpectation.findMany({
         where: {
@@ -373,7 +380,8 @@ export async function POST(req: NextRequest) {
           created_at: { gte: start, lte: end }
         }
       });
-      const totalShortages = expectationsWithShortages.reduce((sum, exp) => sum + exp.shortage_amount, 0);
+      const totalShortages = expectationsWithShortages.reduce((sum: number, exp: { shortage_amount: number }) => sum + exp.shortage_amount, 0);
+
 
       const netPay = Math.max(0, commissionEarned - totalFines - totalShortages);
 
