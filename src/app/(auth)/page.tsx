@@ -78,21 +78,36 @@ export default function Login() {
       }
 
 
-      if (res?.ok) {
+            if (res?.ok) {
         toast.success("Login successful");
 
-        // 3. SOLID FIX FOR TIME RACES: Explicitly fetch the fresh session right now!
-        const sessionResponse = await fetch('/api/auth/session').then(res => res.json());
-        const userRole = sessionResponse?.user?.role;
+        // 3. SOLID FIX FOR TIME RACES: Explicitly fetch the fresh session with retry and fallback
+        let userRole: string | undefined = undefined;
+        try {
+          let sessionResponse = await fetch('/api/auth/session').then(r => r.json());
+          userRole = sessionResponse?.user?.role;
+          
+          if (!userRole) {
+            // Wait 300ms for browser to finish writing cookie and try once more
+            await new Promise(resolve => setTimeout(resolve, 300));
+            sessionResponse = await fetch('/api/auth/session').then(r => r.json());
+            userRole = sessionResponse?.user?.role;
+          }
+        } catch (e) {
+          console.error("Session retrieval error:", e);
+        }
 
         if (userRole) {
           // 4. Force browser redirection to the dashboard
           navigate.push(redirectByRole(userRole));
         } else {
-          toast.error("Account authenticated, but role mapping is missing.");
-          setShowLoader(false);
+          // Fallback: hard reload to root. Since the browser now has the cookie,
+          // the server-side middleware (proxy.ts) will intercept the request
+          // and redirect the user to their respective dashboard immediately.
+          window.location.href = "/";
         }
       }
+
     } catch (err) {
       setShowLoader(false);
       const errorMessage = "Something went wrong on the server";
