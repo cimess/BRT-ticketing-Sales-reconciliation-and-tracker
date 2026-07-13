@@ -69,29 +69,29 @@ export async function getRoleFinancialSnapshot(
       });
       companyBalance = companyFloat ? Number(companyFloat.available_balance) : 0;
 
-      // 2. Total Top-ups (Credits to Company Account in range minus cancel debits)
-      const [ledgerTopUpAgg, ledgerTopUpCancelAgg] = await prisma.$transaction([
-        prisma.float_Ledger.aggregate({
-          where: {
-            account_id: "COMPANY_ACCOUNT",
-            entry_type: "CREDIT",
-            reference_type: "TOP_UP",
-            ...getDateRangeFilter(fromDate, toDate, "created_at"),
-            company_id: companyId,
-          },
-          _sum: { amount: true },
-        }),
-        prisma.float_Ledger.aggregate({
-          where: {
-            account_id: "COMPANY_ACCOUNT",
-            entry_type: "DEBIT",
-            reference_type: "TOP_UP_CANCEL",
-            ...getDateRangeFilter(fromDate, toDate, "created_at"),
-            company_id: companyId,
-          },
-          _sum: { amount: true },
-        })
-      ]);
+        // 2. Total Top-ups (Credits to Company Account in range minus cancel debits)
+    const [ledgerTopUpAgg, ledgerTopUpCancelAgg] = await Promise.all([
+      prisma.float_Ledger.aggregate({
+        where: {
+          account_id: "COMPANY_ACCOUNT",
+          entry_type: "CREDIT",
+          reference_type: "TOP_UP",
+          ...getDateRangeFilter(fromDate, toDate, "created_at"),
+          company_id: companyId,
+        },
+        _sum: { amount: true },
+      }),
+      prisma.float_Ledger.aggregate({
+        where: {
+          account_id: "COMPANY_ACCOUNT",
+          entry_type: "DEBIT",
+          reference_type: "TOP_UP_CANCEL",
+          ...getDateRangeFilter(fromDate, toDate, "created_at"),
+          company_id: companyId,
+        },
+        _sum: { amount: true },
+      })
+    ]);
       totalTopUp = Number(ledgerTopUpAgg._sum.amount ?? 0) - Number(ledgerTopUpCancelAgg._sum.amount ?? 0);
 
       // 3. Total Allocated (Debits to Company Account in range minus cancel credits)
@@ -172,7 +172,7 @@ export async function getRoleFinancialSnapshot(
 
 
       // 5. Ledger Reconciliations (All-Time Check to calculate Drift)
-      const [allTimeCreditAgg, allTimeDebitAgg] = await prisma.$transaction([
+      const [allTimeCreditAgg, allTimeDebitAgg] = await Promise.all([
         prisma.float_Ledger.aggregate({
           where: { account_id: "COMPANY_ACCOUNT", entry_type: "CREDIT", company_id: companyId },
           _sum: { amount: true },
@@ -425,36 +425,36 @@ export async function getRoleSalesSnapshot(
         ? { ticketer: { supervisor_id: userId } }
         : { submitted_by: userId };
 
-    const [confirmedAgg, pendingAgg, companyConfirmedAgg] = await prisma.$transaction([
-      prisma.remittance.aggregate({
-        where: {
-          ...submittedByFilter,
-          status: RemittanceStatus.CONFIRMED,
-          ...getDateRangeFilter(fromDate, toDate, "remittance_date"),
-          company_id:companyId,
-          
-        },
-        _sum: { amount: true },
-      }),
-      prisma.remittance.aggregate({
-        where: {
-          ...submittedByFilter,
-          status: RemittanceStatus.PENDING,
-          ...getDateRangeFilter(fromDate, toDate, "remittance_date"),
-          company_id:companyId,
-        },
-        _sum: { amount: true },
-      }),
-      prisma.remittance.aggregate({
-        where: {
-          ...submittedByFilter,
-          status: RemittanceStatus.CONFIRMED,
-          ...getDateRangeFilter(fromDate, toDate, "remittance_date"),
-          company_id:companyId,
-        },
-        _sum: { amount: true },
-      }),
-    ]);
+ const [confirmedAgg, pendingAgg, companyConfirmedAgg] = await Promise.all([
+  prisma.remittance.aggregate({
+    where: {
+      ...submittedByFilter,
+      status: RemittanceStatus.CONFIRMED,
+      ...getDateRangeFilter(fromDate, toDate, "remittance_date"),
+      company_id: companyId,
+    },
+    _sum: { amount: true },
+  }),
+  prisma.remittance.aggregate({
+    where: {
+      ...submittedByFilter,
+      status: RemittanceStatus.PENDING,
+      ...getDateRangeFilter(fromDate, toDate, "remittance_date"),
+      company_id: companyId,
+    },
+    _sum: { amount: true },
+  }),
+  prisma.remittance.aggregate({
+    where: {
+      ...submittedByFilter,
+      status: RemittanceStatus.CONFIRMED,
+      ...getDateRangeFilter(fromDate, toDate, "remittance_date"),
+      company_id: companyId,
+    },
+    _sum: { amount: true },
+  }),
+]);
+
 
     const totalRemitted = Number(confirmedAgg._sum.amount ?? 0);
     const pendingRemittance = Number(pendingAgg._sum.amount ?? 0);
@@ -541,12 +541,17 @@ export async function fetchTicketerPosSnapshot(
       ? { allocated_at: { gte: fromDate!, lte: toDate! } }
       : {};
 
-    // 4. Fetch session details with sales reports and allocations
+       // 4. Fetch session details with sales reports and allocations
     const pos = await prisma.posDeviceSession.findUnique({
       where: { id: pos_device_id, company_id: companyId },
       include: {
         device: { select: { name: true } },
-        sales_reports: { orderBy: { report_date: "desc" }, take: 1 },
+        // Include PENDING or VERIFIED sales reports (excludes CANCELLED/REJECTED)
+        sales_reports: { 
+          where: { status: { in: ["PENDING", "VERIFIED"] } }, 
+          orderBy: { report_date: "desc" }, 
+          take: 1 
+        },
         allocations_given: {
           where: { status: Float_Status.SUCCESS, ...dateFilter, company_id: companyId },
           include: {
@@ -561,7 +566,7 @@ export async function fetchTicketerPosSnapshot(
 
     if (!pos) throw new ApiError(404, "POS session not found");
 
-       // 1. Fetch all successful top-ups received during this session
+    // 1. Fetch all successful top-ups received during this session
     const topupAggregate = await prisma.float_allocations.aggregate({
       where: { pos_device_id, status: Float_Status.SUCCESS, ...dateFilter, company_id: companyId },
       _sum: { amount_allocated: true },
@@ -569,38 +574,30 @@ export async function fetchTicketerPosSnapshot(
 
     const totalTopUp = Number(topupAggregate._sum.amount_allocated ?? 0);
 
-    // 2. Fetch the actual opening balance from the ledger (Primary Source of Truth)
-    const openingLedger = await prisma.float_Ledger.findFirst({
-      where: {
-        posSession: pos_device_id,
-        reference_type: "SESSION_OPENING",
-        entry_type: "CREDIT",
-        company_id: companyId,
-      },
-      select: { amount: true }
-    });
+    // 2. Compute opening, closing, and effective balances cleanly
+    let effectiveOpening = 0;   // Initial float + Top-ups (total allocated)
+    let closingBalance = 0;     // Device float at the end of the session
 
-    let openingBalance = 0;
-    if (openingLedger) {
-      openingBalance = Number(openingLedger.amount);
+    if (pos.status === "ACTIVE") {
+      // For active sessions, current pos_float is the total float (includes top-ups)
+      effectiveOpening = Number(pos.pos_float);
+      closingBalance = Number(pos.pos_float); // Active device still has full float
     } else {
-      // Fallback: If no ledger entry exists, use the mathematical/sales-report calculation
-      if (pos.status === "ACTIVE") {
-        openingBalance = Math.max(0, Number(pos.pos_float) - totalTopUp);
+      const salesReport = pos.sales_reports[0];
+      if (salesReport) {
+        // Sales report opening balance already includes top-ups
+        effectiveOpening = Number(salesReport.opening_balance);
+        closingBalance = Number(salesReport.closing_balance);
       } else {
-        const salesReport = pos.sales_reports[0];
-        if (salesReport) {
-          openingBalance = Number(salesReport.opening_balance);
-        } else {
-          openingBalance = Math.max(0, Number(pos.pos_float) - totalTopUp);
-        }
+        effectiveOpening = Number(pos.pos_float);
+        closingBalance = Number(pos.pos_float);
       }
     }
 
-    // 3. Set the return metrics
-    const closingBalance = openingBalance; 
-    const effectiveOpening = openingBalance + totalTopUp;
-    const expectedRemittance = effectiveOpening;
+    // 3. Expected remittance is what was sold: effectiveOpening - closingBalance
+    // For ACTIVE sessions this will naturally compute to 0
+    const expectedRemittance = Math.max(0, effectiveOpening - closingBalance);
+
 
 
 

@@ -75,10 +75,28 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "/api/fines",
     "/api/events",
     "/api/notifications"
-
   ],
 };
 
+// Helper function to safely clear all session cookie variants from the response
+function clearInvalidCookies(req: NextRequest, response: NextResponse) {
+  const cookieNames = [
+    "__Secure-authjs.session-token",
+    "authjs.session-token",
+    "__Secure-next-auth.session-token",
+    "next-auth.session-token"
+  ];
+  cookieNames.forEach((name) => {
+    if (req.cookies.has(name)) {
+      response.cookies.delete(name);
+      response.cookies.delete({
+        name,
+        path: "/",
+        secure: name.startsWith("__Secure-"),
+      });
+    }
+  });
+}
 
 export async function proxy(req: NextRequest) {
   // 1. Dynamic cookie name detection (handles Secure/Dev & Authjs/NextAuth variations)
@@ -100,7 +118,6 @@ export async function proxy(req: NextRequest) {
   
   const path = req.nextUrl.pathname;
 
-
   // 2. PUBLIC/STATIC ALLOWLIST (Bypass checks for core Next.js processes & Auth endpoints)
   if (
     path.startsWith("/_next") ||
@@ -111,38 +128,50 @@ export async function proxy(req: NextRequest) {
     path === "/favicon.ico" ||
     path === "/unauthorized"
   ) {
-    return addSecurityHeaders(NextResponse.next());
+    const response = NextResponse.next();
+    // If decryption failed but the cookie exists, clear it to protect NextAuth APIs
+    if (!token && activeCookieName) {
+      clearInvalidCookies(req, response);
+    }
+    return addSecurityHeaders(response);
   }
 
   // 3. SIGNUP PAGE ACCESSIBILITY
   if (path === "/signup") {
     if (token) return redirectToDashboard(token.role as string, req);
-    return addSecurityHeaders(NextResponse.next());
+    const response = NextResponse.next();
+    if (activeCookieName) {
+      clearInvalidCookies(req, response);
+    }
+    return addSecurityHeaders(response);
   }
 
   // 4. ROOT ROUTE DIRECTORY (The Login Page)
   if (path === "/") {
     if (token) return redirectToDashboard(token.role as string, req);
-    return addSecurityHeaders(NextResponse.next());
+    const response = NextResponse.next();
+    if (activeCookieName) {
+      clearInvalidCookies(req, response);
+    }
+    return addSecurityHeaders(response);
   }
 
   // 5. AUTOMATED EXPULSION / EXPIRED TOKEN GUARD
   if (!token) {
     // If it's an API request, return a 401 JSON error instead of redirecting to login page
     if (path.startsWith("/api/")) {
-      return addSecurityHeaders(
-        NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+      const response = NextResponse.json(
+        { error: "Unauthorized" },
+        { status: 401 }
       );
+      if (activeCookieName) {
+        clearInvalidCookies(req, response);
+      }
+      return addSecurityHeaders(response);
     }
 
     const sessionExpiredResponse = NextResponse.redirect(new URL("/", req.url));
-    sessionExpiredResponse.cookies.delete("next-auth.session-token");
-    sessionExpiredResponse.cookies.delete({
-      name: "__Secure-next-auth.session-token",
-      secure: true,
-      path: "/",
-    });
-    sessionExpiredResponse.cookies.delete("authjs.session-token");
+    clearInvalidCookies(req, sessionExpiredResponse);
     return addSecurityHeaders(sessionExpiredResponse);
   }
 
@@ -171,7 +200,7 @@ export async function proxy(req: NextRequest) {
 
 // 7. DASHBOARD ROUTER HELPER
 function redirectToDashboard(role: string, req: NextRequest) {
-  if (role === "ADMIN" || role === "AUDITOR") return NextResponse.redirect(new URL("/dashboard/admin", req.url)); // 💡 Added Auditor
+  if (role === "ADMIN" || role === "AUDITOR") return NextResponse.redirect(new URL("/dashboard/admin", req.url));
   if (role === "SUPERVISOR") return NextResponse.redirect(new URL("/dashboard/supervisor", req.url));
   if (role === "TICKETER") return NextResponse.redirect(new URL("/dashboard/ticketer", req.url));
   return NextResponse.redirect(new URL("/unauthorized", req.url));

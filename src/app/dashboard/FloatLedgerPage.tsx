@@ -325,7 +325,7 @@ export default function FloatLedgerPage({
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-2 gap-4">
               <StatCard title="Allocations Count" value={String(posList?.length || 0)} icon={<ArrowRightLeft className="text-blue-300" />} iconBg="bg-blue-500/10" />
               <StatCard title="Top Up Received" value={formatMoney(ticketerSnapshot?.data?.totalTopUp || 0)} icon={<Coins className="text-emerald-300" />} iconBg="bg-emerald-500/10" />
-              <StatCard title="Opening Balance" value={formatMoney(ticketerSnapshot?.data?.closingBalance || 0)} icon={<Coins className="text-emerald-300" />} iconBg="bg-emerald-500/10" />
+              <StatCard title="Closing Balance" value={formatMoney(ticketerSnapshot?.data?.closingBalance || 0)} icon={<Coins className="text-emerald-300" />} iconBg="bg-emerald-500/10" />
               <StatCard title="Expected Amount" value={formatMoney(ticketerSnapshot?.data?.expectedRemittance || 0)} icon={<Coins className="text-emerald-300" />} iconBg="bg-emerald-500/10" />
             </div>
           ) : role === 'ADMIN' ? (
