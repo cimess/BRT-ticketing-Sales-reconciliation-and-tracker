@@ -192,7 +192,11 @@ export async function GET(req: NextRequest) {
           expected_amount: true,
         },
       }),
-    ]);
+    ]); // End of Promise.all
+
+    // Explicitly type the destructured chart arrays to restore type inference
+    const salesReports = chartSalesReports as Array<{ submitted_at: Date; total_sold: number }>;
+    const expectations = chartExpectations as Array<{ created_at: Date; expected_amount: number }>;
 
     const now = new Date();
 
@@ -207,11 +211,11 @@ export async function GET(req: NextRequest) {
       const hourEnd = new Date(d);
       hourEnd.setMinutes(59, 59, 999);
 
-      const sales = chartSalesReports
+      const sales = salesReports
         .filter((r) => r.submitted_at >= hourStart && r.submitted_at <= hourEnd)
         .reduce((sum, r) => sum + r.total_sold, 0);
 
-      const expected = chartExpectations
+      const expected = expectations
         .filter((e) => e.created_at >= hourStart && e.created_at <= hourEnd)
         .reduce((sum, e) => sum + e.expected_amount, 0);
 
@@ -230,11 +234,11 @@ export async function GET(req: NextRequest) {
       const dayEnd = new Date(d);
       dayEnd.setHours(23, 59, 59, 999);
 
-      const sales = chartSalesReports
+      const sales = salesReports
         .filter((r) => r.submitted_at >= dayStart && r.submitted_at <= dayEnd)
         .reduce((sum, r) => sum + r.total_sold, 0);
 
-      const expected = chartExpectations
+      const expected = expectations
         .filter((e) => e.created_at >= dayStart && e.created_at <= dayEnd)
         .reduce((sum, e) => sum + e.expected_amount, 0);
 
@@ -249,16 +253,17 @@ export async function GET(req: NextRequest) {
       const weekStart = new Date(now.getTime() - (w + 1) * 7 * 24 * 60 * 60 * 1000);
       const weekEnd = new Date(now.getTime() - w * 7 * 24 * 60 * 60 * 1000);
 
-      const sales = chartSalesReports
+      const sales = salesReports
         .filter((r) => r.submitted_at >= weekStart && r.submitted_at < weekEnd)
         .reduce((sum, r) => sum + r.total_sold, 0);
 
-      const expected = chartExpectations
+      const expected = expectations
         .filter((e) => e.created_at >= weekStart && e.created_at < weekEnd)
         .reduce((sum, e) => sum + e.expected_amount, 0);
 
       revenueData30d.push({ name: label, sales, expected });
     }
+
 
     const responsePayload = {
       success: true,
