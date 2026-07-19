@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 
 export async function GET() {
   try {
+    console.log("Health check", process.env.DATABASE_CA_CERT)
     // Run a fast, lightweight query to wake up/keep-alive the database
     await prisma.$queryRaw`SELECT 1`;
     return NextResponse.json(
