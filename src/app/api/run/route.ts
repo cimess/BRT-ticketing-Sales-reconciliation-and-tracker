@@ -1,7 +1,6 @@
 import { exec } from "child_process";
 import { NextResponse } from "next/server";
 import { promisify } from "util";
-import { ApiError } from "@/app/lib/ApiError";
 
 const execPromise = promisify(exec);
 
@@ -16,24 +15,14 @@ export async function GET() {
       stdout,
       stderr,
     });
-  } catch (err) {
-    if (err instanceof ApiError) {
-      const message = err.message;
-      const statusCode = err.statusCode;
-      return NextResponse.json(
-        {
-          status: "failed",
-          error: {message},
-          statusCode,
-
-        },
-        { status: 500 }
-      );
-    }
+  } catch (err: unknown) {
+    // Expose the actual shell execution error so we can read the Prisma engine output
     return NextResponse.json(
       {
         status: "failed",
-        error: "An unexpected error occurred",
+        error: (err as unknown as { message: string }).message || String(err),
+        stderr: (err as unknown as { stderr: string }).stderr || null,
+        stdout: (err as unknown as { stdout: string }).stdout || null,
       },
       { status: 500 }
     );
