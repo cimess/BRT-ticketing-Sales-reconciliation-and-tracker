@@ -9,7 +9,9 @@ const { Pool } = pg;
 const isProd = process.env.NODE_ENV === "production";
 
 const datasource =
-  process.env.DATABASE_URL ?? process.env.LOCAL_DATABASE_URL;
+  process.env.NODE_ENV === "production"
+    ? (process.env.DATABASE_URL ?? process.env.LOCAL_DATABASE_URL)
+    : (process.env.LOCAL_DATABASE_URL ?? process.env.DATABASE_URL);
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
