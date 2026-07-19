@@ -89,7 +89,7 @@ export default function TicketerOverview({ metrics, onRefresh, userId }: Tickete
       kpis={
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard
-            title="Active Session Float"
+            title="Active Total top up"
             value={formatMoney(metrics.availableFloat)}
             icon={<BriefcaseBusiness className="text-cyan-400" />}
             iconBg="bg-cyan-500/10"

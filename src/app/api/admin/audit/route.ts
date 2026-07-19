@@ -2,7 +2,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import {cacheGet, cacheSet} from "@/app/lib/redis";
+import { cacheGet, cacheSet } from "@/app/lib/redis";
 
 export async function GET(req: NextRequest) {
   try {
@@ -22,22 +22,20 @@ export async function GET(req: NextRequest) {
     const startDateParam = searchParams.get("startDate");
     const endDateParam = searchParams.get("endDate");
 
-        const cacheKey = `cache:audit:${company_id}:${startDateParam || "today"}:${endDateParam || "today"}`;
+    const cacheKey = `cache:audit:${company_id}:${startDateParam || "today"}:${endDateParam || "today"}`;
     const cachedAudit = await cacheGet(cacheKey);
     if (cachedAudit) {
       return NextResponse.json(cachedAudit);
     }
 
-
     let start: Date;
     let end: Date;
 
-    // Parse date boundaries
+    // Parse date boundaries for the table logs
     if (startDateParam) {
       start = new Date(startDateParam);
       start.setUTCHours(0, 0, 0, 0);
     } else {
-      // Default: Start of today (UTC)
       const today = new Date();
       today.setUTCHours(0, 0, 0, 0);
       start = today;
@@ -47,13 +45,17 @@ export async function GET(req: NextRequest) {
       end = new Date(endDateParam);
       end.setUTCHours(23, 59, 59, 999);
     } else {
-      // Default: End of today (UTC)
       const today = new Date();
       today.setUTCHours(23, 59, 59, 999);
       end = today;
     }
 
-    // Parallel fetch from all auditing tables
+    // Chart Time Boundaries: last 30 days
+    const chartStartDate = new Date();
+    chartStartDate.setUTCDate(chartStartDate.getUTCDate() - 30);
+    chartStartDate.setUTCHours(0, 0, 0, 0);
+
+    // Parallel fetch from all auditing & chart tables
     const [
       reconciliationReports,
       auditLogs,
@@ -61,6 +63,8 @@ export async function GET(req: NextRequest) {
       posDeviceSessions,
       fines,
       commissionEarnings,
+      chartSalesReports,
+      chartExpectations,
     ] = await Promise.all([
       // 1. Reconciliation Reports
       prisma.reconciliation_reports.findMany({
@@ -105,7 +109,7 @@ export async function GET(req: NextRequest) {
         },
         orderBy: { created_at: "desc" },
       }),
-      // 4. POS Device Sessions (Returned status indicating audit review)
+      // 4. POS Device Sessions
       prisma.posDeviceSession.findMany({
         where: {
           company_id,
@@ -127,7 +131,7 @@ export async function GET(req: NextRequest) {
         },
         orderBy: { assigned_at: "desc" },
       }),
-      // 5. Fines (Unpaid or Pending)
+      // 5. Fines
       prisma.fine.findMany({
         where: {
           company_id,
@@ -150,7 +154,7 @@ export async function GET(req: NextRequest) {
         },
         orderBy: { created_at: "desc" },
       }),
-      // 6. Commission Earnings (Salary reviews)
+      // 6. Commission Earnings
       prisma.commissionEarning.findMany({
         where: {
           company_id,
@@ -166,9 +170,97 @@ export async function GET(req: NextRequest) {
         },
         orderBy: { created_at: "desc" },
       }),
+      // 7. Sales Reports (For Chart)
+      prisma.salesReport.findMany({
+        where: {
+          company_id,
+          submitted_at: { gte: chartStartDate },
+        },
+        select: {
+          submitted_at: true,
+          total_sold: true,
+        },
+      }),
+      // 8. Remittance Expectations (For Chart)
+      prisma.remittanceExpectation.findMany({
+        where: {
+          company_id,
+          created_at: { gte: chartStartDate },
+        },
+        select: {
+          created_at: true,
+          expected_amount: true,
+        },
+      }),
     ]);
 
- const responsePayload = {
+    const now = new Date();
+
+    // --- 1D CHART (Last 24 Hours) ---
+    const revenueData1d = [];
+    for (let i = 23; i >= 0; i--) {
+      const d = new Date(now.getTime() - i * 60 * 60 * 1000);
+      const hourStr = `${String(d.getHours()).padStart(2, "0")}:00`;
+
+      const hourStart = new Date(d);
+      hourStart.setMinutes(0, 0, 0);
+      const hourEnd = new Date(d);
+      hourEnd.setMinutes(59, 59, 999);
+
+      const sales = chartSalesReports
+        .filter((r) => r.submitted_at >= hourStart && r.submitted_at <= hourEnd)
+        .reduce((sum, r) => sum + r.total_sold, 0);
+
+      const expected = chartExpectations
+        .filter((e) => e.created_at >= hourStart && e.created_at <= hourEnd)
+        .reduce((sum, e) => sum + e.expected_amount, 0);
+
+      revenueData1d.push({ name: hourStr, sales, expected });
+    }
+
+    // --- 7D CHART (Last 7 Days) ---
+    const revenueData7d = [];
+    const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+      const label = weekdays[d.getDay()];
+
+      const dayStart = new Date(d);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(d);
+      dayEnd.setHours(23, 59, 59, 999);
+
+      const sales = chartSalesReports
+        .filter((r) => r.submitted_at >= dayStart && r.submitted_at <= dayEnd)
+        .reduce((sum, r) => sum + r.total_sold, 0);
+
+      const expected = chartExpectations
+        .filter((e) => e.created_at >= dayStart && e.created_at <= dayEnd)
+        .reduce((sum, e) => sum + e.expected_amount, 0);
+
+      revenueData7d.push({ name: label, sales, expected });
+    }
+
+    // --- 30D CHART (Last 4 Weeks) ---
+    const revenueData30d = [];
+    for (let w = 3; w >= 0; w--) {
+      const label = `Week ${4 - w}`;
+
+      const weekStart = new Date(now.getTime() - (w + 1) * 7 * 24 * 60 * 60 * 1000);
+      const weekEnd = new Date(now.getTime() - w * 7 * 24 * 60 * 60 * 1000);
+
+      const sales = chartSalesReports
+        .filter((r) => r.submitted_at >= weekStart && r.submitted_at < weekEnd)
+        .reduce((sum, r) => sum + r.total_sold, 0);
+
+      const expected = chartExpectations
+        .filter((e) => e.created_at >= weekStart && e.created_at < weekEnd)
+        .reduce((sum, e) => sum + e.expected_amount, 0);
+
+      revenueData30d.push({ name: label, sales, expected });
+    }
+
+    const responsePayload = {
       success: true,
       data: {
         reconciliationReports,
@@ -177,8 +269,14 @@ export async function GET(req: NextRequest) {
         posDeviceSessions,
         fines,
         commissionEarnings,
+        charts: {
+          revenueData1d,
+          revenueData7d,
+          revenueData30d,
+        },
       },
     };
+
     await cacheSet(cacheKey, responsePayload, 60); // 1 min TTL
     return NextResponse.json(responsePayload);
   } catch (error) {

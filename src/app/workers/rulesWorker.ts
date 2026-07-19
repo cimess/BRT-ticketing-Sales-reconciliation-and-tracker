@@ -13,8 +13,16 @@ export async function runRuleEvaluation(payload: { event: string; reportId: stri
 
   const report = await prisma.salesReport.findFirst({
     where: { id: reportId, company_id: companyId },
-    include: { pos_device: true }
+    include: { 
+      pos_device: {
+        include: {
+          user: true,
+          device: true
+        }
+      } 
+    }
   });
+
   if (!report) return;
 
   // 1. Fetch active "Late Report Submission Policy" directly by Name
@@ -58,8 +66,13 @@ export async function runRuleEvaluation(payload: { event: string; reportId: stri
       issuerId = adminUser?.id || report.ticketer_id;
     }
 
-    const reportDateStr = new Date(report.report_date).toISOString().split('T')[0];
-    const fineReason = `Late Report Submission: POS Session ${report.pos_session_id} on ${reportDateStr}`;
+      const reportDateStr = new Date(report.report_date).toISOString().split('T')[0];
+    const ticketerName = report.pos_device?.user
+      ? `${report.pos_device.user.first_name} ${report.pos_device.user.last_name}`
+      : `Ticketer`;
+    const deviceName = report.pos_device?.device?.name || "POS Device";
+    const fineReason = `Late Report Submission: ${ticketerName} on ${deviceName} for ${reportDateStr}`;
+
 
     // Deduplicate to avoid repeating fines for the same report submission
     const existingFine = await prisma.fine.findFirst({
@@ -83,10 +96,14 @@ export async function runRuleEvaluation(payload: { event: string; reportId: stri
       });
       console.log(`Successfully issued automated fine for Late Report Submission to ticketer: ${report.ticketer_id}`);
       // Send automated fine notification
-      const formattedAmount = Number(rule.fine_amount).toLocaleString();
+        const formattedAmount = Number(rule.fine_amount).toLocaleString();
+      const ticketerName = report.pos_device?.user
+        ? `${report.pos_device.user.first_name} ${report.pos_device.user.last_name}`
+        : `Ticketer`;
+      const deviceName = report.pos_device?.device?.name || "POS Device";
       await sendNotification({
         companyId: companyId,
-        message: `System issued a late report submission fine of ₦${formattedAmount} for POS Session ${report.pos_session_id}.`,
+        message: `System issued a late report submission fine of ₦${formattedAmount} to ${ticketerName} on ${deviceName} for report date ${reportDateStr}.`,
         type: "FINE_ISSUED",
         referenceId: fine.id,
         target: {
@@ -94,6 +111,7 @@ export async function runRuleEvaluation(payload: { event: string; reportId: stri
           roles: ["ADMIN"],
         }
       });
+
     }
   }
 }

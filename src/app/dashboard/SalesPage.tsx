@@ -1115,7 +1115,7 @@ export default function SalesPage({
                     )}
 
                     {/* SUPERVISOR & ADMIN ACTION BOARD */}
-                    {(role === "SUPERVISOR" || role === "ADMIN") && (
+                    {(role === "SUPERVISOR") && (
                       <>
                         {(selected.status === "PENDING" || !selected.status) && (
                           <div className="space-y-4">
@@ -1130,8 +1130,8 @@ export default function SalesPage({
                                 className="mt-2 w-full rounded-lg border border-white/10 bg-black/60 px-3 py-2 font-sans text-xs text-white outline-none focus:border-white/20"
                               >
                                 <option value="">No Handover (Return Device to Pool)</option>
-                                {ticketers.map((t) => (
-                                  <option key={t.id} value={t.id}>
+                                {ticketers.map((t,index) => (
+                                  <option key={index} value={t.id}>
                                     {t.first_name} {t.last_name} ({t.email})
                                   </option>
                                 ))}

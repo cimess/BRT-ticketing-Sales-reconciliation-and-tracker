@@ -123,7 +123,7 @@ useEffect(() => {
       kpis={
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard
-            title="Team Circulating Float"
+            title="Team Total Pos TopUp"
             value={formatMoney(metrics.circulatingFloat ?? 0)}
             icon={<BriefcaseBusiness className="text-cyan-400" />}
             iconBg="bg-cyan-500/10"

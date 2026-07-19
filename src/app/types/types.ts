@@ -79,8 +79,11 @@ export interface FloatLedgerEntry {
   entry_type: 'CREDIT' | 'DEBIT'
   display_status?: string
   description: string
+  reference_type?: string
+  reference_id?: string
   created_at: string
 }
+
 export interface Fine {
   id: string
   defaulter_id: User["fullname"]

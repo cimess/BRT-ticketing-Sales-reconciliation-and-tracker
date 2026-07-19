@@ -37,8 +37,17 @@ model Company {
   ticketer_location_assignments Ticketer_Location_Assignment[]
   company_rules           CompanyRule[]
   report_tasks            ReportTask[]
+  top_up_bank             TopUpBank[]
   
 }
+
+model TopUpBank {
+  id                String   @id @default("TOPUP_BANK")
+  company_id        String
+  available_balance Decimal  @db.Decimal(18, 2)
+  company           Company  @relation(fields: [company_id], references: [id])
+}
+
 
 model User {
   id                   String              @id @default(cuid())
@@ -529,6 +538,7 @@ enum AccountType {
   TICKETER
   POS_DEVICE
   SUPERVISOR
+  TOPUP_BANK
 }
 
 enum Entry_Type {

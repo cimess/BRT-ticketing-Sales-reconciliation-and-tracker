@@ -90,7 +90,7 @@ export function OpsTopBar({
         };
       case "SUPERVISOR":
         return {
-          float: "Co. Float",
+          float: "Top Up",
           sales: "Team Sales",
           remit: "Pending Review",
         };
@@ -132,18 +132,7 @@ export function OpsTopBar({
             </div>
           </div>
         </div>
-{/*  metrics: {
-        availableFloat: financialSnapshot.data.companyBalance,
-        salesToday: salesSnapshot.data.totalSales,
-        pendingRemittances: salesSnapshot.data.pendingRemittance,
-        alertCount,
-        totalTopUps: financialSnapshot.data.totalTopUp,
-        totalAllocated: financialSnapshot.data.totalAllocated,
-        expectedRemittance: financialSnapshot.data.expectedRemittance,
-        totalRemitted: salesSnapshot.data.totalRemitted,
-        ...(financialSnapshot.data.ledgerReconciliation && {
-          ledgerReconciliation: financialSnapshot.data.ledgerReconciliation,
-        }), */}
+
 
         {/* metrics */}
         <div className="flex items-center gap-2 flex-1 justify-center overflow-x-auto no-scrollbar">

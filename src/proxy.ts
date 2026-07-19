@@ -23,7 +23,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "/api/fines",
     "/api/events",
     "/api/notifications",
-    "/api/reports"
+    "/api/reports",
   ],
   AUDITOR: [
     "/dashboard/admin",

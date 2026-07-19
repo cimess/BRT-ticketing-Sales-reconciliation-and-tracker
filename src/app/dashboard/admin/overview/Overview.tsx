@@ -65,9 +65,12 @@ export default function AdminOverview({ metrics, onRefresh }: AdminOverviewProps
 
   const [auditLogs, setAuditLogs] = useState<AuditReport[]>([]);
   const [loadingLogs, setLoadingLogs] = useState<boolean>(true);
+  // Replace lines 68-106 inside AdminOverview:
   const [chartRemittanceData, setChartRemittanceData] = useState<PieChartItem[] | undefined>(undefined);
+  const [revenueData1d, setRevenueData1d] = useState<ChartItem[] | undefined>(undefined);
+  const [revenueData7d, setRevenueData7d] = useState<ChartItem[] | undefined>(undefined);
+  const [revenueData30d, setRevenueData30d] = useState<ChartItem[] | undefined>(undefined);
 
-  // Fetch real audit trail reports and map details
   const fetchAuditLogs = async (): Promise<void> => {
     try {
       setLoadingLogs(true);
@@ -76,7 +79,6 @@ export default function AdminOverview({ metrics, onRefresh }: AdminOverviewProps
         const reports: AuditReport[] = res.data.data.reconciliationReports || [];
         setAuditLogs(reports);
 
-        // Process remittance data with type safety (zero 'any')
         const remittancesList: AuditRemittance[] = res.data.data.remittances || [];
         
         const matched = remittancesList
@@ -97,6 +99,12 @@ export default function AdminOverview({ metrics, onRefresh }: AdminOverviewProps
           { name: "Investigating", value: investigating },
           { name: "Variance", value: Number(metrics.alertCount) * 1000 },
         ]);
+
+        if (res.data.data.charts) {
+          setRevenueData1d(res.data.data.charts.revenueData1d);
+          setRevenueData7d(res.data.data.charts.revenueData7d);
+          setRevenueData30d(res.data.data.charts.revenueData30d);
+        }
       }
     } catch (err) {
       console.error("Error loading reconciliation reports:", err);
@@ -104,6 +112,7 @@ export default function AdminOverview({ metrics, onRefresh }: AdminOverviewProps
       setLoadingLogs(false);
     }
   };
+
 
   // Run on mount in a callback structure
   useEffect(() => {
@@ -208,13 +217,20 @@ export default function AdminOverview({ metrics, onRefresh }: AdminOverviewProps
         </button>
       }
       kpis={
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
           <StatCard
-            title="Company Float Account"
+            title="Company Float (Vault)"
             value={formatMoney(metrics.availableFloat)}
             icon={<BriefcaseBusiness className="text-cyan-400" />}
             iconBg="bg-cyan-500/10"
             subtitle="Available balance in treasury"
+          />
+          <StatCard
+            title="TopUp Bank (Operational)"
+            value={formatMoney(metrics.topUpBankBalance ?? 0)}
+            icon={<BriefcaseBusiness className="text-blue-400" />}
+            iconBg="bg-blue-500/10"
+            subtitle="Operational pool for ticketers"
           />
           <StatCard
             title="Today's Sales"
@@ -299,8 +315,14 @@ export default function AdminOverview({ metrics, onRefresh }: AdminOverviewProps
         </div>
       )}
 
-      {/* Analytics Charts with dynamic data passed */}
-      <OverviewChart remittanceData={chartRemittanceData} />
+       {/* Analytics Charts with dynamic data passed */}
+      <OverviewChart 
+        remittanceData={chartRemittanceData} 
+        revenueData1d={revenueData1d}
+        revenueData7d={revenueData7d}
+        revenueData30d={revenueData30d}
+      />
+
 
       {/* Reconciliation Audits List */}
       <div className="mt-6">

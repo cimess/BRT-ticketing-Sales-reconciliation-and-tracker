@@ -11,8 +11,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   try {
     const session = await auth();
     // Allow Supervisors or Admins to verify
-    if (!session?.user || !session.user.id || (session.user.role !== "ADMIN" && session.user.role !== "SUPERVISOR")) {
-      return NextResponse.json({ error: "Unauthorized. Supervisor/Admin action only." }, { status: 401 });
+    if (!session?.user || !session.user.id || session.user.role !== "SUPERVISOR") {
+      return NextResponse.json({ error: "Unauthorized. Supervisor action only." }, { status: 401 });
     }
     const { id: verifierId, company_id: companyId } = session.user;
     const { id: reportId } = await params;
@@ -229,11 +229,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
           reactivatedSession = await tx.posDeviceSession.update({
             where: { id: sharedSession.id },
             data: {
-              status: "ACTIVE",
+              status: "CLOSED",
               pos_float: report.closing_balance,
               user_id: sharedSession.user_id,
-              assigned_at: new Date(),
-              assigned_by: verifierId
+              unassigned_at: new Date(),
+              unassigned_by: verifierId,
+              unassigned_reason: "Shift closed and sales verified"
             }
           });
 

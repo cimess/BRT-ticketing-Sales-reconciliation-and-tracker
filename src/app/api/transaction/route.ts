@@ -86,9 +86,9 @@ export async function GET(req: NextRequest) {
     }
 
     // 4. Single-side transaction view for non-auditors (deduplicates double entries)
-    if (role !== "AUDITOR") {
-      where.account_type = { not: "COMPANY" };
-    }
+   if (role !== "AUDITOR" && role !== "ADMIN") {
+       where.account_type = { not: "COMPANY" };
+     }
 
     // Fetch ledger logs
     const entries = await prisma.float_Ledger.findMany({
@@ -132,6 +132,7 @@ export async function GET(req: NextRequest) {
       const isReversal = 
         e.reference_type === "ALLOCATION_CANCEL" || 
         e.reference_type === "FINE_PAYMENT_REVERSAL" || 
+         e.reference_type === "COMPANY_ADJUSTMENT_REVERSAL" ||
         (e.reference_type === "REMITTANCE" && e.entry_type === "DEBIT") ||
         (e.description || "").toLowerCase().includes("reversal");
 
@@ -151,6 +152,12 @@ export async function GET(req: NextRequest) {
         } else if (e.reference_type === "FINE_PAYMENT_REVERSAL") {
           display_type = "DEBIT"; // Reversed fine payments are DEBITs
         }
+         } else if (e.reference_type === "COMPANY_DEPOSIT") {
+          display_type = "CREDIT";
+        } else if (e.reference_type === "COMPANY_WITHDRAWAL" || e.reference_type === "COMPANY_EXPENSE") {
+          display_type = "DEBIT";
+        } else if (e.reference_type === "COMPANY_ADJUSTMENT_REVERSAL") {
+          display_type = e.entry_type;
       } else if (role === "TICKETER") {
         // Ticketer perspective
         if (e.reference_type === "ALLOCATION") {
@@ -200,6 +207,8 @@ export async function GET(req: NextRequest) {
         entry_type: display_type,
         display_status,
         description: e.description || "",
+        reference_type: e.reference_type,
+        reference_id: e.reference_id,
         created_at: e.created_at.toISOString()
       };
     });

@@ -121,11 +121,11 @@ export async function POST(req: NextRequest) {
       }
     });
         // Send Notification
-    const issuerName = session.user.name || "System";
+      const issuerName = session.user.name || "System";
     const formattedAmount = Number(amount).toLocaleString();
     await sendNotification({
       companyId: company_id,
-      message: "You have been issued a fine of ₦${formattedAmount}",
+      message: `You have been issued a fine of ₦${formattedAmount}.`,
       type: "FINE_ISSUED",
       referenceId: fine.id,
       target: {
@@ -133,6 +133,7 @@ export async function POST(req: NextRequest) {
         roles: ["ADMIN"],
       }
     });
+
 
     await cacheInvalidate(`cache:fines:${company_id}:*`);
     return NextResponse.json({ success: true, fine });

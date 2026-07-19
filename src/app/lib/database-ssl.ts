@@ -8,7 +8,7 @@ export type DatabaseSSLConfig =
       ca?: string;
     };
 
-const useSSL = process.env.DATABASE_SSL === "true";
+const useSSL = process.env.DATABASE_URL || process.env.DATABASE_SSL === "true";
 
 let sslConfig: DatabaseSSLConfig = false;
 

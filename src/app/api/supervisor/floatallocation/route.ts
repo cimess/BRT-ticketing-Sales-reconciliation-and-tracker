@@ -177,14 +177,15 @@ export async function POST(req: Request) {
     const allocationAmount = new Prisma.Decimal(amount);
     let targetUserId = "";
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Get and verify company float
-      const companyFloat = await tx.companyFloat.findUnique({
-        where: { id: "COMPANY_ACCOUNT", company_id }
+      // 1. Get and verify TopUp Bank
+      const topUpBank = await tx.topUpBank.findUnique({
+        where: { id: "TOPUP_BANK", company_id }
       });
 
-      if (!companyFloat || companyFloat.available_balance.lt(allocationAmount)) {
-        throw new ApiError(400, "Insufficient company float available to allocate.");
+      if (!topUpBank || topUpBank.available_balance.lt(allocationAmount)) {
+        throw new ApiError(400, "Insufficient operational float available in TopUp Bank. Please request Admin to top up.");
       }
+
 
       let activeSessionId = posSessionId;
        targetUserId = "";
@@ -366,15 +367,16 @@ export async function POST(req: Request) {
         targetUserId = posSession.user_id;
       }
 
-      // 2. Decrement Company Float
-      const updatedCompanyFloat = await tx.companyFloat.update({
-        where: { id: "COMPANY_ACCOUNT", company_id },
+      // 2. Decrement TopUp Bank
+      const updatedTopUpBank = await tx.topUpBank.update({
+        where: { id: "TOPUP_BANK", company_id },
         data: {
           available_balance: {
             decrement: allocationAmount
           }
         }
       });
+
 
       // 3. Increment POS session float
       await tx.posDeviceSession.update({
@@ -424,12 +426,12 @@ export async function POST(req: Request) {
         });
       }
 
-      // 6. Create Debit entry in Company Ledger
+      // 6. Create Debit entry in TopUp Bank Ledger
       await tx.float_Ledger.create({
         data: {
           company_id,
-          account_id: "COMPANY_ACCOUNT",
-          account_type: "COMPANY",
+          account_id: "TOPUP_BANK",
+          account_type: "TOPUP_BANK",
           amount: allocationAmount,
           entry_type: "DEBIT",
           reference_type: "ALLOCATION",
@@ -437,6 +439,7 @@ export async function POST(req: Request) {
           description: `Float allocated to POS session ${activeSessionId} by Supervisor`
         }
       });
+
 
       // 7. Create Credit entry in POS Ledger
       await tx.float_Ledger.create({
@@ -455,8 +458,9 @@ export async function POST(req: Request) {
 
       return {
         allocation,
-        availableCompanyBalance: Number(updatedCompanyFloat.available_balance)
+        availableCompanyBalance: Number(updatedTopUpBank.available_balance)
       };
+
     });
 
     await sendNotification({

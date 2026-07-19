@@ -77,6 +77,16 @@ export default async function register(body: RegisterBody) {
                         available_balance: 0.00
                     }
                 });
+
+                // Initialize the TopUpBank record with 0 balance for the company
+                await tx.topUpBank.create({
+                    data: {
+                        id: "TOPUP_BANK",
+                        company_id: company.id,
+                        available_balance: 0.00
+                    }
+                });
+
             }
             targetCompanyId = company.id;
         } else {

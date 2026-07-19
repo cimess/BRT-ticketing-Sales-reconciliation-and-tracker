@@ -84,15 +84,16 @@ export async function PATCH(
         }
       });
 
-      // 7. Refund the float back to the Company Vault
-      await tx.companyFloat.update({
-        where: { id: "COMPANY_ACCOUNT", company_id },
+      // 7. Refund the float back to the TopUp Bank
+      await tx.topUpBank.update({
+        where: { id: "TOPUP_BANK", company_id },
         data: {
           available_balance: {
             increment: allocation.amount_allocated
           }
         }
       });
+
 
       // 8. Adjust or delete the POS session expectation
       const expectation = await tx.remittanceExpectation.findUnique({
@@ -133,19 +134,20 @@ export async function PATCH(
         }
       });
 
-      // B) Credit entry on Company Account to return float
+      // B) Credit entry on TopUp Bank to return float
       await tx.float_Ledger.create({
         data: {
           company_id,
-          account_id: "COMPANY_ACCOUNT",
-          account_type: "COMPANY",
+          account_id: "TOPUP_BANK",
+          account_type: "TOPUP_BANK",
           amount: allocation.amount_allocated,
           entry_type: "CREDIT",
           reference_type: "ALLOCATION_CANCEL",
           reference_id: allocationId,
-          description: `Float allocation to POS session reversed by ${session.user.role}`
+          description: `Float allocation to POS session reversed by ${session.user.role} and returned to TopUp Bank`
         }
       });
+
 
       // 10. Record in Audit Log
       await tx.auditLog.create({

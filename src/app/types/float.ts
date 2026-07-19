@@ -16,6 +16,7 @@ export interface RoleFinancialSnapshot {
   data: {
     role: string;
     companyBalance: number;
+    topUpBankBalance: number;
     totalTopUp?: number;
     totalAllocated?: number;
     expectedRemittance?: number;

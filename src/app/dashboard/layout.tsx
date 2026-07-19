@@ -23,7 +23,8 @@ export interface DashboardMetrics {
   totalRemitted?: number;
   companyRemitted?: number;  
   circulatingFloat?: number; 
-  supervisorCash?: number;   
+  supervisorCash?: number; 
+  topUpBankBalance?: number;  
   ledgerReconciliation?: {
     totalCredits: number;
     totalDebits: number;

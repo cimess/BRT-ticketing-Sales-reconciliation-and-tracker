@@ -83,7 +83,9 @@ export async function GET(req: NextRequest) {
         pos_device: {
           include: {
             device: { select: { name: true } },
-            allocations_given: { select: { amount_allocated: true } }
+            allocations_given: { where :{
+              status:"SUCCESS"},
+            select: { amount_allocated:true} }
           }
         },
         ticketer: { select: { first_name: true, last_name: true } }
@@ -367,13 +369,21 @@ export async function POST(req: NextRequest) {
           after_state: newReport as unknown as Prisma.InputJsonValue
         }
       });
+     const session = await tx.posDeviceSession.findUnique({
+        where: { id: posSessionId },
+       include:{
+        device:{
+          select:{name:true}
+        }
+       }
+      });
 
-      return newReport;
+      return {newReport,session};
     });
 
         const jobPayload = {
       event: "ON_REPORT_SUBMISSION",
-      reportId: report.id, 
+      reportId: report.newReport.id, 
       companyId: company_id
     };
 
@@ -383,13 +393,14 @@ export async function POST(req: NextRequest) {
       // Synchronous fallback
       await runRuleEvaluation(jobPayload);
     }
+    
     // Send Notification to supervisor and admin
     const ticketerName = session.user.name || "A Ticketer";
     await sendNotification({
       companyId: company_id,
-      message: `${ticketerName} submitted a sales report of ₦${soldVal.toLocaleString()} for session ${posSessionId}.`,
+      message: `${ticketerName} submitted a sales report of ₦${soldVal.toLocaleString()} for pos device ${report.session?.device.name}.`,
       type: "SALE_CREATED",
-      referenceId: report.id,
+      referenceId: report.newReport.id,
       target: {
         roles: ["ADMIN"],
         supervisorOfUserId: ticketerId,

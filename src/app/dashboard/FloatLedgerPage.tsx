@@ -15,6 +15,7 @@ import Calender from '@/components/Calender';
 import { TopUpSource, TicketerPosSnapshot } from '@/types/float';
 import { useDashboard } from '@/app/dashboard/layout';
 import axios from 'axios';
+import Loader from '../loading';
 
 interface ActiveSession {
   id: string;
@@ -109,7 +110,7 @@ export default function FloatLedgerPage({
   useEffect(() => {
     const handleSSE = (e: Event) => {
       const customEvent = e as CustomEvent;
-      if (customEvent.detail?.type === "TOPUP_CREATED"|| customEvent.detail?.type === "FLOAT_UPDATED") {
+      if (customEvent.detail?.type === "TOPUP_CREATED" || customEvent.detail?.type === "FLOAT_UPDATED") {
         if (onRefresh) onRefresh();
         fetchQuickDevices();
       }
@@ -140,6 +141,13 @@ export default function FloatLedgerPage({
 
   // Tab switcher for Admin
   const [activeTab, setActiveTab] = useState<'COMPANY' | 'POS'>('POS');
+
+  // Vault modal settings for Admin (Credit Vault & Record Expense)
+  const [vaultModalType, setVaultModalType] = useState<'CREDIT' | 'EXPENSE' | null>(null);
+  const [vaultAmount, setVaultAmount] = useState('');
+  const [vaultNote, setVaultNote] = useState('');
+  const [isSubmittingVault, setIsSubmittingVault] = useState(false);
+
 
   // Supervisor specific states
   const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([]);
@@ -246,6 +254,7 @@ export default function FloatLedgerPage({
     }
 
     try {
+    
       setIsSubmitting(true);
       const res = await api.post<{ success: boolean; message: string }>("/supervisor/floatallocation", {
         posSessionId: selectedSessionId,
@@ -275,6 +284,7 @@ export default function FloatLedgerPage({
       const res = await api.patch<{ success: boolean; message?: string }>(`/supervisor/floatallocation/${allocationId}/reverse`);
       if (res.data?.success) {
         toast.success("Float allocation reversed successfully!");
+        setSelectedDetailsFloat(null); 
         if (onRefresh) onRefresh();
         refreshMetrics();
       } else {
@@ -290,8 +300,56 @@ export default function FloatLedgerPage({
     }
   };
 
+  const handleVaultActionSubmit = async () => {
+    if (!vaultAmount || Number(vaultAmount) <= 0) {
+      toast.error("Please enter a valid amount");
+      return;
+    }
+    if (vaultModalType === 'EXPENSE' && !vaultNote.trim()) {
+      toast.error("Note is required to record an expense");
+      return;
+    }
+
+    try {
+      setIsSubmittingVault(true);
+      const url =
+        vaultModalType === 'CREDIT'
+          ? '/admin/float/company/credit'
+          : '/admin/float/company/expense';
+
+      const res = await api.post(url, {
+        amount: Number(vaultAmount),
+        note: vaultNote.trim() || undefined
+      });
+
+      if (res.data?.success) {
+        toast.success(res.data.message || "Action completed successfully");
+        setVaultModalType(null);
+        setVaultAmount('');
+        setVaultNote('');
+        if (onRefresh) onRefresh();
+        refreshMetrics();
+        // Dispatch event so other pages (Overview, etc.) update their statistics
+        window.dispatchEvent(new CustomEvent("sse", { detail: { type: "FLOAT_UPDATED" } }));
+      }
+    } catch (err) {
+      if (err instanceof axios.AxiosError) {
+        toast.error(err.response?.data?.message || err.response?.data?.error || "Action failed");
+      } else {
+        toast.error("Action failed");
+      }
+    } finally {
+      setIsSubmittingVault(false);
+    }
+  };
+
+
   if (isLoading) {
-    return <div className="text-slate-400 p-8 font-medium">Loading ledger records...</div>;
+    return (
+      <div className="flex items-center justify-center h-full w-full">
+        <Loader />
+      </div>
+    )
   }
   return (
     <>
@@ -310,16 +368,33 @@ export default function FloatLedgerPage({
                 { value: 'CANCELLED', label: 'cancel topup' },
               ]}
             />
+            {role === 'ADMIN' && (
+              <>
+                <button
+                  onClick={() => setVaultModalType('CREDIT')}
+                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 px-4 py-2.5 text-[11px] font-bold uppercase tracking-widest text-emerald-400 hover:bg-emerald-500/20 active:scale-95 transition-all"
+                >
+                  <Plus className="w-4 h-4" strokeWidth={1.5} /> Credit Vault
+                </button>
+                <button
+                  onClick={() => setVaultModalType('EXPENSE')}
+                  className="inline-flex items-center gap-2 rounded-xl bg-amber-500/10 border border-amber-500/20 px-4 py-2.5 text-[11px] font-bold uppercase tracking-widest text-amber-400 hover:bg-amber-500/20 active:scale-95 transition-all"
+                >
+                  <Plus className="w-4 h-4" strokeWidth={1.5} /> Record Expense
+                </button>
+              </>
+            )}
             {canAllocate && (
               <button
                 onClick={() => setOpen(true)}
-                className="inline-flex items-center gap-2 rounded-xl bg-white/3 border border-white/10 px-4 py-2.5 text-[11px] font-bold uppercase tracking-widest text-slate-300 hover:bg-white/6 hover:text-white transition-colors"
+                className="inline-flex items-center gap-2 rounded-xl bg-blue-500/10 border border-blue-500/20 px-4 py-2.5 text-[11px] font-bold uppercase tracking-widest text-blue-400 hover:bg-blue-500/20 hover:text-white transition-colors"
               >
-                <Plus className="w-4 h-4" strokeWidth={1.5} /> {role === 'SUPERVISOR' ? 'Allocate Top Up' : 'Add Top Up'}
+                <Plus className="w-4 h-4" strokeWidth={1.5} /> {role === 'SUPERVISOR' ? 'Allocate Float' : 'Add Top Up'}
               </button>
             )}
           </div>
         }
+
         kpis={
           role === 'TICKETER' ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-2 gap-4">
@@ -329,8 +404,9 @@ export default function FloatLedgerPage({
               <StatCard title="Expected Amount" value={formatMoney(ticketerSnapshot?.data?.expectedRemittance || 0)} icon={<Coins className="text-emerald-300" />} iconBg="bg-emerald-500/10" />
             </div>
           ) : role === 'ADMIN' ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
               <StatCard title="Available Float (Vault)" value={formatMoney(metrics.availableFloat || 0)} icon={<Coins className="text-emerald-300" />} iconBg="bg-emerald-500/10" />
+              <StatCard title="TopUp Bank (Operational)" value={formatMoney(metrics.topUpBankBalance || 0)} icon={<Coins className="text-blue-300" />} iconBg="bg-blue-500/10" />
               <StatCard title="Allocated (Today)" value={formatMoney(metrics.totalAllocated || 0)} icon={<Coins className="text-blue-300" />} iconBg="bg-blue-500/10" />
               <StatCard title="Remitted (Today)" value={formatMoney(metrics.companyRemitted || 0)} icon={<Coins className="text-emerald-300" />} iconBg="bg-emerald-500/10" />
               <StatCard title="Pos Total Float" value={formatMoney(metrics.circulatingFloat || 0)} icon={<Coins className="text-amber-300" />} iconBg="bg-amber-500/10" />
@@ -344,7 +420,7 @@ export default function FloatLedgerPage({
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-              <StatCard title="Available Float (Vault)" value={formatMoney(metrics.availableFloat || 0)} icon={<Coins className="text-emerald-300" />} iconBg="bg-emerald-500/10" />
+              <StatCard title="Top Up" value={formatMoney(metrics.availableFloat || 0)} icon={<Coins className="text-emerald-300" />} iconBg="bg-emerald-500/10" />
               <StatCard title="Allocated (Today)" value={formatMoney(metrics.totalAllocated || 0)} icon={<Coins className="text-blue-300" />} iconBg="bg-blue-500/10" />
               <StatCard title="Pending Remittance" value={formatMoney(metrics.pendingRemittances || 0)} icon={<Coins className="text-amber-300" />} iconBg="bg-amber-500/10" />
               <StatCard title="Outstanding (Ticketers)" value={formatMoney(metrics.circulatingFloat || 0)} icon={<Coins className="text-amber-300" />} iconBg="bg-amber-500/10" />
@@ -405,10 +481,10 @@ export default function FloatLedgerPage({
                   <div
                     key={device.id}
                     className={`rounded-2xl border p-4 transition-all relative ${isDeviceActive
-                        ? 'bg-blue-950/20 border-blue-500/30'
-                        : device.status === 'MAINTENANCE'
-                          ? 'bg-red-950/10 border-red-500/10 opacity-70'
-                          : 'bg-white/3 border-white/5'
+                      ? 'bg-blue-950/20 border-blue-500/30'
+                      : device.status === 'MAINTENANCE'
+                        ? 'bg-red-950/10 border-red-500/10 opacity-70'
+                        : 'bg-white/3 border-white/5'
                       }`}
                   >
                     <div className="flex justify-between items-start mb-3">
@@ -643,12 +719,12 @@ export default function FloatLedgerPage({
               </div>
 
               <div className="grid grid-cols-2 gap-4 pt-2">
-               { role === 'ADMIN' && <div>
+                {role === 'ADMIN' && <div>
                   <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest block">Allocation ID</label>
                   <span className="text-[10px] font-mono text-slate-400 mt-1 block break-all">{selectedDetailsFloat.id}</span>
                 </div>}
                 <div>
-               
+
                   <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest block">Timestamp</label>
                   <span className="text-xs text-slate-400 mt-1 block">{formatDateTime(selectedDetailsFloat.allocated_at)}</span>
                 </div>
@@ -668,13 +744,81 @@ export default function FloatLedgerPage({
 
 
             {/* Actions Section for Admins & Supervisors */}
-            {activeTab === 'POS' && (role === 'ADMIN' || role === 'SUPERVISOR') && selectedDetailsFloat.status === 'SUCCESS' && (
+            {activeTab === 'COMPANY' && role === 'ADMIN' && selectedDetailsFloat.status === 'SUCCESS' && (
               <button
-                onClick={() => {
+                onClick={async () => {
                   const id = selectedDetailsFloat.id;
                   setSelectedDetailsFloat(null);
-                  handleReverseAllocation(id);
+                  if (!window.confirm("Are you sure you want to reverse this top-up? This will return the top-up amount from the TopUp Bank to the Company Float.")) {
+                    return;
+                  }
+                  try {
+                    setReversingId(id);
+                    const res = await api.post("/admin/float/reversetopup", { id });
+                    if (res.data?.success) {
+                      toast.success(res.data.message || "Top-up reversed successfully!");
+                      if (onRefresh) onRefresh();
+                      refreshMetrics();
+                      window.dispatchEvent(new CustomEvent("sse", { detail: { type: "FLOAT_UPDATED" } }));
+                    } else {
+                      toast.error(res.data?.message || "Failed to reverse top-up");
+                    }
+                  } catch (err) {
+                    if (axios.isAxiosError(err)) {
+                      toast.error(err.response?.data?.message || err.response?.data?.error || "An error occurred");
+                    }
+                  } finally {
+                    setReversingId(null);
+                  }
                 }}
+                disabled={reversingId === selectedDetailsFloat.id}
+                className="w-full rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 py-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
+              >
+                <ArrowRightLeft className="size-4" />
+                {reversingId === selectedDetailsFloat.id ? 'Reversing...' : 'Reverse Top Up'}
+              </button>
+            )}
+
+                        {/* Actions Section for Admins & Supervisors */}
+            {activeTab === 'COMPANY' && role === 'ADMIN' && selectedDetailsFloat.status === 'SUCCESS' && (
+              <button
+                onClick={async () => {
+                  const id = selectedDetailsFloat.id;
+                  setSelectedDetailsFloat(null);
+                  if (!window.confirm("Are you sure you want to reverse this top-up? This will return the top-up amount from the TopUp Bank to the Company Float.")) {
+                    return;
+                  }
+                  try {
+                    setReversingId(id);
+                    const res = await api.post("/admin/float/reversetopup", { id });
+                    if (res.data?.success) {
+                      toast.success(res.data.message || "Top-up reversed successfully!");
+                      if (onRefresh) onRefresh();
+                      refreshMetrics();
+                      window.dispatchEvent(new CustomEvent("sse", { detail: { type: "FLOAT_UPDATED" } }));
+                    } else {
+                      toast.error(res.data?.message || "Failed to reverse top-up");
+                    }
+                  } catch (err) {
+                    if (axios.isAxiosError(err)) {
+                      toast.error(err.response?.data?.message || err.response?.data?.error || "An error occurred");
+                    }
+                  } finally {
+                    setReversingId(null);
+                  }
+                }}
+                disabled={reversingId === selectedDetailsFloat.id}
+                className="w-full rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 py-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
+              >
+                <ArrowRightLeft className="size-4" />
+                {reversingId === selectedDetailsFloat.id ? 'Reversing...' : 'Reverse Top Up'}
+              </button>
+            )}
+
+            {/* ADD THIS NEW BLOCK BELOW */}
+            {((role === 'SUPERVISOR') || (role === 'ADMIN' && activeTab === 'POS')) && selectedDetailsFloat.status === 'SUCCESS' && (
+              <button
+                onClick={() => handleReverseAllocation(selectedDetailsFloat.id)}
                 disabled={reversingId === selectedDetailsFloat.id}
                 className="w-full rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 py-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
               >
@@ -682,6 +826,8 @@ export default function FloatLedgerPage({
                 {reversingId === selectedDetailsFloat.id ? 'Reversing...' : 'Reverse Float Allocation'}
               </button>
             )}
+
+
           </div>
         )}
       </Drawer>
@@ -690,7 +836,8 @@ export default function FloatLedgerPage({
       <Drawer
         open={Boolean(open)}
         title={role === 'SUPERVISOR' ? 'Allocate Float to POS Session' : 'Add Top Up'}
-        subtitle={role === 'SUPERVISOR' ? 'Assign float directly to an active Ticketer POS session.' : 'Create a new operational top up to increment the company float.'}
+        subtitle={role === 'SUPERVISOR' ? 'Assign float directly to an active Ticketer POS session.' : 'Deploy operational top-up to the TopUp Bank from the Company Float.'}
+
         onClose={() => setOpen(false)}
       >
         {role === 'SUPERVISOR' ? (
@@ -803,6 +950,55 @@ export default function FloatLedgerPage({
           </div>
         )}
       </Drawer>
+
+            {/* DRAWER: Credit Vault / Record Expense */}
+      <Drawer
+        open={Boolean(vaultModalType)}
+        title={vaultModalType === 'CREDIT' ? 'Credit Company Float (Vault)' : 'Record Company Expense'}
+        subtitle={vaultModalType === 'CREDIT' ? 'Add funds directly to the master company vault.' : 'Deduct funds from the master vault to record business expenses.'}
+        onClose={() => setVaultModalType(null)}
+      >
+        <div className="glass-panel rounded-3xl border border-white/10 p-5 space-y-5">
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-slate-300">
+              Amount (₦)
+            </label>
+            <input
+              type="number"
+              className="w-full rounded-2xl bg-white/5 border border-white/10 px-4 py-3 text-sm text-slate-300 focus:outline-none"
+              value={vaultAmount}
+              onChange={(e) => setVaultAmount(e.target.value)}
+              placeholder="Enter amount"
+              min="1"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-slate-300">
+              {vaultModalType === 'EXPENSE' ? 'Expense Description (Required)' : 'Note / Reference (Optional)'}
+            </label>
+            <textarea
+              className="w-full rounded-2xl bg-white/5 border border-white/10 px-4 py-3 text-sm text-slate-300 focus:outline-none"
+              placeholder={vaultModalType === 'EXPENSE' ? 'E.g., Office internet subscription...' : 'Optional notes...'}
+              onChange={(e) => setVaultNote(e.target.value)}
+              value={vaultNote}
+            />
+          </div>
+
+          <button
+            disabled={isSubmittingVault || !vaultAmount || (vaultModalType === 'EXPENSE' && !vaultNote.trim())}
+            onClick={handleVaultActionSubmit}
+            className={`w-full rounded-2xl font-semibold py-3 transition-all ${
+              vaultModalType === 'CREDIT' 
+                ? 'bg-emerald-500 hover:bg-emerald-400 text-white disabled:bg-slate-700 disabled:text-slate-500' 
+                : 'bg-amber-500 hover:bg-amber-400 text-slate-950 disabled:bg-slate-700 disabled:text-slate-500'
+            }`}
+          >
+            {isSubmittingVault ? 'Processing...' : vaultModalType === 'CREDIT' ? 'Credit Vault' : 'Record Expense'}
+          </button>
+        </div>
+      </Drawer>
+
     </>
   );
 }

@@ -54,6 +54,7 @@ export async function getRoleFinancialSnapshot(
     let totalTopUp = 0;
     let totalAllocated = 0;
     let expectedRemittance = 0;
+    let topUpBankBalance = 0;
     let reconciliationData;
     let posSessionId;
     let circulatingFloat = 0;
@@ -68,6 +69,12 @@ export async function getRoleFinancialSnapshot(
         where: { id: "COMPANY_ACCOUNT", company_id: companyId },
       });
       companyBalance = companyFloat ? Number(companyFloat.available_balance) : 0;
+
+      // Get TopUp Bank balance (Operational Pool)
+      const topUpBank = await prisma.topUpBank.findUnique({
+        where: { id: "TOPUP_BANK", company_id: companyId },
+      });
+      topUpBankBalance = topUpBank ? Number(topUpBank.available_balance) : 0;
 
         // 2. Total Top-ups (Credits to Company Account in range minus cancel debits)
     const [ledgerTopUpAgg, ledgerTopUpCancelAgg] = await Promise.all([
@@ -262,11 +269,13 @@ export async function getRoleFinancialSnapshot(
 
 
 
-      // Available Company float (the pot they draw allocations from)
-      const companyFloat = await prisma.companyFloat.findUnique({
-        where: { id: "COMPANY_ACCOUNT", company_id: companyId },
+      // Available operational float (the pot they draw allocations from)
+      const topUpBank = await prisma.topUpBank.findUnique({
+        where: { id: "TOPUP_BANK", company_id: companyId },
       });
-      companyBalance = companyFloat ? Number(companyFloat.available_balance) : 0;
+      companyBalance = topUpBank ? Number(topUpBank.available_balance) : 0;
+      topUpBankBalance = companyBalance;
+
 
       // Supervisor does not receive top-ups directly
       totalTopUp = 0;
@@ -340,15 +349,20 @@ export async function getRoleFinancialSnapshot(
       });
       expectedRemittance = Number(expectationAgg._sum.expected_amount ?? 0);
 
-      // Fallback: If no expectations generated, expected = last closing balance + topup
+ // Fallback: If no expectations generated, compute from top-up and last report closing balance
       if (expectedRemittance === 0 && activeSession) {
         const lastReport = await prisma.salesReport.findFirst({
           where: { ticketer_id: userId, company_id: companyId },
           orderBy: { report_date: "desc" },
-
         });
-        const closingBalance = lastReport ? Number(lastReport.closing_balance) : 0;
-        expectedRemittance = closingBalance + totalTopUp;
+
+        if (lastReport) {
+          // Subtract the closing balance of the last report from the total topup
+          expectedRemittance = Math.max(0, totalTopUp - Number(lastReport.closing_balance));
+        } else {
+          // If there is no previous report, use the total topup
+          expectedRemittance = totalTopUp;
+        }
       }
     }
 
@@ -358,6 +372,7 @@ export async function getRoleFinancialSnapshot(
       data: {
         role,
         companyBalance,
+        topUpBankBalance,
         totalTopUp,
         totalAllocated,
         expectedRemittance,

@@ -95,6 +95,7 @@ export async function GET() {
         circulatingFloat: financialSnapshot.data.circulatingFloat || 0,
         supervisorCash: financialSnapshot.data.supervisorCash || 0,
         posSessionId: financialSnapshot.data.posSessionId || null,
+        topUpBankBalance: financialSnapshot.data.topUpBankBalance || 0,
         ...(financialSnapshot.data.ledgerReconciliation && {
           ledgerReconciliation: financialSnapshot.data.ledgerReconciliation,
         }),
