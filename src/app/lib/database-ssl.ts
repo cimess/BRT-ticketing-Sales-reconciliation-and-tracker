@@ -18,7 +18,7 @@ if (useSSL) {
 
   // Environment Variable
   if (process.env.DATABASE_CA_CERT) {
-    console.log("[Database] Using DATABASE_CA_CERT");
+    console.log("[Database] Using DATABASE_CA_CERT: ", process.env.DATABASE_CA_CERT);
 
     config.ca = process.env.DATABASE_CA_CERT.replace(/\\n/g, "\n");
   } else {

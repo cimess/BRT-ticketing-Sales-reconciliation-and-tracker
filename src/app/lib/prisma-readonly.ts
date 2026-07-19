@@ -8,8 +8,13 @@ const { Pool } = pg;
 
 const isProd = process.env.NODE_ENV === "production";
 
-const datasource =
+let datasource =
   process.env.DATABASE_URL ?? process.env.LOCAL_DATABASE_URL;
+
+// Prevent pg driver from throwing away our custom CA configuration by stripping sslmode query param
+if (datasource && sslConfig) {
+  datasource = datasource.replace(/[?&]sslmode=[^&]*/, "");
+}
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
