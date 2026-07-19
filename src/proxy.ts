@@ -126,6 +126,7 @@ export async function proxy(req: NextRequest) {
     path.startsWith("/api/verifyToken") ||
     path.startsWith("/api/regtoken") ||
     path.startsWith("/api/health") ||
+    path.startsWith("/api/run") ||
     path === "/favicon.ico" ||
     path === "/unauthorized"
   ) {
