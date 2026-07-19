@@ -7,8 +7,8 @@ const execPromise = promisify(exec);
 export async function GET() {
   try {
     // Run the migration command inside Vercel
-    const { stdout, stderr } = await execPromise("npx prisma migrate deploy");
-    
+    const { stdout, stderr } = await execPromise("HOME=/tmp node node_modules/prisma/build/index.js migrate deploy");
+
     return NextResponse.json({
       status: "success",
       message: "Migrations applied successfully!",
