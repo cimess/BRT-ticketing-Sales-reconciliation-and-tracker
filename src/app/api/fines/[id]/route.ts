@@ -5,7 +5,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { ApiError } from "@/app/lib/ApiError";
 import { checkSupervisorFinePermission } from "@/app/server/services/rules.service";
-import { Roles } from "@prisma/client";
+import { Fine, Roles } from "@prisma/client";
 import { sendNotification } from "@/app/server/services/notification.service";
 import { cacheInvalidate } from "@/app/lib/redis";
 
@@ -36,7 +36,7 @@ export async function PATCH(
         where: { id: fineId, company_id },
         include: {
           defaulter: {
-            select: { role: true, first_name: true, last_name: true }
+            select: { role: true, first_name: true, last_name: true,id:true }
           }
         }
       });
@@ -55,7 +55,7 @@ export async function PATCH(
         ? `${fine.defaulter.first_name} ${fine.defaulter.last_name}`
         : "Defaulter";
 
-      let updatedFine;
+      let updatedFine:Fine=fine;
 
       // 1. Offender declares that they have settled the fine
       if (action === "DECLARE_PAID") {
@@ -221,11 +221,14 @@ export async function PATCH(
         }
       });
 
-      return updatedFine;
+      return {
+        ...updatedFine,
+        defaulter: fine.defaulter
+      };
     });
 
     // Send Notification
-    if (result) {
+    if (result ) {
       let notifyMessage = "";
       let targetUserIds: string[] = [];
       let targetRoles: Roles[] = [];
