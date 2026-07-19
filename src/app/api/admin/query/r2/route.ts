@@ -1,25 +1,15 @@
 // src/app/api/admin/query/r2/route.ts
 import { NextResponse, NextRequest } from "next/server";
 import { auth } from "@/auth";
-import duckdb from "duckdb";
+import { DuckDBInstance, DuckDBConnection } from "@duckdb/node-api";
 
 // Types for DuckDB rows
 type DuckDbQueryResult = Record<string, string | number | boolean | null>[];
 
-// Helper to execute DuckDB query asynchronously using Promises
-function queryDuckDb(db: duckdb.Database, sql: string): Promise<DuckDbQueryResult> {
-  return new Promise((resolve, reject) => {
-    db.all(sql, (err, rows) => {
-      if (err) {
-        reject(err);
-      } else {
-        resolve(rows as DuckDbQueryResult);
-      }
-    });
-  });
-}
-
 export async function POST(req: NextRequest) {
+  let db: DuckDBInstance | null = null;
+  let connection: DuckDBConnection | null = null;
+
   try {
     const session = await auth();
     if (!session?.user || !session.user.id) {
@@ -64,8 +54,9 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    // Initialize in-memory DuckDB instance
-    const db = new duckdb.Database(":memory:");
+    // Initialize in-memory DuckDB instance and connection
+    db = await DuckDBInstance.create(":memory:");
+    connection = await db.connect();
 
     const accountId = process.env.R2_ACCOUNT_ID;
     const accessKeyId = process.env.R2_ACCESS_KEY_ID;
@@ -77,16 +68,16 @@ export async function POST(req: NextRequest) {
     }
 
     // Configure DuckDB S3/R2 Endpoint configurations
-    await queryDuckDb(db, "INSTALL httpfs;");
-    await queryDuckDb(db, "LOAD httpfs;");
-    await queryDuckDb(db, `SET s3_endpoint = '${accountId}.r2.cloudflarestorage.com';`);
-    await queryDuckDb(db, `SET s3_access_key_id = '${accessKeyId}';`);
-    await queryDuckDb(db, `SET s3_secret_access_key = '${secretAccessKey}';`);
-    await queryDuckDb(db, "SET s3_url_style = 'path';");
+    await connection.run("INSTALL httpfs;");
+    await connection.run("LOAD httpfs;");
+    await connection.run(`SET s3_endpoint = '${accountId}.r2.cloudflarestorage.com';`);
+    await connection.run(`SET s3_access_key_id = '${accessKeyId}';`);
+    await connection.run(`SET s3_secret_access_key = '${secretAccessKey}';`);
+    await connection.run("SET s3_url_style = 'path';");
 
     // Resource limits to prevent CPU/RAM exhaustion
-    await queryDuckDb(db, "SET max_memory = '512MB';"); // Caps query RAM allocation
-    await queryDuckDb(db, "SET threads = 1;"); // Enforces single-core execution to avoid blocking Next.js event loop
+    await connection.run("SET max_memory = '512MB';"); // Caps query RAM allocation
+    await connection.run("SET threads = 1;"); // Enforces single-core execution to avoid blocking Next.js event loop
 
     // Force limit 100 on execution to prevent server memory crashes
     const cleanSql = sanitized.replace(/;+$/, "");
@@ -98,8 +89,9 @@ export async function POST(req: NextRequest) {
       .replace(/\breports_csv\b/gi, `read_csv('s3://${bucketName}/reports/**/*.csv', auto_detect=true)`)
       .replace(/\breports_parquet\b/gi, `read_parquet('s3://${bucketName}/reports/**/*.parquet')`);
 
-    // Execute query
-    const results = await queryDuckDb(db, finalSql);
+    // Execute query using Promise API
+    const resultReader = await connection.run(finalSql);
+    const results = (await resultReader.getRowObjectsJS()) as DuckDbQueryResult;
 
     return NextResponse.json({ success: true, results });
   } catch (error: unknown) {
@@ -108,5 +100,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       error: err.message || "Failed to execute DuckDB query."
     }, { status: 500 });
+  } finally {
+    // Safely close connection and instance to prevent memory leaks
+    if (connection) {
+      connection.closeSync();
+    }
+    if (db) {
+      db.closeSync();
+    }
   }
 }

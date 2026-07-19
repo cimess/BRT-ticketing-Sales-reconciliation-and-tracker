@@ -11,7 +11,7 @@ const nextConfig: NextConfig = {
   /* config options here */
   allowedDevOrigins: ['192.168.0.197:3000', '192.168.0.197', process.env.NEXTAUTH_URL || "https://cimessinvest.com"],
 
-  serverExternalPackages: ["duckdb"],
+  serverExternalPackages: ["@duckdb/node-api"],
   experimental: {
     // Limits the entry files processed immediately upon boot
     preloadEntriesOnStart: false,
