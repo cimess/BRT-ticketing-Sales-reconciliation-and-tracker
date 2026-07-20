@@ -216,37 +216,7 @@ export default function CommissionPage() {
     };
   }, [session, userRole]);
 
-  // Run Payroll
-  const handleGenerateEarnings = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!startDate || !endDate) return;
 
-    try {
-      setGenerating(true);
-      const res = await api.get('/admin/commision-earnings', {
-        params: {
-          startDate,
-          endDate
-        }
-      });
-
-      if (res.data.error) throw new Error(res.data.error);
-
-      setEarnings(res.data.earnings || []);
-      setIsScenarioActive(true);
-      setShowGenerator(false);
-      toast("Scenario calculations compiled successfully!", { type: "success" });
-    } catch (err) {
-      if (err instanceof axios.AxiosError) {
-        const message = err.response?.data?.error || "Failed to calculate scenario.";
-        toast(message, { type: "error" });
-      } else {
-        toast("Failed to calculate scenario.", { type: "error" });
-      }
-    } finally {
-      setGenerating(false);
-    }
-  };
 
 
 
@@ -304,8 +274,8 @@ export default function CommissionPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             <StatCard title="Records" value={String(supervisorRows.length)} icon={<Wallet className="text-blue-300" />} iconBg="bg-blue-500/10" />
             <StatCard title="Net Total" value={formatMoney(totalNet)} icon={<Wallet className="text-emerald-300" />} iconBg="bg-emerald-500/10" />
-            <StatCard title="Ticketer Rule" value={ticketerRule ? `${ticketerRule.percentage}%` : 'Not Set'} icon={<Percent className="text-purple-300" />} iconBg="bg-purple-500/10" />
-            <StatCard title="Supervisor Rule" value={supervisorRule ? `${supervisorRule.percentage}%` : 'Not Set'} icon={<Percent className="text-amber-300" />} iconBg="bg-amber-500/10" />
+            <StatCard title="Ticketer Rule" value={ticketerRule?.percentage ? `${ticketerRule.percentage}%` : ticketerRule?.fixed_amount ? `${ticketerRule.fixed_amount}` : 'Not Set'} icon={<Percent className="text-purple-300" />} iconBg="bg-purple-500/10" />
+            <StatCard title="Supervisor Rule" value={supervisorRule?.percentage ? `${supervisorRule.percentage}%` : supervisorRule?.fixed_amount ? `${supervisorRule.fixed_amount}` : 'Not Set'} icon={<Percent className="text-amber-300" />} iconBg="bg-amber-500/10" />
           </div>
         }
       >
@@ -316,30 +286,7 @@ export default function CommissionPage() {
           </div>
         )}
 
-        {userRole === 'ADMIN' && (
-          <div className="flex flex-wrap gap-3 mb-6">
-            <button
-              onClick={() => setShowGenerator(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold rounded-xl transition-all"
-            >
-              <Calendar className="h-4 w-4" /> Run Payroll Scenario
-            </button>
-            {isScenarioActive && (
-              <button
-                onClick={() => {
-                  setStartDate('');
-                  setEndDate('');
-                  setIsScenarioActive(false);
-                  fetchData(); // Reloads the default live estimates
-                }}
-                className="flex items-center gap-2 px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 text-sm font-semibold rounded-xl transition-all"
-              >
-                Clear Scenario Filter
-              </button>
-            )}
-
-          </div>
-        )}
+        
 
              {/* COMMISSION STATEMENTS */}
         <div className="mb-8">
@@ -498,43 +445,7 @@ export default function CommissionPage() {
       </Drawer>
 
 
-      {/* MODAL: Payroll Generator */}
-      <Drawer
-        open={showGenerator}
-        title="Run Payroll Engine"
-        subtitle="Generate commission entries and offset outstanding fines"
-        onClose={() => setShowGenerator(false)}
-      >
-        <form onSubmit={handleGenerateEarnings} className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-slate-400 mb-2">Period Start Date</label>
-            <input
-              type="date"
-              required
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="w-full bg-[#0B0F19] border border-white/10 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-emerald-500"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-400 mb-2">Period End Date</label>
-            <input
-              type="date"
-              required
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="w-full bg-[#0B0F19] border border-white/10 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-emerald-500"
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={generating}
-            className="w-full py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl transition-all disabled:opacity-50"
-          >
-            {generating ? 'Compiling Statements...' : 'Compile & Generate Earnings'}
-          </button>
-        </form>
-      </Drawer>
+
 
 
     </>

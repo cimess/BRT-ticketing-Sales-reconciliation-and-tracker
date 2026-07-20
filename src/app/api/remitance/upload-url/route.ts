@@ -21,9 +21,13 @@ export async function POST(req: NextRequest) {
     const companyId = session.user.company_id;
     const cleanFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, "_");
     const uniqueId = crypto.randomUUID();
+
+       // Check if development or production
+    const isProd = process.env.NODE_ENV === "production" || process.env.MODE === "production";
+    const tempPrefix = isProd ? "tmp" : "dev_tmp";
     
     // Organize files by company id and suffix with random UUIDs to avoid name collision
-    const key = `receipts/${companyId}/${uniqueId}-${cleanFileName}`;
+    const key = `${tempPrefix}/${companyId}/${uniqueId}-${cleanFileName}`;
 
     const command = new PutObjectCommand({
       Bucket: R2_BUCKET_NAME,

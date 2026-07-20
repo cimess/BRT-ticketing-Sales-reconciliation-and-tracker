@@ -3,6 +3,7 @@ import { NextResponse, NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { sendNotification } from "@/app/server/services/notification.service";
+import { promoteR2Images } from "@/app/lib/r2";
 
 
 export async function POST(req: NextRequest) {
@@ -103,6 +104,7 @@ export async function POST(req: NextRequest) {
         ? "PENDING_SUPERVISOR_ACCEPTANCE"
         : "PENDING";
 
+        const finalImages = await promoteR2Images(Array.isArray(receipt_images) ? receipt_images : []);
       const newRemittance = await tx.remittance.create({
         data: {
           company_id,
@@ -114,7 +116,7 @@ export async function POST(req: NextRequest) {
           remittance_date: new Date(remittance_date),
           status: initialStatus,
           pos_session_id: activeSessionId,
-          receipt_images: Array.isArray(receipt_images) ? receipt_images : []
+          receipt_images: finalImages
         }
       });
 

@@ -1,6 +1,6 @@
 import register from "@/server/services/auth.service";
 import { registerSchema } from "@/schemas/auth.schema";
-import { AppError } from "@/server/services/auth.service";
+import  {ApiError} from "@/lib/ApiError"
 
 export async function POST(req: Request) {
 
@@ -28,8 +28,8 @@ export async function POST(req: Request) {
       user: res.user,
     });
   } catch (error) {
-    let errorMessage = error instanceof AppError ? error.message : "Something went wrong";
-    const statusCode = error instanceof AppError ? error.statusCode : 500;
+    let errorMessage = error instanceof ApiError ? error.message : "Something went wrong";
+    const statusCode = error instanceof ApiError ? error.statusCode : 500;
     if (statusCode === 500) {
 
       console.log(error, "this is the error message")

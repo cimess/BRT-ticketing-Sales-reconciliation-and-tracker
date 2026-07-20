@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { Roles } from "@prisma/client";
 import crypto from "crypto";
-import { AppError } from "./auth.service";
+import { ApiError } from "@/lib/ApiError";
 
 
 
@@ -19,10 +19,10 @@ export async function createREGToken({
     where: { id: issued_by,company_id:companyId },
   });
 
-  if (!issuer) throw new AppError("Issuer not found", 404);
+  if (!issuer) throw new ApiError(404,"Issuer not found");
 
   if (issuer.role !== Roles.ADMIN && issuer.role !== Roles.SUPERVISOR) {
-    throw new AppError("Not authorized to create token", 403);
+    throw new ApiError(403,"Not authorized to create token");
   }
 
   const expires_at = new Date(Date.now() + 60 * 60 * 1000);
@@ -71,10 +71,10 @@ export async function getTokens({
   companyId: string;
 }) {
   if (requester_role !== Roles.ADMIN && requester_role !== Roles.SUPERVISOR) {
-    throw new AppError("Not authorized", 403);
+    throw new ApiError(403,"Not authorized");
   }
   if(!companyId){
-    throw new AppError("Company ID is required", 400);
+    throw new ApiError(400,"Company ID is required");
   }
   const tokens = await prisma.registrationToken.findMany({
     where: {

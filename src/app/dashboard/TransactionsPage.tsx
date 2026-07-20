@@ -133,72 +133,7 @@ export default function TransactionsPage({ role }: TransactionsPageProps) {
     };
   }, [q, dateRange, loadTransactions]);
 
-  const handleVaultActionSubmit = async () => {
-    if (!actionAmount || Number(actionAmount) <= 0) {
-      toast.error("Please enter a valid amount");
-      return;
-    }
-    if (modalType === 'EXPENSE' && !actionNote.trim()) {
-      toast.error("Note is required to record an expense");
-      return;
-    }
 
-    try {
-      setIsSubmittingAction(true);
-      const url =
-        modalType === 'CREDIT' ? '/admin/float/company/credit' :
-        modalType === 'DEBIT' ? '/admin/float/company/debit' :
-        '/admin/float/company/expense';
-
-      const res = await api.post(url, {
-        amount: Number(actionAmount),
-        note: actionNote.trim() || undefined
-      });
-
-      if (res.data?.success) {
-        toast.success(res.data.message || "Action completed successfully");
-        setModalType(null);
-        setActionAmount('');
-        setActionNote('');
-        loadTransactions();
-        refreshMetrics();
-        window.dispatchEvent(new CustomEvent("sse", { detail: { type: "FLOAT_UPDATED" } }));
-      }
-    } catch (err) {
-      if (axios.isAxiosError(err)) {
-        toast.error(err.response?.data?.message || "Action failed");
-      } else {
-        toast.error("Action failed");
-      }
-    } finally {
-      setIsSubmittingAction(false);
-    }
-  };
-
-  const handleReverse = async (ledgerId: string) => {
-    if (!window.confirm("Are you sure you want to reverse this float adjustment?")) {
-      return;
-    }
-    try {
-      setReversing(true);
-      const res = await api.post("/admin/float/company/reverse", { ledgerId });
-      if (res.data?.success) {
-        toast.success(res.data.message || "Adjustment reversed successfully");
-        setSelectedDetailsTx(null);
-        loadTransactions();
-        refreshMetrics();
-        window.dispatchEvent(new CustomEvent("sse", { detail: { type: "FLOAT_UPDATED" } }));
-      }
-    } catch (err) {
-      if (axios.isAxiosError(err)) {
-        toast.error(err.response?.data?.message || "Reversal failed");
-      } else {
-        toast.error("Reversal failed");
-      }
-    } finally {
-      setReversing(false);
-    }
-  };
 
   const filteredRows = React.useMemo(() => {
     if (!q) return rows;
@@ -233,28 +168,7 @@ export default function TransactionsPage({ role }: TransactionsPageProps) {
                 { value: 'DEBIT', label: 'Debit' },
               ]}
             />
-            {role === 'ADMIN' && (
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setModalType('CREDIT')}
-                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-emerald-400 hover:bg-emerald-500/20 active:scale-95 transition-all"
-                >
-                  <Plus className="size-3.5" /> Credit Vault
-                </button>
-                <button
-                  onClick={() => setModalType('DEBIT')}
-                  className="inline-flex items-center gap-2 rounded-xl bg-rose-500/10 border border-rose-500/20 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-rose-400 hover:bg-rose-500/20 active:scale-95 transition-all"
-                >
-                  <Plus className="size-3.5" /> Debit Vault
-                </button>
-                <button
-                  onClick={() => setModalType('EXPENSE')}
-                  className="inline-flex items-center gap-2 rounded-xl bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-amber-400 hover:bg-amber-500/20 active:scale-95 transition-all"
-                >
-                  <Plus className="size-3.5" /> Record Expense
-                </button>
-              </div>
-            )}
+            
           </div>
         }
         kpis={
@@ -491,16 +405,7 @@ export default function TransactionsPage({ role }: TransactionsPageProps) {
               </div>
             )}
 
-            {canReverse && (
-              <button
-                onClick={() => handleReverse(selectedDetailsTx.id)}
-                disabled={reversing}
-                className="w-full rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 py-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 active:scale-95 transition-all mt-4"
-              >
-                <RotateCcw className="size-4" />
-                {reversing ? 'Reversing...' : 'Reverse Adjustment'}
-              </button>
-            )}
+          
           </div>
         )}
       </Drawer>
@@ -554,13 +459,7 @@ export default function TransactionsPage({ role }: TransactionsPageProps) {
             />
           </div>
 
-          <button
-            onClick={handleVaultActionSubmit}
-            disabled={isSubmittingAction}
-            className="w-full rounded-xl bg-blue-500 text-white font-bold uppercase tracking-wider py-3 text-xs active:scale-95 transition-all hover:bg-blue-600 disabled:opacity-50"
-          >
-            {isSubmittingAction ? 'Processing...' : 'Submit'}
-          </button>
+
         </div>
       </Drawer>
     </>

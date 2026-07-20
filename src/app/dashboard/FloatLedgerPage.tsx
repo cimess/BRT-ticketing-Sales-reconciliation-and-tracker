@@ -372,24 +372,26 @@ export default function FloatLedgerPage({
               <>
                 <button
                   onClick={() => setVaultModalType('CREDIT')}
-                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 px-4 py-2.5 text-[11px] font-bold uppercase tracking-widest text-emerald-400 hover:bg-emerald-500/20 active:scale-95 transition-all"
+                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 px-1 lg:px-4 py-2 lg:py-2.5 text-[8px] lg:text-[11px] font-bold uppercase tracking-widest text-emerald-400 hover:bg-emerald-500/20 active:scale-95 transition-all"
                 >
-                  <Plus className="w-4 h-4" strokeWidth={1.5} /> Credit Vault
+                  <Plus className="w-4 h-4 hidden lg:inline" strokeWidth={1.5} /> 
+                  <span className="">Credit Vault</span>
                 </button>
                 <button
                   onClick={() => setVaultModalType('EXPENSE')}
-                  className="inline-flex items-center gap-2 rounded-xl bg-amber-500/10 border border-amber-500/20 px-4 py-2.5 text-[11px] font-bold uppercase tracking-widest text-amber-400 hover:bg-amber-500/20 active:scale-95 transition-all"
+                  className="inline-flex items-center gap-2 rounded-xl bg-amber-500/10 border border-amber-500/20 px-1 lg:px-4 py-2 lg:py-2.5 text-[8px] lg:text-[11px] font-bold uppercase tracking-widest text-amber-400 hover:bg-amber-500/20 active:scale-95 transition-all"
                 >
-                  <Plus className="w-4 h-4" strokeWidth={1.5} /> Record Expense
+                  <Plus className="w-4 h-4 hidden lg:inline" strokeWidth={1.5} /> 
+                 <span className="">Record Expense</span> 
                 </button>
               </>
             )}
             {canAllocate && (
               <button
                 onClick={() => setOpen(true)}
-                className="inline-flex items-center gap-2 rounded-xl bg-blue-500/10 border border-blue-500/20 px-4 py-2.5 text-[11px] font-bold uppercase tracking-widest text-blue-400 hover:bg-blue-500/20 hover:text-white transition-colors"
+                className="inline-flex items-center gap-2 rounded-xl bg-blue-500/10 border border-blue-500/20 px-1 lg:px-4 py-2 lg:py-2.5 text-[8px] lg:text-[11px] font-bold uppercase tracking-widest text-blue-400 hover:bg-blue-500/20 hover:text-white transition-colors"
               >
-                <Plus className="w-4 h-4" strokeWidth={1.5} /> {role === 'SUPERVISOR' ? 'Allocate Float' : 'Add Top Up'}
+                <Plus className="w-4 h-4 hidden lg:inline" strokeWidth={1.5} /> <span className="">{role === 'SUPERVISOR' ? 'Allocate Float' : 'Add Top Up'}</span>
               </button>
             )}
           </div>

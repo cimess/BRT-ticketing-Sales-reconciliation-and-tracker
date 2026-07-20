@@ -170,7 +170,10 @@ const rolesToMap: Roles[] = ['TICKETER', 'SUPERVISOR', 'ADMIN', 'AUDITOR'];
                 }}
                 title="copy token"
               >
-                <span className="text-slate-300 text-xs font-mono">{token.token}</span>
+                <span className="text-slate-300 text-xs font-mono">{token.token}
+                  <p className="text-slate-500 text-xs text-center">{token.role}</p>
+                </span>
+                
                 <Copy className="size-3 text-slate-500" />
               </div>
             ))}

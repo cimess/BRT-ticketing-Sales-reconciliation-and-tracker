@@ -67,7 +67,7 @@ export async function PUT(req: Request) {
 
       // b. Update session status to RETURNED (preserving the remaining pos_float value)
       const updatedSession = await tx.posDeviceSession.update({
-        where: { id: sessionId, company_id: session.user.company_id },
+        where: { id: sessionId, company_id},
         data: {
           status: "RETURNED",
           unassigned_at: new Date(),
@@ -80,14 +80,14 @@ export async function PUT(req: Request) {
 
       // c. Release device back to INACTIVE status
       await tx.pos_devices.update({
-        where: { id: posSession.device_id, company_id: session.user.company_id },
+        where: { id: posSession.device_id, company_id},
         data: { status: "INACTIVE" },
       });
 
       // audit log for admin action
       await tx.auditLog.create({
         data: {
-          company_id: session.user.company_id,
+          company_id,
           user_id: session.user.id!,
           action: "UPDATE",
           entity_type: "POS_DEVICE",

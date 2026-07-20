@@ -18,7 +18,7 @@ model Company {
   // Relations
   users                   User[]
   registration_tokens     RegistrationToken[]
-  company_floats          CompanyFloat[]
+  company_floats          CompanyFloat?
   float_allocations       Float_allocations[]
   remittances             Remittance[]
   remittance_expectations RemittanceExpectation[]
@@ -37,15 +37,22 @@ model Company {
   ticketer_location_assignments Ticketer_Location_Assignment[]
   company_rules           CompanyRule[]
   report_tasks            ReportTask[]
-  top_up_bank             TopUpBank[]
+  top_up_bank             TopUpBank?
   
 }
 
 model TopUpBank {
-  id                String   @id @default("TOPUP_BANK")
-  company_id        String
+  id                String    @default("TOPUP_BANK")
+  company_id        String    @id
   available_balance Decimal  @db.Decimal(18, 2)
   company           Company  @relation(fields: [company_id], references: [id])
+}
+
+model CompanyFloat{
+  company_id           String    @id
+  id               String        @default("COMPANY_ACCOUNT")
+  available_balance Decimal      @db.Decimal(18, 2)
+  company              Company             @relation(fields: [company_id], references: [id])
 }
 
 
@@ -124,12 +131,7 @@ model TopUp{
   @@index([company_id, date_received])
 }
 
-model CompanyFloat{
-  company_id           String
-  id               String       @id @default("COMPANY_ACCOUNT")
-  available_balance Decimal      @db.Decimal(18, 2)
-  company              Company             @relation(fields: [company_id], references: [id])
-}
+
 
 model Float_allocations {
   id               String       @id @default(cuid())
@@ -339,7 +341,7 @@ model Commission_rules {
 
 model CompanyRule {
   id                String   @id @default(cuid())
-  name              String   @unique  
+  name              String     
   description       String?
 
   comparison_value  Float    // The threshold (e.g., 1000 for Naira, 24 for hours)
@@ -352,6 +354,7 @@ model CompanyRule {
   company_id        String
   company           Company  @relation(fields: [company_id], references: [id])
   @@index([company_id, name, is_active])
+  @@unique([name,company_id])
 }
 
 

@@ -1,16 +1,7 @@
 import bcrypt from "bcrypt"
 // import { sendVerificationEmail } from "@/workers/emailWorker";
 import {prisma} from "@/lib/prisma"
-
-// this was for handling errors since i dont want to download fastify/sensitive 
-// so this make me able to throw errors with status codes to add status code to throw new Error
-export class AppError extends Error {
-    statusCode: number;
-    constructor(message: string, statusCode: number) {
-        super(message);
-        this.statusCode = statusCode;
-    }
-}
+import { ApiError } from "@/lib/ApiError";
 
 
 
@@ -53,7 +44,7 @@ export default async function register(body: RegisterBody) {
         let regToken = null;
         let targetCompanyId = "";
         if(!companyCode||!token||!email||!password||!firstName||!lastName||!role){
-            throw new AppError("Invalid Request", 400);
+            throw new ApiError(400,"Invalid Request");
         }
         // Admin Registration using global token
         if (token === process.env.REGISTER_TOKEN && role === "ADMIN") {
@@ -70,24 +61,29 @@ export default async function register(body: RegisterBody) {
                         code: companyCode.toUpperCase()
                     }
                 });
-                // 💡 CRITICAL: Initialize the CompanyFloat record with 0 balance for the company
-                await tx.companyFloat.create({
-                    data: {
-                        company_id: company.id,
-                        available_balance: 0.00
-                    }
-                });
+                              // 💡 CRITICAL: Initialize the CompanyFloat record with 0 balance for the company
+               await tx.companyFloat.upsert({
+                   where: { company_id: company.id },
+                   create: {
+                       id: "COMPANY_ACCOUNT",
+                       company_id: company.id,
+                       available_balance: 0.00
+                   },
+                   update: {} // No-op if it already exists
+               });
 
-                // Initialize the TopUpBank record with 0 balance for the company
-                await tx.topUpBank.create({
-                    data: {
-                        id: "TOPUP_BANK",
-                        company_id: company.id,
-                        available_balance: 0.00
-                    }
-                });
-
+               // Initialize the TopUpBank record with 0 balance for the company
+               await tx.topUpBank.upsert({
+                   where: { company_id: company.id },
+                   create: {
+                       id: "TOPUP_BANK",
+                       company_id: company.id,
+                       available_balance: 0.00
+                   },
+                   update: {} // No-op if it already exists
+               });
             }
+
             targetCompanyId = company.id;
         } else {
             // Standard invite-based registration (Ticketer, Supervisor, Auditor)
@@ -96,26 +92,26 @@ export default async function register(body: RegisterBody) {
             });
             
             if (!company) {
-                throw new AppError("Company code not found. Please make sure the company code is correct.", 404);
+                throw new ApiError(404,"Company code not found. Please make sure the company code is correct.");
             }
             regToken = await tx.registrationToken.findUnique({
                 where: { token }
             });
             if (!regToken) {
-                throw new AppError("Invalid registration token", 401);
+                throw new ApiError(401,"Invalid registration token");
             }
             
             // Validate token is for the user-specified company
             if (regToken.company_id !== company.id) {
-                throw new AppError("Registration token does not match the provided company code", 400);
+                throw new ApiError(400,"Registration token does not match the provided company code");
             }
             
             if (regToken.is_used) {
-                throw new AppError("Registration token has been used", 401);
+                throw new ApiError(401,"Registration token has been used");
             }
             
             if (regToken.expires_at && regToken.expires_at < new Date()) {
-                throw new AppError("Registration token has expired", 401);
+                throw new ApiError(401,"Registration token has expired");
             }
             targetCompanyId = regToken.company_id;
         }
@@ -127,7 +123,7 @@ export default async function register(body: RegisterBody) {
             }
         });
         if (existingUser) {
-            throw new AppError("User already registered in this company. Please log in.", 400);
+            throw new ApiError(400,"User already registered in this company. Please log in.");
         }
         // Use the token if registering standard user
         if (regToken) {
@@ -158,7 +154,7 @@ export default async function register(body: RegisterBody) {
         return newUser;
     });
     if (!user) {
-        throw new AppError("User not registered", 500);
+        throw new ApiError(500,"User not registered");
     }
     return {
         success: true,
@@ -170,12 +166,12 @@ export default async function register(body: RegisterBody) {
         }
     };
 }
-// 3. Update the verifyRegToken function (around line 143):
+
 export async function verifyRegToken(body:{token:string,companyCode:string}) {
     const {token,companyCode} = body;  
     
     if(!token || !companyCode){
-        throw new AppError("Invalid Request", 400);
+        throw new ApiError(400,"Invalid Request");
     }
     // 💡 ADMIN global token verification: Bypasses check for pre-existing company
     if (token === process.env.REGISTER_TOKEN) {
@@ -192,7 +188,7 @@ export async function verifyRegToken(body:{token:string,companyCode:string}) {
     });
     
     if (!company) {
-        throw new AppError("Company not found", 404);
+        throw new ApiError(404,"Company not found");
     }
     const regToken = await prisma.registrationToken.findUnique({
         where: {
@@ -201,13 +197,15 @@ export async function verifyRegToken(body:{token:string,companyCode:string}) {
         }
     });
     if (!regToken) {
-        throw new AppError("Token not found", 404);
+        console.log("Token not found",company.id,company.code,token)
+        throw new ApiError(404,"Token not found");
     }
     if (regToken.is_used) {
-        throw new AppError("Token already used", 400);
+        
+        throw new ApiError(401,"Token already used");
     }
     if (regToken.expires_at && regToken.expires_at < new Date()) {
-        throw new AppError("Token expired", 400);
+        throw new ApiError(401,"Token expired");
     }
     return {
         success: true,
@@ -223,7 +221,7 @@ export async function verifyRegToken(body:{token:string,companyCode:string}) {
 //     const {email,companyCode} = body;
 
 //     if(!email || !companyCode){
-//         throw new AppError("Invalid Request", 400);
+//         throw new ApiError("Invalid Request", 400);
 //     }
 
 //         const company = await prisma.company.findUnique({
@@ -232,7 +230,7 @@ export async function verifyRegToken(body:{token:string,companyCode:string}) {
 //         }
 //     })
 //     if (!company) {
-//         throw new AppError("Company not found", 404)
+//         throw new ApiError("Company not found", 404)
 //     }
 
 //     const user = await prisma.user.findFirst({
@@ -275,14 +273,14 @@ export async function verifyRegToken(body:{token:string,companyCode:string}) {
 //         });
 
 //         if (!user) {
-//             throw new AppError("User not found", 404)
+//             throw new ApiError("User not found", 404)
 //         }
 
    
 
 //         if (user.verificationToken !== otp || !user.verificationTokenExpires ||
 //             user.verificationTokenExpires < new Date()) {
-//             throw new AppError("Invalid or expired verification code", 400)
+//             throw new ApiError("Invalid or expired verification code", 400)
 //         }
 
 //         await prisma.user.update({
@@ -299,7 +297,7 @@ export async function verifyRegToken(body:{token:string,companyCode:string}) {
 //             user: { email: user.email }
 //         };
 //     } catch (err) {
-//         if (err instanceof AppError) {
+//         if (err instanceof ApiError) {
 //             return { success: false, message: err.message, statusCode: err.statusCode };
 //         }
 //         return { success: false, message: "Internal server error", statusCode: 500 };

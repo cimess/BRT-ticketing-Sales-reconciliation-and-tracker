@@ -246,9 +246,9 @@ export default function LocationsPage({ role = 'TICKETER' }: { role?: string }) 
         // Trigger override dialog warning
         setConflictData({
           date: selectedAssignDate,
-          message: error.response?.data?.message || 'Error scheduling roster'
+          message: error.response?.data?.message || error.response?.data?.error ||'Error scheduling roster'
         });
-        toast.error(error.response?.data?.message || 'Error scheduling roster');
+        toast.error(error.response?.data?.message || error.response?.data?.error ||'Error scheduling roster');
       } else {
         toast.error('Error scheduling roster');
       }

@@ -30,6 +30,9 @@ export async function POST(req: Request) {
       errorMessage = "Something went wrong";
       console.log(errorMessage, "this is the error message")
     }
+    if(statusCode<500){
+      console.log(error instanceof ApiError && error.message)
+    }
     return Response.json({ success: false, message: errorMessage }, { status: statusCode });
   }
 }

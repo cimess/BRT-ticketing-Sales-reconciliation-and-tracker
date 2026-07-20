@@ -83,17 +83,35 @@ export async function POST(req: NextRequest) {
     const cleanSql = sanitized.replace(/;+$/, "");
     const queryWithLimit = `${cleanSql} LIMIT 100;`;
 
+          const isProd = process.env.NODE_ENV === "production" || process.env.MODE === "production";
+    const exportPrefix = isProd ? "db_exports" : "dev_db_exports";
+
     // Dynamic path utility replacing custom keys in query with direct S3 URL
-    // e.g. replacing 'reports_parquet' with 's3://bucket-name/reports/**/*.parquet'
     const finalSql = queryWithLimit
-      .replace(/\breports_csv\b/gi, `read_csv('s3://${bucketName}/reports/**/*.csv', auto_detect=true)`)
+      .replace(/\bdb_users\b/gi, `read_csv('s3://${bucketName}/${exportPrefix}/users.csv', auto_detect=true)`)
+      .replace(/\bdb_sales_reports\b/gi, `read_csv('s3://${bucketName}/${exportPrefix}/sales_reports.csv', auto_detect=true)`)
+      .replace(/\bdb_remittances\b/gi, `read_csv('s3://${bucketName}/${exportPrefix}/remittances.csv', auto_detect=true)`)
+      .replace(/\bdb_float_allocations\b/gi, `read_csv('s3://${bucketName}/${exportPrefix}/float_allocations.csv', auto_detect=true)`)
+      .replace(/\bdb_pos_device_sessions\b/gi, `read_csv('s3://${bucketName}/${exportPrefix}/pos_device_sessions.csv', auto_detect=true)`)
+      .replace(/\breports_csv\b/gi, `read_csv('s3://${bucketName}/reports/**/*.csv', union_by_name=true, auto_detect=true)`)
+      .replace(/\breports_monthly_sales\b/gi, `read_csv('s3://${bucketName}/reports/**/report_monthly_sales_*.csv', auto_detect=true)`)
+      .replace(/\breports_monthly_float\b/gi, `read_csv('s3://${bucketName}/reports/**/report_monthly_float_*.csv', auto_detect=true)`)
+      .replace(/\breports_location_sales\b/gi, `read_csv('s3://${bucketName}/reports/**/report_location_sales_*.csv', auto_detect=true)`)
       .replace(/\breports_parquet\b/gi, `read_parquet('s3://${bucketName}/reports/**/*.parquet')`);
 
     // Execute query using Promise API
     const resultReader = await connection.run(finalSql);
     const results = (await resultReader.getRowObjectsJS()) as DuckDbQueryResult;
 
-    return NextResponse.json({ success: true, results });
+        // Custom JSON serialization to handle BigInt safely
+    const jsonString = JSON.stringify({ success: true, results }, (key, value) =>
+      typeof value === "bigint" ? Number(value) : value
+    );
+
+    return new NextResponse(jsonString, {
+      headers: { "Content-Type": "application/json" },
+    });
+
   } catch (error: unknown) {
     const err = error as Error;
     console.error("DuckDB R2 Query Error:", err);

@@ -8,6 +8,7 @@ import { checkAndEscalateExpectations, checkSupervisorDepositViolations } from "
 import { checkSupervisorFinePermission } from "@/app/server/services/rules.service";
 import { sendNotification } from "@/app/server/services/notification.service";
 import { rulesQueue } from "@/lib/queue";
+import { promoteR2Images } from "@/app/lib/r2";
 
 
 
@@ -215,7 +216,7 @@ export async function POST(req: NextRequest) {
         }
 
         const body = await req.json();
-        const { expectationId, amount, method, payment_reference, supervisor_id } = body;
+        const { expectationId, amount, method, payment_reference, supervisor_id, receipt_images } = body;
 
         if (!expectationId || !amount || Number(amount) <= 0 || !method) {
             return NextResponse.json({ error: "Invalid parameters" }, { status: 400 });
@@ -281,7 +282,7 @@ export async function POST(req: NextRequest) {
                     receivedBySupId = null;
                 }
             }
-
+            const finalImages = await promoteR2Images(receipt_images || []);
 
             const newRemittance = await tx.remittance.create({
                 data: {
@@ -293,7 +294,8 @@ export async function POST(req: NextRequest) {
                     remittance_date: new Date(),
                     status: initialStatus,
                     pos_session_id: expectation.pos_session_id,
-                    received_by_supervisor_id: receivedBySupId
+                    received_by_supervisor_id: receivedBySupId,
+                    receipt_images: finalImages,
                 }
             });
 

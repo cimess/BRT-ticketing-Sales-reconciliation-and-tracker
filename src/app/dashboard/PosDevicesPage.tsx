@@ -887,7 +887,6 @@ export default function PosDevicesPage({
               className="w-full rounded-xl bg-gray-900 border border-white/10 px-4 py-2.5 text-sm text-white focus:outline-none focus:border-white/20"
             >
               <option value="INACTIVE">Inactive / Available</option>
-              <option value="ACTIVE">Active</option>
               <option value="MAINTENANCE">Maintenance</option>
             </select>
           </div>

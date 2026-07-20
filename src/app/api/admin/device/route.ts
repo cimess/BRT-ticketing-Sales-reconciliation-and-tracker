@@ -12,8 +12,8 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-     const companyId = session.user.company_id;
-    const cacheKey = `cache:devices:${companyId}`;
+     const company_id = session.user.company_id;
+    const cacheKey = `cache:devices:${company_id}`;
     const cachedDevices = await cacheGet(cacheKey);
     if (cachedDevices) {
       return NextResponse.json(cachedDevices);
@@ -22,12 +22,13 @@ export async function GET() {
 
     // Fetch all registered POS devices
     const devices = await prisma.pos_devices.findMany({
+      where:{company_id},
       orderBy: { created_at: "desc" },
     });
 
     // Fetch all POS session assignments
     const sessions = await prisma.posDeviceSession.findMany({
-      where: { company_id: session.user.company_id },
+      where: { company_id },
       include: {
         device: true,
         user: {
@@ -44,7 +45,7 @@ export async function GET() {
     });
 
     const activeSessions = await prisma.posDeviceSession.findMany({
-      where: { company_id: session.user.company_id, status: "ACTIVE" },
+      where: { company_id, status: "ACTIVE" },
       select: { user_id: true },
     });
     const activeUserIds = activeSessions.map((s: { user_id: string }) => s.user_id);
@@ -52,7 +53,7 @@ export async function GET() {
     const availableUsers = await prisma.user.findMany({
       where: {
         role: { in: ["TICKETER", "SUPERVISOR"] },
-        company_id: session.user.company_id,
+        company_id,
         id: { notIn: activeUserIds },
       },
       select: {
@@ -72,7 +73,7 @@ export async function GET() {
     });
 
     const supervisors = await prisma.user.findMany({
-      where: { id: { in: Array.from(supervisorIds) }, company_id: session.user.company_id },
+      where: { id: { in: Array.from(supervisorIds) }, company_id },
       select: { id: true, first_name: true, last_name: true },
     });
 

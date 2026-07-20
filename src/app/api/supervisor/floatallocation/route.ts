@@ -186,9 +186,57 @@ export async function POST(req: Request) {
         throw new ApiError(400, "Insufficient operational float available in TopUp Bank. Please request Admin to top up.");
       }
 
+           // Guard Check: Verify active location assignment and ensure sales aren't closed for today
+      const todayStart = new Date();
+      todayStart.setUTCHours(0, 0, 0, 0);
+
+      const todayEnd = new Date();
+      todayEnd.setUTCHours(23, 59, 59, 999);
+
+      const activeAssignment = await tx.ticketer_Location_Assignment.findFirst({
+        where: {
+          user_id: targetUserId,
+          company_id,
+          assigned_for: {
+            gte: todayStart,
+            lte: todayEnd,
+          }
+        },
+        include: { location: true }
+      });
+
+      if (!activeAssignment) {
+        throw new ApiError(
+          400, 
+          "Cannot allocate float: The ticketer has no location assigned for today."
+        );
+      }
+
+      const closedReport = await tx.salesReport.findFirst({
+        where: {
+          ticketer_id: targetUserId,
+          location_id: activeAssignment.location_id,
+          company_id,
+          report_day: {
+            gte: todayStart,
+            lte: todayEnd,
+          },
+          status: { in: ["PENDING", "VERIFIED"] }
+        }
+      });
+
+      if (closedReport) {
+        throw new ApiError(
+          400,
+          `Cannot allocate float: Sales for the assigned location (${activeAssignment.location.name}) have already been closed for today.`
+        );
+      }
+
+
+
 
       let activeSessionId = posSessionId;
-       targetUserId = "";
+      targetUserId = "";
 
       if (deviceId) {
         const device = await tx.pos_devices.findUnique({
@@ -211,15 +259,6 @@ export async function POST(req: Request) {
 
         if (!lastSession) {
           throw new ApiError(400, "Device has no assignment history. Assign manually first.");
-        }
-
-        const isSupervisorOwned =
-          session.user.role === "ADMIN" ||
-          lastSession.user.supervisor_id === session.user.id ||
-          lastSession.assigned_by === session.user.id;
-
-        if (!isSupervisorOwned) {
-          throw new ApiError(403, "You can only manage devices for ticketers under your supervision.");
         }
 
         if (device.status === "ACTIVE") {

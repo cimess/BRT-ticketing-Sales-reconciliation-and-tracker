@@ -23,6 +23,7 @@ import axios from 'axios';
 import { useDashboard } from './layout';
 import { useSession } from 'next-auth/react';
 import ReceiptViewerModal from '@/components/ReceiptViewerModal';
+import ReceiptUploader from '@/components/ReceiptUploader';
 
 
 
@@ -88,6 +89,9 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [paySupervisorId, setPaySupervisorId] = useState<string>('');
+  const [uploadedKeys, setUploadedKeys] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(false);
+
 
   const [supervisors, setSupervisors] = useState<User_Full_Audit[]>([]); // <-- ADD THIS
 
@@ -104,8 +108,8 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
   const [fineReason, setFineReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-const [viewerOpen, setViewerOpen] = useState(false);
-const [activeRemittanceId, setActiveRemittanceId] = useState<string | null>(null);
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [activeRemittanceId, setActiveRemittanceId] = useState<string | null>(null);
   // Place with your other useState declarations in ReconciliationPage.tsx
   const [supervisorHandovers, setSupervisorHandovers] = useState<ReconciliationRemittance[]>([]);
 
@@ -308,6 +312,7 @@ const [activeRemittanceId, setActiveRemittanceId] = useState<string | null>(null
         method: payMethod,
         payment_reference: payRef || undefined,
         supervisor_id: (payMethod === 'CASH' && userRole === 'TICKETER') ? paySupervisorId : undefined,
+        receipt_images: payMethod === 'TRANSFER' ? uploadedKeys : [],
       });
 
       if (res.data.success) {
@@ -316,6 +321,7 @@ const [activeRemittanceId, setActiveRemittanceId] = useState<string | null>(null
         setTimeout(() => {
           setSelectedExpectation(null);
           setActionSuccess(null);
+          setUploadedKeys([]);
           fetchReconciliationData();
         }, 1500);
       }
@@ -366,6 +372,9 @@ const [activeRemittanceId, setActiveRemittanceId] = useState<string | null>(null
       setActionLoading(false);
     }
   };
+
+
+
 
 
   const handleAcceptHandover = async (id: string, action: 'ACCEPT' | 'REJECT', customAmount?: number) => {
@@ -1024,7 +1033,7 @@ const [activeRemittanceId, setActiveRemittanceId] = useState<string | null>(null
         open={Boolean(selectedExpectation)}
         title="Reconcile Shortage"
         subtitle={selectedExpectation ? `User: ${selectedExpectation.user?.first_name || ''} ${selectedExpectation.user?.last_name || ''}` : undefined}
-        onClose={() => setSelectedExpectation(null)}
+        onClose={() => {setSelectedExpectation(null);   setUploadedKeys([]); setActionError(null); setActionSuccess(null);}}
       >
 
         {selectedExpectation && (
@@ -1104,19 +1113,31 @@ const [activeRemittanceId, setActiveRemittanceId] = useState<string | null>(null
                       </div>
                     )}
 
-                    {payMethod === 'TRANSFER' && (
-                      <div>
-                        <label className="block text-xs font-medium text-slate-400 mb-1">Payment Reference / Transaction ID</label>
-                        <input
-                          type="text"
-                          value={payRef}
-                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPayRef(e.target.value)}
-                          placeholder="e.g. TR-984028420"
-                          className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                                                           {payMethod === 'TRANSFER' && (
+                      <div className="mt-4 pt-4 border-t border-white/5 space-y-4">
+                        <div>
+                          <label className="block text-xs font-medium text-slate-400 mb-1">
+                            Payment Reference / Transaction ID
+                          </label>
+                          <input
+                            type="text"
+                            value={payRef}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPayRef(e.target.value)}
+                            placeholder="e.g. TR-984028420"
+                            className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                            
+                          />
+                        </div>
 
+                        <ReceiptUploader
+                          uploadedKeys={uploadedKeys}
+                          setUploadedKeys={setUploadedKeys}
+                          onUploadComplete={() => {}}
                         />
                       </div>
                     )}
+
+
                     <button
                       type="submit"
                       disabled={actionLoading}
@@ -1296,28 +1317,28 @@ const [activeRemittanceId, setActiveRemittanceId] = useState<string | null>(null
                     )}
 
 
-                                  </div>
+                  </div>
                 ),
               },
               ...(selectedRemittance.method !== 'CASH' && selectedRemittance.receipt_images && selectedRemittance.receipt_images.length > 0
                 ? [
-                    {
-                      title: 'Attachments',
-                      content: (
-                        <div className="pt-2">
-                          <button
-                            onClick={() => {
-                              setActiveRemittanceId(selectedRemittance.id);
-                              setViewerOpen(true);
-                            }}
-                            className="mt-2 inline-flex items-center gap-2 rounded-xl bg-cyan-500/10 border border-cyan-500/25 px-4 py-2.5 text-xs font-bold text-cyan-300 hover:bg-cyan-500/20 transition-all w-full justify-center"
-                          >
-                            View Receipt Images ({selectedRemittance.receipt_images.length})
-                          </button>
-                        </div>
-                      ),
-                    },
-                  ]
+                  {
+                    title: 'Attachments',
+                    content: (
+                      <div className="pt-2">
+                        <button
+                          onClick={() => {
+                            setActiveRemittanceId(selectedRemittance.id);
+                            setViewerOpen(true);
+                          }}
+                          className="mt-2 inline-flex items-center gap-2 rounded-xl bg-cyan-500/10 border border-cyan-500/25 px-4 py-2.5 text-xs font-bold text-cyan-300 hover:bg-cyan-500/20 transition-all w-full justify-center"
+                        >
+                          View Receipt Images ({selectedRemittance.receipt_images.length})
+                        </button>
+                      </div>
+                    ),
+                  },
+                ]
                 : []),
             ]}
           />
@@ -1391,8 +1412,8 @@ const [activeRemittanceId, setActiveRemittanceId] = useState<string | null>(null
           </button>
         </form>
       </Drawer>
-         {selectedRemittance?.method === 'TRANSFER' && (
-        <ReceiptViewerModal 
+      {selectedRemittance?.method === 'TRANSFER' && (
+        <ReceiptViewerModal
           isOpen={viewerOpen}
           onClose={() => {
             setViewerOpen(false);

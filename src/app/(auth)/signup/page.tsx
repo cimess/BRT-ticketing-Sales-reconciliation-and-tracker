@@ -37,6 +37,12 @@ export default function Register() {
     const [tokenMessage, setTokenMessage] = useState("")
     const [companyCode, setCompanyCode] = useState("")
     const [companyName, setCompanyName] = useState("")
+    const [mounted, setMounted] = useState(false);
+
+    useEffect(() => {
+        setTimeout(() => setMounted(true))
+    }, []);
+
 
     const navigate = useRouter();
 
@@ -66,21 +72,23 @@ export default function Register() {
         }
     }
     useEffect(() => {
-        if (token.length < 16) return
+        // Prevent execution/rendering on server-side or before component mounts
+        if (!mounted || token.length < 16) return;
 
 
-        const timeout = setTimeout(() => {
-            try {
-                handleVerifyToken(token, companyCode)
-            } catch (err) {
-                setTokenMessage("Network error||system error")
-                setRole("")
-            }
+        // 2. Wrap the API invocation in a safe callback for debouncing
+        const triggerVerification = () => {
+            handleVerifyToken(token, companyCode).catch(() => {
+                setTokenMessage("Network error||system error");
+                setRole("");
+            });
+        };
 
-        }, 800)
+        const timeout = setTimeout(triggerVerification, 800);
 
-        return () => clearTimeout(timeout)
-    }, [token])
+        return () => clearTimeout(timeout);
+    }, [token, companyCode, mounted]);
+
 
 
     const handleRegistration = async (e: React.FormEvent) => {
@@ -151,7 +159,7 @@ export default function Register() {
             return
         }
 
-        if(!address && role !== "ADMIN"){
+        if (!address && role !== "ADMIN") {
             toast.warning("Please enter your residential address")
             setMessage("Please enter your residential address")
             setShake(true)
@@ -344,7 +352,7 @@ export default function Register() {
 
                             </div>
 
-                             <div className="relative">
+                            <div className="relative">
                                 <input
                                     type="text"
                                     placeholder="Address"
@@ -367,7 +375,13 @@ export default function Register() {
               text-white px-5 py-3.5 outline-none focus:border-white/20 transition-all font-medium"
                                     value={token}
                                     onChange={(e) => {
-                                        setToken(e.target.value.trim());
+                                        const val = e.target.value.trim().toUpperCase();
+                                        setToken(val);
+                                        // Clear message/role immediately if token is deleted or reduced
+                                        if (val.length < 16) {
+                                            setTokenMessage("");
+                                            setRole("");
+                                        }
                                     }}
                                     onFocus={() => { setMessage("Enter your token") }}
                                 />
