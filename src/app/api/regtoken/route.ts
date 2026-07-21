@@ -36,14 +36,19 @@ export async function POST(req: Request) {
       token: result.token,
     });
   } catch (error) {
+    // 1. Log the error to Vercel console so you can see it in logs
+    console.error("POST /api/regtoken error:", error); 
     const statusCode = error instanceof ApiError ? error.statusCode : 500;
-    const message = error instanceof ApiError ? error.message : "Something went wrong";
-
+    // 2. Return the actual error message to the browser network response
+    const message = error instanceof ApiError 
+      ? error.message 
+      : (error instanceof Error && statusCode!==500? error.message : "Something went wrong");
     return Response.json(
       { success: false, message },
       { status: statusCode }
     );
   }
+
 }
 
 export async function GET(req: Request) {
