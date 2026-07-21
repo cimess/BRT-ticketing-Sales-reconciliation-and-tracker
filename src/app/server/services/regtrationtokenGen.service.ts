@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { Roles } from "@prisma/client";
+import { Roles,Prisma } from "@prisma/client";
 import crypto from "crypto";
 import { ApiError } from "@/lib/ApiError";
 
@@ -13,44 +13,53 @@ export async function createREGToken({
 }: {
   role: Roles;
   issued_by: string;
-  companyId:string
+  companyId: string
 }) {
   const issuer = await prisma.user.findUnique({
-    where: { id: issued_by,company_id:companyId },
+    where: { id: issued_by, company_id: companyId },
   });
 
-  if (!issuer) throw new ApiError(404,"Issuer not found");
+  if (!issuer) throw new ApiError(404, "Issuer not found");
 
   if (issuer.role !== Roles.ADMIN && issuer.role !== Roles.SUPERVISOR) {
-    throw new ApiError(403,"Not authorized to create token");
+    throw new ApiError(403, "Not authorized to create token");
   }
 
   const expires_at = new Date(Date.now() + 60 * 60 * 1000);
 
   let tokenRecord;
+  let attempts = 0;
+  const maxAttempts = 5;
 
   // retry-safe token generation
-  while (!tokenRecord) {
+  while (!tokenRecord && attempts < maxAttempts) {
     const token = crypto.randomBytes(8).toString("hex").toUpperCase();
-
     try {
       tokenRecord = await prisma.registrationToken.create({
         data: {
-          company_id:companyId,
+          company_id: companyId,
           token,
           role,
           expires_at,
           issued_by,
         },
       });
-
     } catch (e) {
-      // collision rare — retry
-      tokenRecord = null;
+      // Only retry if it is a unique key collision (Prisma code P2002)
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+        attempts++;
+        tokenRecord = null;
+      } else {
+        // Rethrow immediately for other errors (connection, schema, key violation)
+        throw e;
+      }
     }
+
   }
 
-  // optional: audit log here
+  if (!tokenRecord) {
+    throw new ApiError(500, "Failed to generate a unique registration token after maximum attempts");
+  }
 
   return {
     success: true,
@@ -58,6 +67,7 @@ export async function createREGToken({
     token: tokenRecord.token,
   };
 }
+
 
 export async function getTokens({
   companyId,
