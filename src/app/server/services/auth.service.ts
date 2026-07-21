@@ -63,7 +63,7 @@ export default async function register(body: RegisterBody) {
                 });
                               // 💡 CRITICAL: Initialize the CompanyFloat record with 0 balance for the company
                await tx.companyFloat.upsert({
-                   where: { company_id: company.id },
+                   where: { id:"COMPANY_ACCOUNT",company_id: company.id },
                    create: {
                        id: "COMPANY_ACCOUNT",
                        company_id: company.id,
@@ -74,7 +74,7 @@ export default async function register(body: RegisterBody) {
 
                // Initialize the TopUpBank record with 0 balance for the company
                await tx.topUpBank.upsert({
-                   where: { company_id: company.id },
+                   where: {id: "TOPUP_BANK",company_id: company.id },
                    create: {
                        id: "TOPUP_BANK",
                        company_id: company.id,
