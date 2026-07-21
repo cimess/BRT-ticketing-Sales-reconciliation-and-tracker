@@ -96,6 +96,11 @@ export default function PosDevicesPage({
   const [assignUserId, setAssignUserId] = useState('');
   const [returnReason, setReturnReason] = useState('');
   const [topupAmount, setTopupAmount] = useState('');
+  const [isAdding, setIsAdding] = useState(false);
+  const [isAssigning, setIsAssigning] = useState(false);
+  const [isReturning, setIsReturning] = useState(false);
+  const [isTopuping, setIsTopuping] = useState(false);
+
 
   const { refreshMetrics } = useDashboard();
 
@@ -131,13 +136,15 @@ export default function PosDevicesPage({
     setIsTopupOpen(true);
   };
 
-  // API Call: Register POS Device
+    // API Call: Register POS Device
   const handleAddDevice = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newDeviceName || !newDeviceSerial) {
       toast.error("All fields are required");
       return;
     }
+    if (isAdding) return; // Prevent double click
+    setIsAdding(true);
 
     try {
       const res = await api.post('/admin/device', {
@@ -159,6 +166,8 @@ export default function PosDevicesPage({
       } else {
         toast.error("Failed to add device");
       }
+    } finally {
+      setIsAdding(false); // Reset loading state
     }
   };
 
@@ -169,6 +178,9 @@ export default function PosDevicesPage({
       toast.error("Please select a user");
       return;
     }
+
+    if (isAssigning) return; // Prevent double click (Corrected from isAdding)
+    setIsAssigning(true); // Corrected from setIsAdding
     try {
       if (role !== 'SUPERVISOR') {
         return toast.error("You are not authorized to assign devices");
@@ -190,6 +202,8 @@ export default function PosDevicesPage({
       } else {
         toast.error("Failed to assign device");
       }
+    } finally {
+      setIsAssigning(false); // Reset loading state
     }
   };
 
@@ -202,6 +216,8 @@ export default function PosDevicesPage({
       toast.error("Active session not found for this device");
       return;
     }
+    if (isReturning) return; // Prevent double click
+    setIsReturning(true);
     try {
       const endpoint = role === 'SUPERVISOR' ? '/supervisor/device/assign' : '/admin/device/assign';
       const res = await api.put(endpoint, {
@@ -220,6 +236,8 @@ export default function PosDevicesPage({
       } else {
         toast.error("Failed to release device");
       }
+    } finally {
+      setIsReturning(false); // Reset loading state
     }
   };
 
@@ -230,6 +248,8 @@ export default function PosDevicesPage({
       toast.error("Please enter a valid amount");
       return;
     }
+    if (isTopuping) return; // Prevent double click
+    setIsTopuping(true);
 
     try {
       const res = await api.post('/supervisor/floatallocation', {
@@ -250,8 +270,11 @@ export default function PosDevicesPage({
       } else {
         toast.error("Failed to topup POS");
       }
+    } finally {
+      setIsTopuping(false); // Reset loading state
     }
   };
+
 
   // Column definitions for Device Events (Audit Trails)
   const columns: ColumnDef<PosDeviceSession>[] = [
@@ -535,7 +558,7 @@ export default function PosDevicesPage({
           {/* User's Session History */}
           <div className="space-y-3">
             <h3 className="text-slate-300 text-xs font-bold uppercase tracking-wider">My Terminal History</h3>
-            
+
             {/* Mobile View: Cards */}
             <div className="space-y-2 lg:hidden">
               {filteredEvents
@@ -711,7 +734,7 @@ export default function PosDevicesPage({
         <div className="space-y-8">
           <div className="space-y-3">
             <h3 className="text-slate-300 text-xs font-bold uppercase tracking-wider">Active POS Inventory</h3>
-            
+
             {/* Mobile View: Cards (visible on screens smaller than 'lg' for both roles) */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 lg:hidden">
               {filteredDevices
@@ -782,7 +805,7 @@ export default function PosDevicesPage({
 
           <div className="space-y-3">
             <h3 className="text-slate-300 text-xs font-bold uppercase tracking-wider">Device Session History</h3>
-            
+
             {/* Mobile View: Cards (visible on screens smaller than 'lg' for both roles) */}
             <div className="space-y-2 lg:hidden">
               {filteredEvents
@@ -901,10 +924,12 @@ export default function PosDevicesPage({
             </button>
             <button
               type="submit"
-              className="w-full rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-3 transition-all cursor-pointer text-sm"
+              disabled={isAdding}
+              className="w-full rounded-2xl bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-600 text-white font-semibold py-3 transition-all cursor-pointer text-sm"
             >
-              Add Device
+              {isAdding ? "Adding..." : "Add Device"}
             </button>
+
           </div>
         </form>
       </Drawer>
@@ -972,11 +997,12 @@ export default function PosDevicesPage({
               </button>
               <button
                 type="submit"
-                disabled={availableUsers.length === 0}
-                className="w-full rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 transition-all cursor-pointer disabled:bg-slate-800 disabled:text-slate-600 text-sm"
+                disabled={availableUsers.length === 0 || isAssigning}
+                className="w-full rounded-2xl bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 disabled:text-slate-600 text-white font-semibold py-3 transition-all cursor-pointer text-sm"
               >
-                Confirm Assignment
+                {isAssigning ? "Assigning..." : "Confirm Assignment"}
               </button>
+
             </div>
           </form>
         )}
@@ -1036,10 +1062,12 @@ export default function PosDevicesPage({
               </button>
               <button
                 type="submit"
-                className="w-full rounded-2xl bg-amber-600 hover:bg-amber-500 text-white font-semibold py-3 transition-all cursor-pointer text-sm"
+                disabled={isReturning}
+                className="w-full rounded-2xl bg-amber-600 hover:bg-amber-500 disabled:bg-slate-800 disabled:text-slate-600 text-white font-semibold py-3 transition-all cursor-pointer text-sm"
               >
-                Confirm Return
+                {isReturning ? "Returning..." : "Confirm Return"}
               </button>
+
             </div>
           </form>
         )}
@@ -1094,10 +1122,12 @@ export default function PosDevicesPage({
               </button>
               <button
                 type="submit"
-                className="w-full rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-3 transition-all cursor-pointer text-sm"
+                disabled={isTopuping}
+                className="w-full rounded-2xl bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-600 text-white font-semibold py-3 transition-all cursor-pointer text-sm"
               >
-                Submit Topup
+                {isTopuping ? "Submitting..." : "Submit Topup"}
               </button>
+
             </div>
           </form>
         )}
@@ -1121,10 +1151,10 @@ export default function PosDevicesPage({
                   </span>
                 </div>
                 <Badge variant={
-                  sessionDetails.status === 'ACTIVE' ? 'success' : 
-                  sessionDetails.status === 'CLOSED' ? 'neutral' : 
-                  sessionDetails.status === 'SHARED' ? 'info' : 
-                  'warning'
+                  sessionDetails.status === 'ACTIVE' ? 'success' :
+                    sessionDetails.status === 'CLOSED' ? 'neutral' :
+                      sessionDetails.status === 'SHARED' ? 'info' :
+                        'warning'
                 }>
                   {sessionDetails.status}
                 </Badge>

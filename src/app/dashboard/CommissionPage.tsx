@@ -95,6 +95,7 @@ export default function CommissionPage() {
   const [isScenarioActive, setIsScenarioActive] = useState(false);
 
   const handleUpdateStatus = async (row: CommissionRow, status: 'PAID' | 'PENDING') => {
+    if (payingId) return;
     try {
       setPayingId(row.id);
       const res = await api.patch('/admin/commision-earnings', {

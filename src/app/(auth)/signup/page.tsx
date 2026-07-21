@@ -93,6 +93,7 @@ export default function Register() {
 
     const handleRegistration = async (e: React.FormEvent) => {
         e.preventDefault()
+        if (showLoader) return;
         if (!token) {
             toast.warning("Please enter token")
             setMessage("Please enter token")

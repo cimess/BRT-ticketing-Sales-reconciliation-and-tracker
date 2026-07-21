@@ -53,6 +53,10 @@ export default function AdminRolesPage() {
     graceLabel: string;
   } | null>(null);
 
+  const [savingCommission, setSavingCommission] = useState(false);
+  const [savingRule, setSavingRule] = useState(false);
+
+
   useEffect(() => {
     async function loadRulesAndCommissions() {
       setLoading(true);
@@ -77,6 +81,8 @@ export default function AdminRolesPage() {
 
   const handleSaveCommission = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (savingCommission) return; // Prevent double click
+    setSavingCommission(true);
     setErrorMsg(null);
     try {
       const res = await api.post("/admin/commision-rules", {
@@ -93,12 +99,15 @@ export default function AdminRolesPage() {
       }
     } catch (err) {
       setErrorMsg("Failed to save commission rate.");
+    } finally {
+      setSavingCommission(false); // Reset saving state
     }
   };
 
   const handleUpdateRule = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedRule) return;
+    if (!selectedRule || savingRule) return; // Prevent double click
+    setSavingRule(true);
     setErrorMsg(null);
 
     try {
@@ -113,11 +122,11 @@ export default function AdminRolesPage() {
           fine_amount: fine
         });
         if (res.data.success) {
-          setRules(prev => prev.map(r => r.id === selectedRule.id ? { 
-            ...r, 
-            comparison_value: grace, 
-            fine_amount: fine, 
-            is_active: selectedRule.is_active 
+          setRules(prev => prev.map(r => r.id === selectedRule.id ? {
+            ...r,
+            comparison_value: grace,
+            fine_amount: fine,
+            is_active: selectedRule.is_active
           } : r));
           setIsRuleDrawerOpen(false);
         }
@@ -136,19 +145,11 @@ export default function AdminRolesPage() {
       }
     } catch (err) {
       setErrorMsg("Failed to update policy settings.");
+    } finally {
+      setSavingRule(false); // Reset saving state
     }
   };
 
-  const handleToggleRule = async (id: string, active: boolean) => {
-    try {
-      const res = await api.put(`/admin/rules/${id}`, { is_active: !active });
-      if (res.data.success) {
-        setRules((prev) => prev.map((r) => (r.id === id ? { ...r, is_active: !active } : r)));
-      }
-    } catch (err) {
-      setErrorMsg("Failed to toggle policy status.");
-    }
-  };
 
   return (
     <PageScaffold
@@ -181,7 +182,7 @@ export default function AdminRolesPage() {
               {["TICKETER", "SUPERVISOR"].map((role) => {
                 const activeComm = commissions.find(c => c.role === role && c.is_active);
                 return (
-                  <div 
+                  <div
                     key={role}
                     onClick={() => {
                       setCommRole(role);
@@ -217,7 +218,7 @@ export default function AdminRolesPage() {
             </div>
 
             <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
-                           {[
+              {[
                 {
                   name: "Late Report Submission Policy",
                   description: "Fines ticketers who submit reports late after shift closing time.",
@@ -252,8 +253,8 @@ export default function AdminRolesPage() {
                 const isActive = rule?.is_active ?? false;
 
                 return (
-                  <div 
-                    key={policy.name} 
+                  <div
+                    key={policy.name}
                     onClick={() => {
                       setSelectedRule({
                         id: rule?.id,
@@ -268,16 +269,14 @@ export default function AdminRolesPage() {
                       setRuleFine(rule ? String(rule.fine_amount ?? 0) : String(policy.defaultFine));
                       setIsRuleDrawerOpen(true);
                     }}
-                    className={`glass-panel p-4 rounded-xl border transition cursor-pointer hover:border-white/20 hover:bg-white/5 flex flex-col justify-between min-h-[140px] ${
-                      isActive ? 'border-emerald-500/30' : 'border-white/5'
-                    }`}
+                    className={`glass-panel p-4 rounded-xl border transition cursor-pointer hover:border-white/20 hover:bg-white/5 flex flex-col justify-between min-h-[140px] ${isActive ? 'border-emerald-500/30' : 'border-white/5'
+                      }`}
                   >
                     <div className="space-y-1">
                       <div className="flex justify-between items-start">
                         <span className="text-white text-xs font-bold leading-tight">{policy.name}</span>
-                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
-                          isActive ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-500/10 text-slate-400 border border-slate-500/20'
-                        }`}>
+                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${isActive ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-500/10 text-slate-400 border border-slate-500/20'
+                          }`}>
                           {isActive ? 'Active' : 'Disabled'}
                         </span>
                       </div>
@@ -288,8 +287,8 @@ export default function AdminRolesPage() {
                       <span className="text-slate-400 font-semibold uppercase tracking-wider">Configure &rarr;</span>
                       {rule && (
                         <span className="text-slate-300 font-mono">
-                          {rule.name === "Supervisor Fine Authority Policy" 
-                            ? (rule.is_active ? "Authorized" : "Unauthorized") 
+                          {rule.name === "Supervisor Fine Authority Policy"
+                            ? (rule.is_active ? "Authorized" : "Unauthorized")
                             : `${rule.comparison_value}h grace • ₦${(rule.fine_amount ?? 0).toLocaleString()} fine`}
                         </span>
                       )}
@@ -334,10 +333,15 @@ export default function AdminRolesPage() {
           </div>
           <button
             type="submit"
-            className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold uppercase rounded-xl transition"
+            disabled={savingCommission}
+            className={`w-full py-2 text-white text-xs font-bold uppercase rounded-xl transition ${savingCommission
+                ? "bg-indigo-400 cursor-not-allowed opacity-75"
+                : "bg-indigo-600 hover:bg-indigo-500"
+              }`}
           >
-            Save Rate Settings
+            {savingCommission ? "Saving Rate..." : "Save Rate Settings"}
           </button>
+
         </form>
       </Drawer>
 
@@ -365,7 +369,7 @@ export default function AdminRolesPage() {
               </button>
             </div>
 
-                       {selectedRule.name !== "Supervisor Fine Authority Policy" && (
+            {selectedRule.name !== "Supervisor Fine Authority Policy" && (
               <>
                 <div>
                   <label className="text-[11px] text-slate-400 font-bold uppercase block mb-1">
@@ -396,10 +400,15 @@ export default function AdminRolesPage() {
 
             <button
               type="submit"
-              className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold uppercase rounded-xl transition"
+              disabled={savingRule}
+              className={`w-full py-2 text-white text-xs font-bold uppercase rounded-xl transition ${savingRule
+                  ? "bg-emerald-400 cursor-not-allowed opacity-75"
+                  : "bg-emerald-600 hover:bg-emerald-500"
+                }`}
             >
-              Save Policy Changes
+              {savingRule ? "Saving Policy..." : "Save Policy Changes"}
             </button>
+
           </form>
         )}
       </Drawer>

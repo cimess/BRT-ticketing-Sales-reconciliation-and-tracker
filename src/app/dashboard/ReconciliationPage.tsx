@@ -287,6 +287,7 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
 
   const handleSubmitPayment = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+     if (actionLoading) return;
     if (!selectedExpectation) return;
 
     if (userRole !== "TICKETER" && !(userRole === "SUPERVISOR" && selectedExpectation?.user_id === session?.user?.id)) {
@@ -337,6 +338,7 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
 
   // Replace the existing handleProcessRemittance definition around line 327:
   const handleProcessRemittance = async (remittance: ReconciliationRemittance | null, action: 'VERIFY' | 'REJECT') => {
+     if (actionLoading) return;
     if (!remittance) return;
 
     if (!["ADMIN"].includes(userRole)) {
@@ -378,6 +380,7 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
 
 
   const handleAcceptHandover = async (id: string, action: 'ACCEPT' | 'REJECT', customAmount?: number) => {
+     if (actionLoading) return;
     setActionLoading(true);
     try {
       const res = await api.patch(`/remitance/${id}/accept`, {
@@ -405,6 +408,7 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
 
 
   const handlePayFine = async (fineId: string) => {
+     if (actionLoading) return;
     if (!confirm("Are you sure you want to declare this fine as paid? Admin will verify the cash collection.")) return;
     try {
       setActionLoading(true);
@@ -424,6 +428,7 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
   };
 
   const handleVerifyFine = async (fineId: string) => {
+     if (actionLoading) return;
     if (!confirm("Confirm that you have received this cash payment and wish to settle the fine?")) return;
     try {
       setActionLoading(true);
@@ -443,6 +448,7 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
   };
 
   const handleReverseFine = async (fineId: string) => {
+     if (actionLoading) return;
     if (!confirm("Are you sure you want to reverse this fine payment? This will restore the user's debt and adjust the balance ledgers.")) return;
     try {
       setActionLoading(true);
@@ -464,6 +470,7 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
 
 
   const handleUpdateFineAmount = async (fineId: string, amount: number) => {
+     if (actionLoading) return;
     try {
       setActionLoading(true);
       const res = await api.patch(`/fines/${fineId}`, { action: "UPDATE_AMOUNT", amount });
@@ -483,6 +490,7 @@ export default function ReconciliationPage({ role = 'TICKETER' }: { role?: strin
 
 
   const handleVoidFine = async (fineId: string) => {
+     if (actionLoading) return;
     if (!confirm("Are you sure you want to waive/void this fine?")) return;
     try {
       setActionLoading(true);

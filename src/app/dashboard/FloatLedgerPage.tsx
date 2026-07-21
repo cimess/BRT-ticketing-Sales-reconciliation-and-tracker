@@ -216,6 +216,7 @@ export default function FloatLedgerPage({
   }, [posAllocations, entries, reason, role, q]);
 
   const handleAdminTopUp = async () => {
+    if (isSubmitting) return;
     if (!amount || !allocatedSource) {
       toast.error("Please fill all the fields");
       return;
@@ -248,13 +249,14 @@ export default function FloatLedgerPage({
   };
 
   const handleSupervisorAllocate = async () => {
+    if (isSubmitting) return;
     if (!amount || !selectedSessionId) {
       toast.error("Please specify both the POS session and amount");
       return;
     }
 
     try {
-    
+
       setIsSubmitting(true);
       const res = await api.post<{ success: boolean; message: string }>("/supervisor/floatallocation", {
         posSessionId: selectedSessionId,
@@ -276,6 +278,7 @@ export default function FloatLedgerPage({
   };
 
   const handleReverseAllocation = async (allocationId: string) => {
+    if (isSubmitting) return;
     if (!window.confirm("Are you sure you want to reverse this float allocation? This will return the allocated amount to the company vault and deduct it from the ticketer's POS session.")) {
       return;
     }
@@ -284,7 +287,7 @@ export default function FloatLedgerPage({
       const res = await api.patch<{ success: boolean; message?: string }>(`/supervisor/floatallocation/${allocationId}/reverse`);
       if (res.data?.success) {
         toast.success("Float allocation reversed successfully!");
-        setSelectedDetailsFloat(null); 
+        setSelectedDetailsFloat(null);
         if (onRefresh) onRefresh();
         refreshMetrics();
       } else {
@@ -301,6 +304,7 @@ export default function FloatLedgerPage({
   };
 
   const handleVaultActionSubmit = async () => {
+    if (isSubmitting) return;
     if (!vaultAmount || Number(vaultAmount) <= 0) {
       toast.error("Please enter a valid amount");
       return;
@@ -374,15 +378,15 @@ export default function FloatLedgerPage({
                   onClick={() => setVaultModalType('CREDIT')}
                   className="inline-flex items-center gap-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 px-1 lg:px-4 py-2 lg:py-2.5 text-[8px] lg:text-[11px] font-bold uppercase tracking-widest text-emerald-400 hover:bg-emerald-500/20 active:scale-95 transition-all"
                 >
-                  <Plus className="w-4 h-4 hidden lg:inline" strokeWidth={1.5} /> 
+                  <Plus className="w-4 h-4 hidden lg:inline" strokeWidth={1.5} />
                   <span className="">Credit Vault</span>
                 </button>
                 <button
                   onClick={() => setVaultModalType('EXPENSE')}
                   className="inline-flex items-center gap-2 rounded-xl bg-amber-500/10 border border-amber-500/20 px-1 lg:px-4 py-2 lg:py-2.5 text-[8px] lg:text-[11px] font-bold uppercase tracking-widest text-amber-400 hover:bg-amber-500/20 active:scale-95 transition-all"
                 >
-                  <Plus className="w-4 h-4 hidden lg:inline" strokeWidth={1.5} /> 
-                 <span className="">Record Expense</span> 
+                  <Plus className="w-4 h-4 hidden lg:inline" strokeWidth={1.5} />
+                  <span className="">Record Expense</span>
                 </button>
               </>
             )}
@@ -525,6 +529,7 @@ export default function FloatLedgerPage({
                           />
                           <button
                             onClick={async () => {
+                              if (quickSubmitting[device.id]) return;
                               const amount = quickAmounts[device.id];
                               if (!amount || Number(amount) <= 0) {
                                 toast.error("Please enter a valid amount");
@@ -749,6 +754,7 @@ export default function FloatLedgerPage({
             {activeTab === 'COMPANY' && role === 'ADMIN' && selectedDetailsFloat.status === 'SUCCESS' && (
               <button
                 onClick={async () => {
+                  if (reversingId) return;
                   const id = selectedDetailsFloat.id;
                   setSelectedDetailsFloat(null);
                   if (!window.confirm("Are you sure you want to reverse this top-up? This will return the top-up amount from the TopUp Bank to the Company Float.")) {
@@ -781,7 +787,7 @@ export default function FloatLedgerPage({
               </button>
             )}
 
-                        {/* Actions Section for Admins & Supervisors */}
+            {/* Actions Section for Admins & Supervisors */}
             {activeTab === 'COMPANY' && role === 'ADMIN' && selectedDetailsFloat.status === 'SUCCESS' && (
               <button
                 onClick={async () => {
@@ -953,7 +959,7 @@ export default function FloatLedgerPage({
         )}
       </Drawer>
 
-            {/* DRAWER: Credit Vault / Record Expense */}
+      {/* DRAWER: Credit Vault / Record Expense */}
       <Drawer
         open={Boolean(vaultModalType)}
         title={vaultModalType === 'CREDIT' ? 'Credit Company Float (Vault)' : 'Record Company Expense'}
@@ -990,11 +996,10 @@ export default function FloatLedgerPage({
           <button
             disabled={isSubmittingVault || !vaultAmount || (vaultModalType === 'EXPENSE' && !vaultNote.trim())}
             onClick={handleVaultActionSubmit}
-            className={`w-full rounded-2xl font-semibold py-3 transition-all ${
-              vaultModalType === 'CREDIT' 
-                ? 'bg-emerald-500 hover:bg-emerald-400 text-white disabled:bg-slate-700 disabled:text-slate-500' 
+            className={`w-full rounded-2xl font-semibold py-3 transition-all ${vaultModalType === 'CREDIT'
+                ? 'bg-emerald-500 hover:bg-emerald-400 text-white disabled:bg-slate-700 disabled:text-slate-500'
                 : 'bg-amber-500 hover:bg-amber-400 text-slate-950 disabled:bg-slate-700 disabled:text-slate-500'
-            }`}
+              }`}
           >
             {isSubmittingVault ? 'Processing...' : vaultModalType === 'CREDIT' ? 'Credit Vault' : 'Record Expense'}
           </button>

@@ -179,6 +179,7 @@ export default function LocationsPage({ role = 'TICKETER' }: { role?: string }) 
   // Handle Create Location (Admin)
   const handleSaveLocation = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting) return;
     if (!locName || !locAddress) return toast.error('Name and Address are required.');
     
     setSubmitting(true);
@@ -222,6 +223,7 @@ export default function LocationsPage({ role = 'TICKETER' }: { role?: string }) 
 
   // Submit assignments batch
   const handleSaveAssignments = async (force: boolean = false) => {
+    if (submitting) return;
     if (!selectedAssignDate) return toast.error('Please pick a target date.');
     
     const validRows = stagedRows.filter(r => r.userId && r.locationId);
@@ -282,6 +284,7 @@ export default function LocationsPage({ role = 'TICKETER' }: { role?: string }) 
 
   // Delete individual assignment
   const handleDeleteAssignment = async (id: string) => {
+    if (submitting) return;
     if (!confirm('Are you sure you want to delete this assignment?')) return;
     try {
       const res = await api.delete<{ success: boolean; message?: string }>(`/locations/assignments?id=${id}`);
@@ -301,6 +304,8 @@ export default function LocationsPage({ role = 'TICKETER' }: { role?: string }) 
       } else {
         toast.error('Failed to remove assignment');
       }
+    }finally {
+     setSubmitting(false);
     }
   };
 
@@ -575,10 +580,11 @@ export default function LocationsPage({ role = 'TICKETER' }: { role?: string }) 
 
             {userRole === 'SUPERVISOR' && (
               <button
+              disabled={submitting}
                 onClick={() => handleDeleteAssignment(selectedDetailsAssignment.assignmentId)}
-                className="w-full rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 py-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
+              className="w-full rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 py-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-50"
               >
-                <Trash2 className="size-4" /> Cancel Assignment / Shift
+                 {submitting ? 'Cancelling...' : <><Trash2 className="size-4" /> Cancel Assignment / Shift</>}
               </button>
             )}
           </div>

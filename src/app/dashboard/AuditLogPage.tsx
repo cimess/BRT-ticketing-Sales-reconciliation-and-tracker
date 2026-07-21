@@ -403,6 +403,7 @@ export default function AuditorPage() {
   const [queryLoading, setQueryLoading] = useState(false);
 
   const handleExecuteQuery = async () => {
+     if (queryLoading) return;
     setQueryLoading(true);
     setQueryError(null);
     setQueryResults(null);

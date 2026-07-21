@@ -34,19 +34,19 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
   const [toDate, setToDate] = useState<Date | null>(null);
   const [posSession, setPosSession] = useState<string | null>(null);
   const [totalOutstanding, setTotalOutstanding] = useState(0);
-    const [uploadedKeys, setUploadedKeys] = useState<string[]>([]);
+  const [uploadedKeys, setUploadedKeys] = useState<string[]>([]);
   const [viewerOpen, setViewerOpen] = useState(false);
   const [activeRemittanceId, setActiveRemittanceId] = useState<string | null>(null);
 
   const [selectedRemittance, setSelectedRemittance] = useState<Remittance | null>(null);
-  const [message, setMessage] = useState<string|null>(null);
+  const [message, setMessage] = useState<string | null>(null);
 
   // 💡 ROLES ENFORCEMENT
   const canSubmit = user === 'TICKETER' || user === 'SUPERVISOR';
   const canVerify = user === 'ADMIN';
 
   const { metrics, refreshMetrics } = useDashboard();
-// / --- API LOGIC --- //
+  // / --- API LOGIC --- //
   const fetchRemittances = useCallback(async () => {
     setLoading(true);
     try {
@@ -91,7 +91,7 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
         }
       }
     } catch (e) {
-      
+
       const errorMessage = e instanceof axios.AxiosError ? e.response?.data.error : "An error occurred";
       toast.error(errorMessage);
     }
@@ -113,11 +113,11 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
     };
   }, [fetchRemittances, fetchUsers, metrics?.posSessionId]);
 
-    // Real-time Auto-Refresh: Listen for notification events and reload table records
+  // Real-time Auto-Refresh: Listen for notification events and reload table records
   useEffect(() => {
     const handleSSE = (e: Event) => {
       const customEvent = e as CustomEvent;
-      if (customEvent.detail?.type === "REMITTANCE_CREATED"||customEvent.detail?.type === "FINE_ISSUED"||customEvent.detail?.type === "REMITTANCE_ACCEPTED"||customEvent.detail?.type === "REMITTANCE_REJECTED"||customEvent.detail?.type === "REMITTANCE_REVERSED") {
+      if (customEvent.detail?.type === "REMITTANCE_CREATED" || customEvent.detail?.type === "FINE_ISSUED" || customEvent.detail?.type === "REMITTANCE_ACCEPTED" || customEvent.detail?.type === "REMITTANCE_REJECTED" || customEvent.detail?.type === "REMITTANCE_REVERSED") {
         fetchRemittances();
       }
     };
@@ -130,6 +130,8 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
 
 
   const submitRemittance = async (amount: number, method: 'CASH' | 'TRANSFER', ticketerId?: string, supervisorId?: string, receiptImages?: string[]) => {
+    if (sendingRequest) return;
+
     if (role === "TICKETER" && !posSession) {
       toast.error("POS Session is required");
       return;
@@ -137,11 +139,11 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
     try {
       setSendingRequest(true);
       const res = await api.post('/remitance', {
-        amount, 
-        method, 
-        remittance_date: new Date().toISOString(), 
-        ticketer_id: ticketerId, 
-        supervisor_id: supervisorId, 
+        amount,
+        method,
+        remittance_date: new Date().toISOString(),
+        ticketer_id: ticketerId,
+        supervisor_id: supervisorId,
         pos_id: posSession,
         receipt_images: receiptImages || [] // <-- Send image keys array
       });
@@ -162,6 +164,7 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
 
 
   const handleVerify = async (id: string, actionStatus: 'CONFIRMED' | 'REJECTED') => {
+    if (sendingRequest) return;
     if (!confirm(`Are you sure you want to ${actionStatus} this remittance?`)) return;
     try {
       setSendingRequest(true);
@@ -173,9 +176,9 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
         fetchRemittances();
         refreshMetrics();
         toast.success(`Remittance ${actionStatus.toLowerCase()} successfully`);
-      } 
+      }
     } catch (err) {
-      
+
       const errorMessage = err instanceof axios.AxiosError ? err.response?.data.error : "An error occurred";
       toast.error(errorMessage);
     } finally {
@@ -189,6 +192,7 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
   );
 
   const handleAccept = async (id: string, action: 'ACCEPT' | 'REJECT') => {
+    if (sendingRequest) return;
     try {
       setSendingRequest(true);
       const res = await api.patch(`/remitance/${id}/accept`, { action });
@@ -196,7 +200,7 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
         fetchRemittances();
         refreshMetrics();
         toast.success(`Handover ${action === 'ACCEPT' ? 'accepted' : 'disputed'} successfully`);
-      } 
+      }
     } catch (err) {
       if (err instanceof axios.AxiosError) {
         toast.error(err.response?.data.message || err.response?.data.error || "An error occurred");
@@ -209,6 +213,7 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
   };
 
   const handleReverse = async (id: string) => {
+    if (sendingRequest) return;
     if (!confirm("Are you sure you want to reverse this?")) return;
     try {
       setSendingRequest(true);
@@ -218,9 +223,9 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
         fetchRemittances();
         refreshMetrics();
         toast.success(`Remittance reversed successfully`);
-      } 
+      }
     } catch (err) {
-      
+
       const errorMessage = err instanceof axios.AxiosError ? err.response?.data.error : "An error occurred";
       toast.error(errorMessage);
     } finally {
@@ -230,7 +235,7 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
 
   // --- UI METRICS --- //
   const totalConfirmed = rows.reduce((acc, r) => r.status === 'CONFIRMED' ? acc + r.amount : acc, 0);
- const totalPending = rows.reduce((acc, r) => ['PENDING', 'PENDING_SUPERVISOR_ACCEPTANCE', 'ACCEPTED_BY_SUPERVISOR', 'DEPOSITED'].includes(r.status) ? acc + r.amount : acc, 0);
+  const totalPending = rows.reduce((acc, r) => ['PENDING', 'PENDING_SUPERVISOR_ACCEPTANCE', 'ACCEPTED_BY_SUPERVISOR', 'DEPOSITED'].includes(r.status) ? acc + r.amount : acc, 0);
 
 
   const cashTotal = rows.filter(r => r.method === 'CASH' && r.status === 'CONFIRMED')
@@ -375,6 +380,7 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
               </div>
               <button
                 onClick={async () => {
+                  if (sendingRequest) return;
                   const ref = prompt("Enter Bank Deposit Reference / Teller ID for all cash holdings:");
                   if (ref === null) return;
                   try {
@@ -401,6 +407,7 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
                   </div>
                   <button
                     onClick={async () => {
+                      if (sendingRequest) return;
                       const ref = prompt(`Enter Bank Deposit Reference for ₦${item.amount}:`);
                       if (ref === null) return;
                       try {
@@ -465,7 +472,7 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
                 >
                   <div className="flex items-center gap-3">
                     <div className="p-2.5 rounded-xl bg-white/5 border border-white/10">
-                      {item.method==='CASH'?<Banknote className="size-4 text-violet-400" />: <Landmark className="size-4 text-emerald-400" />}
+                      {item.method === 'CASH' ? <Banknote className="size-4 text-violet-400" /> : <Landmark className="size-4 text-emerald-400" />}
                     </div>
                     <div>
                       <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
@@ -491,15 +498,15 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
                           item.status === 'CONFIRMED' || item.status === 'ACCEPTED_BY_SUPERVISOR'
                             ? 'success'
                             : item.status === 'PENDING' || item.status === 'PENDING_SUPERVISOR_ACCEPTANCE'
-                            ? 'warning'
-                            : item.status === 'REJECTED' || item.status === 'REJECTED_BY_SUPERVISOR'
-                            ? 'danger'
-                            : 'info'
+                              ? 'warning'
+                              : item.status === 'REJECTED' || item.status === 'REJECTED_BY_SUPERVISOR'
+                                ? 'danger'
+                                : 'info'
                         }>
-                          {item.status} 
+                          {item.status}
                         </Badge>
                       </span>
-                     
+
                     </div>
                     <ChevronRight className="size-4 text-slate-600" />
                   </div>
@@ -510,15 +517,15 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
         )}
       </PageScaffold>
 
-      <Drawer open={openForm} title="Submit Remittance" subtitle={user === 'SUPERVISOR' ? "Log a cash handover from a ticketer" : "Hand over your cash or log a transfer"} onClose={() => {setOpenForm(false); setMessage(""); setUploadedKeys([])}}>
-        <RemitForm 
-          onSubmit={(a, m, t, s) => submitRemittance(a, m, t, s, uploadedKeys)} 
-          role={user} 
-          team={team} 
-          supervisors={supervisors} 
-          posSession={posSession} 
-          setposSession={setPosSession} 
-          message={message} 
+      <Drawer open={openForm} title="Submit Remittance" subtitle={user === 'SUPERVISOR' ? "Log a cash handover from a ticketer" : "Hand over your cash or log a transfer"} onClose={() => { setOpenForm(false); setMessage(""); setUploadedKeys([]) }}>
+        <RemitForm
+          onSubmit={(a, m, t, s) => submitRemittance(a, m, t, s, uploadedKeys)}
+          role={user}
+          team={team}
+          supervisors={supervisors}
+          posSession={posSession}
+          setposSession={setPosSession}
+          message={message}
           uploadedKeys={uploadedKeys}
           setUploadedKeys={setUploadedKeys}
         />
@@ -546,10 +553,10 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
                   selectedRemittance.status === 'CONFIRMED' || selectedRemittance.status === 'ACCEPTED_BY_SUPERVISOR'
                     ? 'success'
                     : selectedRemittance.status === 'PENDING' || selectedRemittance.status === 'PENDING_SUPERVISOR_ACCEPTANCE'
-                    ? 'warning'
-                    : selectedRemittance.status === 'REJECTED' || selectedRemittance.status === 'REJECTED_BY_SUPERVISOR'
-                    ? 'danger'
-                    : 'info'
+                      ? 'warning'
+                      : selectedRemittance.status === 'REJECTED' || selectedRemittance.status === 'REJECTED_BY_SUPERVISOR'
+                        ? 'danger'
+                        : 'info'
                 }>
                   {selectedRemittance.status}
                 </Badge>
@@ -615,7 +622,7 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
                 )}
               </div>
 
-                            <div className="grid grid-cols-2 gap-4 pt-2 border-t border-white/5">
+              <div className="grid grid-cols-2 gap-4 pt-2 border-t border-white/5">
                 <div>
                   <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest block">Submitted At</label>
                   <span className="text-xs text-slate-400 mt-1 block">
@@ -711,7 +718,7 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
                       }
                     } catch (err) {
                       const errorMessage = err instanceof axios.AxiosError ? err.response?.data.error : "An error occurred";
-                      toast.error(errorMessage ||"Failed to reverse deposit.");
+                      toast.error(errorMessage || "Failed to reverse deposit.");
                     } finally {
                       setSendingRequest(false);
                     }
@@ -727,26 +734,28 @@ export default function RemittancesPage({ role = 'TICKETER' }: { role?: string }
           </div>
         )}
       </Drawer>
-           {selectedRemittance?.method === 'TRANSFER' && (
-          <div className="mt-4 pt-4 border-t border-white/5">
-             <ReceiptViewerModal 
-        isOpen={viewerOpen}
-        onClose={() => {
-          setViewerOpen(false);
-          setActiveRemittanceId(null);
-        }}
-        remittanceId={activeRemittanceId || ""}
-      />
-          </div>
-        )}
+      {selectedRemittance?.method === 'TRANSFER' && (
+        <div className="mt-4 pt-4 border-t border-white/5">
+          <ReceiptViewerModal
+            isOpen={viewerOpen}
+            onClose={() => {
+              setViewerOpen(false);
+              setActiveRemittanceId(null);
+            }}
+            remittanceId={activeRemittanceId || ""}
+          />
+        </div>
+      )}
     </>
   );
 }
 
 // 💡 The RemitForm must stay outside the main component!
-function RemitForm({ onSubmit, role, team, supervisors, posSession, setposSession,message, uploadedKeys,
-  setUploadedKeys  }: { onSubmit: (amount: number, method: 'CASH' | 'TRANSFER', ticketerId?: string, supervisorId?: string) => Promise<void> | void, role: string, team: User[], supervisors?: User[], posSession?: string | null, setposSession?: (value: string) => void,message?:string|null,uploadedKeys: string[],
-  setUploadedKeys: React.Dispatch<React.SetStateAction<string[]>> }) {
+function RemitForm({ onSubmit, role, team, supervisors, posSession, setposSession, message, uploadedKeys,
+  setUploadedKeys }: {
+    onSubmit: (amount: number, method: 'CASH' | 'TRANSFER', ticketerId?: string, supervisorId?: string) => Promise<void> | void, role: string, team: User[], supervisors?: User[], posSession?: string | null, setposSession?: (value: string) => void, message?: string | null, uploadedKeys: string[],
+    setUploadedKeys: React.Dispatch<React.SetStateAction<string[]>>
+  }) {
   const [amount, setAmount] = useState('');
   const [method, setMethod] = useState<'CASH' | 'TRANSFER'>('CASH');
   const [ticketerId, setTicketerId] = useState('');
@@ -760,7 +769,7 @@ function RemitForm({ onSubmit, role, team, supervisors, posSession, setposSessio
     setAmount('');
     setSupervisorId('');
     setMethod('CASH');
-  
+
   };
 
   return (
@@ -803,10 +812,10 @@ function RemitForm({ onSubmit, role, team, supervisors, posSession, setposSessio
         )}
 
         {method === 'TRANSFER' && <div className="mt-4 pt-4 border-t border-white/5">
-        <ReceiptUploader 
+          <ReceiptUploader
             uploadedKeys={uploadedKeys}
             setUploadedKeys={setUploadedKeys}
-            onUploadComplete={() => {}}
+            onUploadComplete={() => { }}
           />
         </div>}
 
@@ -820,10 +829,10 @@ function RemitForm({ onSubmit, role, team, supervisors, posSession, setposSessio
         <label className="mt-4 block text-slate-500 text-[10px] font-bold uppercase tracking-widest">Amount (NGN)</label>
         <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="e.g. 50000" type="number" className="mt-2 w-full rounded-xl bg-white/3 border border-white/10 px-4 py-2.5 text-sm text-white outline-none" />
         <div>
-              <p className='text-sm text-red-700'>
-                {message}
-              </p>
-        
+          <p className='text-sm text-red-700'>
+            {message}
+          </p>
+
         </div>
       </div>
 

@@ -5,14 +5,14 @@ import { FilterRow, Input, PageScaffold } from '@/components/pageScaffold';
 import { DataTable, type ColumnDef } from '@/components/DataTable';
 import type { User_Full_Audit, DashboardRoleUsers, Fine, Remittance, ReconciliationRun, Ticketer_Location_Assignment } from '@/types/types';
 import { formatMoney } from '@/lib/utils';
-import { useState, useMemo, useEffect} from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Drawer } from '@/components/Drawer';
 import { ResponsiveDrawerShell } from '@/components/ResponsiveDrawerShell';
 import { Badge } from '@/components/Badge';
 import api from '@/lib/axios';
 import { toast } from 'react-toastify';
 import axios from 'axios';
-import type{  Roles } from '@prisma/client';
+import type { Roles } from '@prisma/client';
 
 export interface RegToken {
   id: string;
@@ -25,7 +25,7 @@ export interface RegToken {
 }
 
 export default function UsersPage({ regToken }: { regToken: RegToken[] }) {
-   const [selected, setSelected] = useState<User_Full_Audit | null>(null);
+  const [selected, setSelected] = useState<User_Full_Audit | null>(null);
   const [searchInput, setSearchInput] = useState("");
   const [scope, setScope] = useState<'ALL' | DashboardRoleUsers>('ALL');
   const [regTokens, setRegTokens] = useState<RegToken[]>(regToken ?? []);
@@ -33,8 +33,8 @@ export default function UsersPage({ regToken }: { regToken: RegToken[] }) {
   const [open, setOpen] = useState(false);
   const [users, setUsers] = useState<User_Full_Audit[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // 💡 Fetch active users from DB on mount
+  const [generating, setGenerating] = useState(false);
+  const [restricting, setRestricting] = useState(false);
 
 
   // 💡 Fetch active users from DB on mount
@@ -48,10 +48,10 @@ export default function UsersPage({ regToken }: { regToken: RegToken[] }) {
         }
       })
       .catch((err) => {
-        if(err instanceof axios.AxiosError)
-        toast.error(err?.response?.data.message || "Error loading users");
+        if (err instanceof axios.AxiosError)
+          toast.error(err?.response?.data.message || "Error loading users");
         else
-        toast.error("Error loading users");
+          toast.error("Error loading users");
       })
       .finally(() => {
         if (!ignore) {
@@ -59,7 +59,7 @@ export default function UsersPage({ regToken }: { regToken: RegToken[] }) {
         }
       });
 
-      // 💡 Fetch active onboarding tokens
+    // 💡 Fetch active onboarding tokens
     api.get("/regtoken")
       .then((res) => {
         if (res.data?.success && !ignore) {
@@ -67,10 +67,10 @@ export default function UsersPage({ regToken }: { regToken: RegToken[] }) {
         }
       })
       .catch((err) => {
-        if(err instanceof axios.AxiosError)
-        toast.error(err?.response?.data.message || "Failed to load registration tokens");
+        if (err instanceof axios.AxiosError)
+          toast.error(err?.response?.data.message || "Failed to load registration tokens");
         else
-        toast.error("Failed to load registration tokens");
+          toast.error("Failed to load registration tokens");
       });
 
     return () => {
@@ -78,15 +78,18 @@ export default function UsersPage({ regToken }: { regToken: RegToken[] }) {
     };
   }, []);
 
-const copyToClipboard = (text: string) => {
-  if (typeof window !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(text)
-      .then(() => toast.success("Token copied to clipboard"))
-      .catch(() => toast.error("Clipboard copy failed"));
-  } 
-};
+  const copyToClipboard = (text: string) => {
+    if (typeof window !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text)
+        .then(() => toast.success("Token copied to clipboard"))
+        .catch(() => toast.error("Clipboard copy failed"));
+    }
+  };
 
-const generateRegToken = async () => {
+  const generateRegToken = async () => {
+
+    if (generating) return; // Prevent double click
+    setGenerating(true);
     try {
       const res = await api.post("/regtoken", { role });
       // 💡 Wrap/Format the raw token response so it matches the RegToken interface
@@ -108,26 +111,28 @@ const generateRegToken = async () => {
       } else {
         toast.error("An unexpected error occurred");
       }
+    } finally {
+      setGenerating(false); // Reset saving state
     }
   };
 
   const columns: ColumnDef<User_Full_Audit>[] = [
-    { 
-      id: 'fullname', 
-      header: 'full name', 
-      cell: (r) => <span className="text-slate-300 text-xs font-bold">{r?.username}</span> 
+    {
+      id: 'fullname',
+      header: 'full name',
+      cell: (r) => <span className="text-slate-300 text-xs font-bold">{r?.username}</span>
     },
-    { 
-      id: 'role', 
-      header: 'role', 
-      cell: (r) => <span className="text-slate-500 text-xs">{r?.role}</span>, 
-      sortValue: (r) => r?.role 
+    {
+      id: 'role',
+      header: 'role',
+      cell: (r) => <span className="text-slate-500 text-xs">{r?.role}</span>,
+      sortValue: (r) => r?.role
     },
-    { 
-      id: 'phone', 
-      header: 'phone number', 
-      cell: (r) => <span className="text-slate-500 text-xs">{r?.phone || '—'}</span>, 
-      sortValue: (r) => r?.phone || "" 
+    {
+      id: 'phone',
+      header: 'phone number',
+      cell: (r) => <span className="text-slate-500 text-xs">{r?.phone || '—'}</span>,
+      sortValue: (r) => r?.phone || ""
     },
   ];
 
@@ -140,7 +145,7 @@ const generateRegToken = async () => {
     return rows.filter((r) => (scope === 'ALL' ? true : r.role === scope));
   }, [rows, scope]);
 
-const rolesToMap: Roles[] = ['TICKETER', 'SUPERVISOR', 'ADMIN', 'AUDITOR'];
+  const rolesToMap: Roles[] = ['TICKETER', 'SUPERVISOR', 'ADMIN', 'AUDITOR'];
 
 
   return (
@@ -173,7 +178,7 @@ const rolesToMap: Roles[] = ['TICKETER', 'SUPERVISOR', 'ADMIN', 'AUDITOR'];
                 <span className="text-slate-300 text-xs font-mono">{token.token}
                   <p className="text-slate-500 text-xs text-center">{token.role}</p>
                 </span>
-                
+
                 <Copy className="size-3 text-slate-500" />
               </div>
             ))}
@@ -186,6 +191,8 @@ const rolesToMap: Roles[] = ['TICKETER', 'SUPERVISOR', 'ADMIN', 'AUDITOR'];
             <Plus className="size-3 lg:size-4" />
             <span className="text-white font-bold tracking-tight text-xs lg:text-sm">generate new Token</span>
           </button>
+
+
         </div>
 
         <div className="rounded-3xl border border-white/5 p-6">
@@ -229,11 +236,10 @@ const rolesToMap: Roles[] = ['TICKETER', 'SUPERVISOR', 'ADMIN', 'AUDITOR'];
                 <button
                   key={staffRole}
                   onClick={() => setRole(staffRole)}
-                  className={`rounded-2xl border px-4 py-3 text-sm font-semibold transition-all ${
-                    role === staffRole
+                  className={`rounded-2xl border px-4 py-3 text-sm font-semibold transition-all ${role === staffRole
                       ? 'bg-blue-500/20 border-blue-400 text-blue-300'
                       : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
-                  }`}
+                    }`}
                 >
                   {staffRole}
                 </button>
@@ -254,13 +260,14 @@ const rolesToMap: Roles[] = ['TICKETER', 'SUPERVISOR', 'ADMIN', 'AUDITOR'];
             </p>
           </div>
 
-          <button
-            disabled={!role}
+                  <button
+            disabled={!role || generating}
             onClick={generateRegToken}
-            className="w-full rounded-2xl bg-blue-500 hover:bg-blue-400 disabled:bg-slate-700 disabled:text-slate-500 text-white font-semibold py-3 transition-all"
+            className="w-full rounded-2xl bg-blue-500 hover:bg-blue-400 disabled:bg-slate-700 disabled:text-slate-500 text-white font-semibold py-3 transition-all flex items-center justify-center gap-2"
           >
-            Generate Token
+            {generating ? "Generating..." : "Generate Token"}
           </button>
+
         </div>
       </Drawer>
 
@@ -290,7 +297,7 @@ const rolesToMap: Roles[] = ['TICKETER', 'SUPERVISOR', 'ADMIN', 'AUDITOR'];
                   tone: (selected?.reconciliation?.length || 0) > 0 ? 'warning' : 'success',
                 },
               ]}
-                           fields={[
+              fields={[
                 { label: 'User ID', value: selected.user_id },
                 { label: 'Email', value: selected.email },
                 { label: 'Phone', value: selected.phone ?? '—' },
@@ -381,7 +388,10 @@ const rolesToMap: Roles[] = ['TICKETER', 'SUPERVISOR', 'ADMIN', 'AUDITOR'];
             {/* 💡 BAN/RESTRICT SYSTEM ACTION BUTTON */}
             <div className="pt-4 border-t border-white/5">
               <button
+                disabled={restricting}
                 onClick={async () => {
+                  if (restricting) return;
+                  setRestricting(true);
                   try {
                     const nextStatus = !selected.restricted;
                     const res = await api.patch("/admin/user", {
@@ -395,17 +405,25 @@ const rolesToMap: Roles[] = ['TICKETER', 'SUPERVISOR', 'ADMIN', 'AUDITOR'];
                     }
                   } catch (err) {
                     toast.error("Failed to update user status");
+                  } finally {
+                    setRestricting(false);
                   }
                 }}
-                className={`w-full py-3 rounded-2xl font-semibold transition-all border ${
-                  selected.restricted
-                    ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20"
-                    : "bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20"
-                }`}
+                className={`w-full py-3 rounded-2xl font-semibold transition-all border ${restricting
+                    ? "bg-slate-700 border-slate-600 text-slate-400 cursor-not-allowed opacity-75"
+                    : selected.restricted
+                      ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20"
+                      : "bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20"
+                  }`}
               >
-                {selected.restricted ? "Unrestrict / Enable User" : "Restrict / Ban User"}
+                {restricting
+                  ? "Updating Status..."
+                  : selected.restricted
+                    ? "Unrestrict / Enable User"
+                    : "Restrict / Ban User"}
               </button>
             </div>
+
           </div>
         )}
       </Drawer>

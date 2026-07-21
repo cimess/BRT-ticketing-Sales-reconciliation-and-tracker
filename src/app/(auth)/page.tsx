@@ -22,7 +22,7 @@ export default function Login() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-
+if (showLoader) return;
     // Input Validations
     if (!email) {
       toast.warn("Please enter email");
