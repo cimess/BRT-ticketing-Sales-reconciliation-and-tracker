@@ -8,7 +8,7 @@ const { Pool } = pg;
 
 const isProd = process.env.NODE_ENV === "production";
 
-let datasource =
+let datasource =process.env.READONLY_DATABASE_URL ??
   process.env.DATABASE_URL ?? process.env.LOCAL_DATABASE_URL;
 
 // Prevent pg driver from throwing away our custom CA configuration by stripping sslmode query param
@@ -26,7 +26,7 @@ const pool =
   new Pool({
     connectionString: datasource,
     ssl: sslConfig,
-    max: isProd ? 3 : 10,
+    max: isProd ? 1 : 10,
     connectionTimeoutMillis: 15000,
     idleTimeoutMillis: 30000,
   });

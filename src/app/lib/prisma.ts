@@ -28,7 +28,7 @@ const pool =
   new Pool({
     connectionString: datasource,
     ssl: sslConfig,
-    max: isProd ? 3 : 10,
+    max: isProd ? 1 : 10,
     connectionTimeoutMillis: 15000,
     idleTimeoutMillis: 30000,
   });
