@@ -34,7 +34,7 @@ export async function addTopUp(
 
       // 3. Decrement Company Float (Money deployed out of company core asset bank)
       const updatedCompanyFloat = await tx.companyFloat.update({
-        where: { id: "COMPANY_ACCOUNT", company_id: user.company_id },
+        where: {company_id: user.company_id },
         data: {
           available_balance: {
             decrement: amount,
@@ -44,7 +44,7 @@ export async function addTopUp(
 
       // 4. Increment the operational TopUpBank balance (deploy operational budget)
       const topUpBank = await tx.topUpBank.upsert({
-        where: { id: "TOPUP_BANK", company_id: user.company_id },
+        where: { company_id: user.company_id },
         create: {
           company_id: user.company_id,
           id: "TOPUP_BANK",
@@ -304,7 +304,6 @@ export async function deleteTopUp(data: { id: string, user: { id: string } }, me
 
       await tx.companyFloat.update({
         where: {
-          id: "COMPANY_ACCOUNT",
           company_id: meta.company_id,
         },
         data: {

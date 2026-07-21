@@ -154,7 +154,7 @@ export async function PATCH(
       });
       // D) Increment Company Float available balance
       await tx.companyFloat.upsert({
-        where: { id: "COMPANY_ACCOUNT", company_id },
+        where: {company_id },
         update: { available_balance: { increment: remittance.amount } },
         create: { id: "COMPANY_ACCOUNT", company_id, available_balance: remittance.amount }
       });

@@ -104,7 +104,7 @@ export async function PATCH(
         });
 
         await tx.companyFloat.upsert({
-          where: { id: "COMPANY_ACCOUNT", company_id },
+          where: { company_id },
           update: { available_balance: { increment: Number(fine.amount) } },
           create: { id: "COMPANY_ACCOUNT", company_id, available_balance: Number(fine.amount) }
         });
@@ -187,7 +187,7 @@ export async function PATCH(
         });
 
         await tx.companyFloat.upsert({
-          where: { id: "COMPANY_ACCOUNT", company_id },
+          where: {company_id },
           update: { available_balance: { decrement: Number(fine.amount) } },
           create: { id: "COMPANY_ACCOUNT", company_id, available_balance: -Number(fine.amount) }
         });

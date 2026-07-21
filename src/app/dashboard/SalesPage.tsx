@@ -144,7 +144,7 @@ function TrendChart({
       </div>
 
       <div className="mt-5 grid grid-cols-7 gap-2 sm:gap-3">
-        {data.map((point,index) => {
+        {data.map((point, index) => {
           const height = Math.max(16, (point.sales / maxValue) * 100);
 
           return (
@@ -172,7 +172,7 @@ function TrendChart({
             Total top up
           </p>
           <p className="mt-1 text-sm font-semibold text-white">
-            {formatMoney(summary.totalTopUps||0)}
+            {formatMoney(summary.totalTopUps || 0)}
           </p>
         </div>
         <div className="rounded-2xl border border-white/5 bg-black/20 p-3">
@@ -180,7 +180,7 @@ function TrendChart({
             Closing float
           </p>
           <p className="mt-1 text-sm font-semibold text-white">
-            {formatMoney(summary.totalClosing||0)}
+            {formatMoney(summary.totalClosing || 0)}
           </p>
         </div>
         <div className="rounded-2xl border border-white/5 bg-black/20 p-3">
@@ -248,7 +248,7 @@ function PerformerList({
               </div>
 
               <div className="mt-2 flex items-center justify-between gap-3 text-xs text-slate-500">
-                <span>{formatMoney(item.total||0)}</span>
+                <span>{formatMoney(item.total || 0)}</span>
                 <span>{item.share.toFixed(1)}% of visible sales</span>
               </div>
             </div>
@@ -306,7 +306,7 @@ function HighestSalesCard({
           </div>
         )}
       </div>
-      
+
       {highestReport && (
         <div className="mt-6 border-t border-white/5 pt-4 text-[11px] text-slate-500 flex items-center justify-between">
           <span>Keep pushing the volume! 🚀</span>
@@ -332,6 +332,7 @@ export default function SalesPage({
   const [view, setView] = useState<SalesView>("LATEST");
   const [selected, setSelected] = useState<Sales_Record | null>(null);
   const [openForm, setOpenForm] = useState(false);
+  const [openForceReconcile, setOpenForceReconcile] = useState(false);
   // State for result limit (defaults to 10 records when filtering)
   const [limit, setLimit] = useState<number | null>(10);
 
@@ -367,7 +368,7 @@ export default function SalesPage({
           setSalesRecords(json.reports || []);
         }
       } catch (e) {
-        if(e instanceof axios.AxiosError){
+        if (e instanceof axios.AxiosError) {
           toast.error(e?.response?.data.message || "Failed to load sales records.");
         }
       } finally {
@@ -382,7 +383,7 @@ export default function SalesPage({
     };
   }, [records, refreshKey]);
 
-    // Real-time Auto-Refresh: Listen for notification events and reload sales records
+  // Real-time Auto-Refresh: Listen for notification events and reload sales records
   useEffect(() => {
     const handleSSE = (e: Event) => {
       const customEvent = e as CustomEvent;
@@ -586,14 +587,14 @@ export default function SalesPage({
 
   const totals = useMemo(() => {
     const recordCount = visibleRecords.length;
-    
+
     // Exclude rejected/cancelled reports from financial sums
     const validRecords = visibleRecords.filter(
       (r) => r.status !== "REJECTED" && r.status !== "CANCELLED"
     );
 
     const totalSales = validRecords.reduce((sum, record) => sum + record.total_sold, 0);
-     const totalTopUps = validRecords.reduce((sum, record) => sum + record.top_up, 0);
+    const totalTopUps = validRecords.reduce((sum, record) => sum + record.top_up, 0);
 
     // Group by pos_session_id to avoid double-counting/accumulating balances of the same session
     const sessionReportsMap = new Map<string, typeof validRecords>();
@@ -615,7 +616,7 @@ export default function SalesPage({
         totalClosing += sortedReports[sortedReports.length - 1].closing_balance;
       }
     });
-    
+
     const averageTicket = recordCount ? totalSales / recordCount : 0;
     const coverage = totalTopUps ? (totalSales / totalTopUps) * 100 : 0;
     const gap = totalTopUps - totalSales;
@@ -639,7 +640,7 @@ export default function SalesPage({
 
   const performers = useMemo(() => {
     const aggregate = new Map<string, { name: string; total: number; records: number }>();
-    
+
     // Exclude rejected/cancelled reports from performer volume
     const validRecords = visibleRecords.filter(
       (r) => r.status !== "REJECTED" && r.status !== "CANCELLED"
@@ -811,6 +812,15 @@ export default function SalesPage({
                 Submit report
               </button>
             )}
+            {role === "ADMIN" && (
+              <button
+                type="button"
+                onClick={() => setOpenForceReconcile(true)}
+                className="inline-flex items-center gap-2 rounded-xl bg-red-500/10 border border-red-500/20 px-4 py-2.5 text-[11px] font-bold uppercase tracking-widest text-red-400 hover:bg-red-500/20 transition-colors"
+              >
+                Force Reconcile
+              </button>
+            )}
             <div className="inline-flex rounded-full border border-white/10 bg-white/3 p-1 shadow-sm shadow-black/20">
               {VIEW_OPTIONS.map((option) => (
                 <button
@@ -833,7 +843,7 @@ export default function SalesPage({
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             <CompactMetric
               title="Gross Sales"
-              value={formatMoney(totals.totalSales||0)}
+              value={formatMoney(totals.totalSales || 0)}
               note={`${totals.recordCount} visible report${totals.recordCount === 1 ? "" : "s"}`}
               icon={<Banknote className="size-4 text-emerald-300" strokeWidth={1.6} />}
               accentClass="bg-emerald-500/10"
@@ -841,14 +851,14 @@ export default function SalesPage({
             <CompactMetric
               title="Float Coverage"
               value={`${totals.coverage.toFixed(1)}%`}
-              note={`Gap ${formatMoney(totals.gap||0)}`}
+              note={`Gap ${formatMoney(totals.gap || 0)}`}
               icon={<ArrowUpRight className="size-4 text-amber-300" strokeWidth={1.6} />}
               accentClass="bg-amber-500/10"
             />
             <CompactMetric
               title="Closing Float"
-              value={formatMoney(totals.totalClosing||0)}
-              note={`Opening base ${formatMoney(totals.totalOpening||0)}`}
+              value={formatMoney(totals.totalClosing || 0)}
+              note={`Opening base ${formatMoney(totals.totalOpening || 0)}`}
               icon={<Layers3 className="size-4 text-purple-300" strokeWidth={1.6} />}
               accentClass="bg-purple-500/10"
             />
@@ -898,11 +908,10 @@ export default function SalesPage({
                         key={label}
                         type="button"
                         onClick={() => setLimit(opt)}
-                        className={`rounded-xl px-2.5 py-1 text-[11px] font-bold transition-all ${
-                          isSelected
+                        className={`rounded-xl px-2.5 py-1 text-[11px] font-bold transition-all ${isSelected
                             ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shadow-sm"
                             : "text-slate-400 hover:text-slate-200 hover:bg-white/5"
-                        }`}
+                          }`}
                       >
                         {label}
                       </button>
@@ -1039,13 +1048,13 @@ export default function SalesPage({
               </Badge>
             }
             stats={[
-              { label: "Sales", value: formatMoney(selected.total_sold||0), tone: "success" },
-              { label: "Top up", value: formatMoney(selected.top_up||0), tone: "info" },
-              { label: "Opening", value: formatMoney(selected.opening_balance||0), tone: "default" },
+              { label: "Sales", value: formatMoney(selected.total_sold || 0), tone: "success" },
+              { label: "Top up", value: formatMoney(selected.top_up || 0), tone: "info" },
+              { label: "Opening", value: formatMoney(selected.opening_balance || 0), tone: "default" },
               {
                 label: "Closing",
-                value: formatMoney(selected.closing_balance||0),
-                tone: (selected.closing_balance||0) > 0 ? "success" : "warning",
+                value: formatMoney(selected.closing_balance || 0),
+                tone: (selected.closing_balance || 0) > 0 ? "success" : "warning",
               },
             ]}
             fields={[
@@ -1058,7 +1067,7 @@ export default function SalesPage({
               { label: "Submitted At", value: formatDateTime(selected.submitted_at) },
               {
                 label: "Float Gap",
-                value: formatMoney((selected.top_up||0) - (selected.total_sold||0)),
+                value: formatMoney((selected.top_up || 0) - (selected.total_sold || 0)),
               },
             ].filter(Boolean)}
 
@@ -1072,7 +1081,7 @@ export default function SalesPage({
                         Opening
                       </p>
                       <p className="mt-1 text-sm font-semibold text-white">
-                        {formatMoney(selected.opening_balance||0)}
+                        {formatMoney(selected.opening_balance || 0)}
                       </p>
                     </div>
                     <div className="rounded-2xl border border-white/5 bg-black/20 p-3">
@@ -1080,7 +1089,7 @@ export default function SalesPage({
                         Top up
                       </p>
                       <p className="mt-1 text-sm font-semibold text-sky-300">
-                        {formatMoney(selected.top_up||0)}
+                        {formatMoney(selected.top_up || 0)}
                       </p>
                     </div>
                     <div className="rounded-2xl border border-white/5 bg-black/20 p-3">
@@ -1088,7 +1097,7 @@ export default function SalesPage({
                         Sold
                       </p>
                       <p className="mt-1 text-sm font-semibold text-emerald-300">
-                        {formatMoney(selected.total_sold||0)}
+                        {formatMoney(selected.total_sold || 0)}
                       </p>
                     </div>
                     <div className="rounded-2xl border border-white/5 bg-black/20 p-3">
@@ -1096,7 +1105,7 @@ export default function SalesPage({
                         Closing
                       </p>
                       <p className="mt-1 text-sm font-semibold text-white">
-                        {formatMoney(selected.closing_balance||0)}
+                        {formatMoney(selected.closing_balance || 0)}
                       </p>
                     </div>
                   </div>
@@ -1130,7 +1139,7 @@ export default function SalesPage({
                                 className="mt-2 w-full rounded-lg border border-white/10 bg-black/60 px-3 py-2 font-sans text-xs text-white outline-none focus:border-white/20"
                               >
                                 <option value="">No Handover (Return Device to Pool)</option>
-                                {ticketers.map((t,index) => (
+                                {ticketers.map((t, index) => (
                                   <option key={index} value={t.id}>
                                     {t.first_name} {t.last_name} ({t.email})
                                   </option>
@@ -1274,6 +1283,37 @@ export default function SalesPage({
           }}
         />
       </Drawer>
+
+      {/* Sales Report Submission Drawer */}
+      <Drawer
+        open={openForm}
+        title="Submit Sales Report"
+        subtitle="Submit your sales report for your active POS session"
+        onClose={() => setOpenForm(false)}
+      >
+        <SalesReportForm
+          onSuccess={() => {
+            setOpenForm(false);
+            setRefreshKey(prev => prev + 1);
+          }}
+        />
+      </Drawer>
+
+      {/* 🔽 Added: Force Reconciliation Drawer */}
+      <Drawer
+        open={openForceReconcile}
+        title="Force Reconcile Session"
+        subtitle="Force close an active POS session and release the terminal"
+        onClose={() => setOpenForceReconcile(false)}
+      >
+        <ForceReconcileForm
+          onSuccess={() => {
+            setOpenForceReconcile(false);
+            setRefreshKey(prev => prev + 1);
+          }}
+        />
+      </Drawer>
+
     </>
   );
 }
@@ -1333,7 +1373,7 @@ function SalesReportForm({
           }
         }
       } catch (err) {
-        if(err instanceof axios.AxiosError){
+        if (err instanceof axios.AxiosError) {
           toast.error(err?.response?.data.message || "Failed to load ticketer details.");
         }
         toast.error("Failed to load ticketer details.");
@@ -1427,7 +1467,7 @@ function SalesReportForm({
               <option value="" className="bg-black">Select active session...</option>
               {sessions.map((s) => (
                 <option key={s.id} value={s.id} className="bg-black">
-                  {s.deviceName} ({s.deviceSerial}) - Float: {formatMoney(s.posFloat||0)}
+                  {s.deviceName} ({s.deviceSerial}) - Float: {formatMoney(s.posFloat || 0)}
                 </option>
               ))}
             </>
@@ -1483,7 +1523,7 @@ function SalesReportForm({
       {/* Total Sold (Sales) */}
       <div>
         <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">Total Sold (Sales)</label>
-              <input
+        <input
           type="number"
           value={totalSold}
           onChange={(e) => {
@@ -1503,7 +1543,7 @@ function SalesReportForm({
       {/* Closing Balance */}
       <div>
         <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">Closing Balance</label>
-             <input
+        <input
           type="number"
           value={closingBalance}
           onChange={(e) => setClosingBalance(e.target.value)}
@@ -1523,3 +1563,213 @@ function SalesReportForm({
     </form>
   );
 }
+
+function ForceReconcileForm({
+  onSuccess,
+}: {
+  onSuccess: () => void;
+}) {
+  const [sessions, setSessions] = useState<PosDeviceSession[]>([]);
+  const [locations, setLocations] = useState<{ id: string; name: string; address: string }[]>([]);
+  const [selectedSession, setSelectedSession] = useState("");
+  const [selectedLocation, setSelectedLocation] = useState("");
+  const [recoveredCash, setRecoveredCash] = useState("");
+  const [finalPosFloat, setFinalPosFloat] = useState("0");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [mounted, setMounted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false); // Request concurrency lock
+
+  // Load active sessions and locations from the backend
+  useEffect(() => {
+    let active = true;
+
+
+    async function loadData() {
+      setError("");
+      setMounted(true);
+      try {
+        if (!mounted) return;
+        const [devicesRes, locationsRes] = await Promise.all([
+          fetch("/api/admin/device"),
+          fetch("/api/locations")
+        ]);
+
+        const devicesJson = await devicesRes.json();
+        const locationsJson = await locationsRes.json();
+
+        if (active) {
+          if (devicesJson.success) {
+            // Filter to only active sessions
+            const activeSessions = (devicesJson.sessions || []).filter(
+              (s: PosDeviceSession) => s.status === "ACTIVE"
+            );
+            setSessions(activeSessions);
+          }
+          if (locationsJson.success) {
+            setLocations(locationsJson.data || []);
+          }
+        }
+      } catch (err) {
+        toast.error("Failed to load active sessions and locations.");
+      }
+    }
+
+    loadData();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedSession) return setError("Please select an active session");
+    if (!selectedLocation) return setError("Please select a location");
+    if (recoveredCash === "") return setError("Recovered cash is required");
+    if (finalPosFloat === "") return setError("Final POS float is required");
+
+    // Concurrency Lock Check
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+
+    setLoading(true);
+    setError("");
+
+    try {
+      if (!mounted) return;
+      const res = await fetch("/api/sales/force_reconcile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          posSessionId: selectedSession,
+          recoveredCash: Number(recoveredCash),
+          finalPosFloat: Number(finalPosFloat),
+          locationId: selectedLocation,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success("POS session force-reconciled and released successfully!");
+        onSuccess();
+      } else {
+        setError(data.error || "Failed to force reconcile session");
+      }
+    } catch (err) {
+      setError("Network error. Failed to force reconcile session.");
+    } finally {
+      setLoading(false);
+      setIsSubmitting(false); // Reset lock
+    }
+  };
+
+  const selectedSessionDetails = sessions.find(s => s.id === selectedSession);
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      {error && (
+        <div className="flex items-center gap-2 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-200">
+          <AlertTriangle className="size-4 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {/* Select Active Session */}
+      <div>
+        <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">Active POS Session</label>
+        <select
+          value={selectedSession}
+          onChange={(e) => setSelectedSession(e.target.value)}
+          disabled={sessions.length === 0}
+          className="mt-2 w-full rounded-xl bg-white/3 border border-white/10 px-4 py-2.5 text-sm text-white focus:outline-none disabled:opacity-50"
+        >
+          {sessions.length === 0 ? (
+            <option value="" className="bg-black">
+              No active POS sessions found
+            </option>
+          ) : (
+            <>
+              <option value="" className="bg-black">Select active session...</option>
+              {sessions.map((s) => (
+                <option key={s.id} value={s.id} className="bg-black">
+                  {s.username} - {s.deviceName} ({s.deviceSerial}) - Float: {formatMoney(s.posFloat || 0)}
+                </option>
+              ))}
+            </>
+          )}
+        </select>
+      </div>
+
+      {/* Session Starting Float Details */}
+      {selectedSessionDetails && (
+        <div className="rounded-2xl border border-white/5 bg-black/20 p-3 text-xs">
+          <div className="flex justify-between">
+            <span className="text-slate-400">Current Session Float (Starting point):</span>
+            <span className="font-mono font-bold text-emerald-400">{formatMoney(selectedSessionDetails.posFloat || 0)}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Select Location */}
+      <div>
+        <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">Location</label>
+        <select
+          value={selectedLocation}
+          onChange={(e) => setSelectedLocation(e.target.value)}
+          disabled={locations.length === 0}
+          className="mt-2 w-full rounded-xl bg-white/3 border border-white/10 px-4 py-2.5 text-sm text-white focus:outline-none disabled:opacity-50"
+        >
+          {locations.length === 0 ? (
+            <option value="" className="bg-black">
+              No locations found
+            </option>
+          ) : (
+            <>
+              <option value="" className="bg-black">Select location...</option>
+              {locations.map((loc) => (
+                <option key={loc.id} value={loc.id} className="bg-black">
+                  {loc.name} ({loc.address})
+                </option>
+              ))}
+            </>
+          )}
+        </select>
+      </div>
+
+      {/* Recovered Cash */}
+      <div>
+        <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">Recovered Cash (₦)</label>
+        <input
+          type="number"
+          value={recoveredCash}
+          onChange={(e) => setRecoveredCash(e.target.value)}
+          placeholder="e.g. 150000"
+          className="mt-2 w-full rounded-xl bg-white/3 border border-white/10 px-4 py-2.5 text-sm text-white focus:outline-none"
+        />
+      </div>
+
+      {/* Final POS Float */}
+      <div>
+        <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">Final POS Float (Remaining, usually 0) (₦)</label>
+        <input
+          type="number"
+          value={finalPosFloat}
+          onChange={(e) => setFinalPosFloat(e.target.value)}
+          placeholder="0"
+          className="mt-2 w-full rounded-xl bg-white/3 border border-white/10 px-4 py-2.5 text-sm text-white focus:outline-none"
+        />
+      </div>
+
+      {mounted && <button
+        type="submit"
+        disabled={loading || !selectedSession || !selectedLocation || recoveredCash === "" || finalPosFloat === ""}
+        className="w-full rounded-xl bg-linear-to-r from-red-400 to-orange-400 text-black py-3 text-sm font-bold tracking-tight active:scale-[0.99] disabled:opacity-50 transition-all mt-4 animate-pulse-slow"
+      >
+        {loading ? "Reconciling..." : "Force Reconcile & Release Device"}
+      </button>
+      }
+    </form>
+  );
+}
+

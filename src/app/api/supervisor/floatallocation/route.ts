@@ -21,13 +21,20 @@ export async function GET(req: NextRequest) { // Updated signature
 
     // 1. Fetch active sessions for dropdown selection
     const activeSessions = await prisma.posDeviceSession.findMany({
-      where: {
+      where: {company_id,
         status: "ACTIVE"
       },
       include: {
         user: { select: { id: true, first_name: true, last_name: true } },
-        device: { select: { name: true } }
+        device: { select: { name: true } },
+        sales_reports: {
+          where: { status: { notIn: ["CANCELLED", "REJECTED"] } },
+          orderBy: { submitted_at: "desc" },
+          take: 1,
+          select: { closing_balance: true }
+        }
       }
+
     });
 
     // Construct the date range filtering where object
@@ -108,12 +115,13 @@ export async function GET(req: NextRequest) { // Updated signature
           last_name: string;
         };
         pos_float: number | object;
+        sales_reports: { closing_balance: number | object }[];
       }) => ({
         id: s.id,
         deviceName: s.device.name,
         ticketerId: s.user.id,
         ticketerName: `${s.user.first_name || ""} ${s.user.last_name || ""}`.trim(),
-        currentFloat: Number(s.pos_float)
+        currentFloat: s.sales_reports[0] ? Number(s.sales_reports[0].closing_balance) : Number(s.pos_float)
       })),
       history: history.map((h: {
         id: string;
@@ -186,7 +194,7 @@ export async function POST(req: Request) {
         throw new ApiError(400, "Insufficient operational float available in TopUp Bank. Please request Admin to top up.");
       }
 
-           // Guard Check: Verify active location assignment and ensure sales aren't closed for today
+      // Guard Check: Verify active location assignment and ensure sales aren't closed for today
       const todayStart = new Date();
       todayStart.setUTCHours(0, 0, 0, 0);
 
@@ -207,7 +215,7 @@ export async function POST(req: Request) {
 
       if (!activeAssignment) {
         throw new ApiError(
-          400, 
+          400,
           "Cannot allocate float: The ticketer has no location assigned for today."
         );
       }
