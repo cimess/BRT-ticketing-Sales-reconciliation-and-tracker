@@ -6,6 +6,7 @@ import "react-toastify/dist/ReactToastify.css";
 import { Providers } from "@/components/Providers";
 import { auth } from "@/auth";
 import { Suspense } from "react"; 
+import { Analytics } from "@vercel/analytics/next"
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
