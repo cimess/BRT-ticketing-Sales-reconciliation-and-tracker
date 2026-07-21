@@ -64,3 +64,6 @@ r2-credentials.json
 # Database Migration Tool
 run-migration.js
 
+tests/
+
+
