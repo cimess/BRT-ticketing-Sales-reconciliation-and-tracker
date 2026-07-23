@@ -10,7 +10,7 @@ const isProd = process.env.NODE_ENV === "production";
 
 // 1. Resolve connection strings
 let datasource = isProd
-  ? (process.env.DATABASE_URL ?? process.env.LOCAL_DATABASE_URL)
+  ? (process.env.DATABASE_URL ?? process.env.DIRECT_DATABASE_URL??process.env.LOCAL_DATABASE_URL)
   : (process.env.LOCAL_DATABASE_URL ?? process.env.DATABASE_URL);
 
 let replicaDatasource = isProd
@@ -27,7 +27,7 @@ if (sslConfig) {
 const primaryPool = new Pool({
   connectionString: datasource,
   ssl: sslConfig,
-  max: isProd ? 1 : 10,
+  max: isProd ? 3 : 10,
   connectionTimeoutMillis: 15000,
   idleTimeoutMillis: 30000,
 });
@@ -35,7 +35,7 @@ const primaryPool = new Pool({
 const replicaPool = new Pool({
   connectionString: replicaDatasource,
   ssl: sslConfig,
-  max: isProd ? 1 : 10,
+  max: isProd ? 3 : 10,
   connectionTimeoutMillis: 15000,
   idleTimeoutMillis: 30000,
 });
