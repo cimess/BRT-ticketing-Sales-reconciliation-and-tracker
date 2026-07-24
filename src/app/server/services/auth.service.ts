@@ -2,6 +2,7 @@ import bcrypt from "bcrypt"
 // import { sendVerificationEmail } from "@/workers/emailWorker";
 import {prisma} from "@/lib/prisma"
 import { ApiError } from "@/lib/ApiError";
+import crypto from "crypto"
 
 
 
@@ -19,6 +20,12 @@ interface RegisterBody {
     address?: string;
     companyCode: string;
     companyName?: string;
+}
+function safeCompare(a: string, b: string): boolean {
+    if (typeof a !== 'string' || typeof b !== 'string') return false;
+    const aHash = crypto.createHash('sha256').update(a).digest();
+    const bHash = crypto.createHash('sha256').update(b).digest();
+    return crypto.timingSafeEqual(aHash, bHash);
 }
 
 
@@ -38,7 +45,7 @@ export default async function register(body: RegisterBody) {
         companyCode,
         companyName 
     } = body;
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  const otp = crypto.randomInt(100000, 1000000).toString();
     const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
     const user = await prisma.$transaction(async (tx) => {
         let regToken = null;
@@ -47,7 +54,7 @@ export default async function register(body: RegisterBody) {
             throw new ApiError(400,"Invalid Request");
         }
         // Admin Registration using global token
-        if (token === process.env.REGISTER_TOKEN && role === "ADMIN") {
+        if (safeCompare(token, process.env.REGISTER_TOKEN || "") && role === "ADMIN") {
             // Find or create company
             let company = await tx.company.findFirst({
                 where: { code: companyCode.toUpperCase() }
@@ -174,7 +181,7 @@ export async function verifyRegToken(body:{token:string,companyCode:string}) {
         throw new ApiError(400,"Invalid Request");
     }
     // 💡 ADMIN global token verification: Bypasses check for pre-existing company
-    if (token === process.env.REGISTER_TOKEN) {
+    if (safeCompare(token, process.env.REGISTER_TOKEN || "")) {
         return {
             success: true,
             message: "Token verified",

@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
+import crypto from "crypto"
 
 
 export function formatMoney(amount: number, currency: 'NGN' | 'USD' = 'NGN') {
@@ -17,11 +18,11 @@ export function todayISO() {
 }
 
 export function makeId(prefix: string) {
-  return `${prefix}_${Math.random().toString(16).slice(2, 10)}${Math.random().toString(16).slice(2, 10)}`;
+  return `${prefix}_${crypto.randomBytes(8).toString('hex')}`;
 }
 
 export function hashLike(prefix = 'h') {
-  return `${prefix}_${Math.random().toString(16).slice(2)}${Math.random().toString(16).slice(2)}`.slice(0, 18);
+  return `${prefix}_${crypto.randomBytes(8).toString('hex')}`.slice(0, 18);
 }
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
