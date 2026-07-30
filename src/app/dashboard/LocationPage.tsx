@@ -8,6 +8,8 @@ import { Drawer } from '@/components/Drawer';
 import { toast } from 'react-toastify';
 import api from '../lib/axios';
 import axios from 'axios';
+import CustomCalendar from '@/components/Calender';
+
 
 interface Location {
   id: string;
@@ -391,18 +393,27 @@ export default function LocationsPage({ role = 'TICKETER' }: { role?: string }) 
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            {activeTab === 'ROSTER' && (
+                       {activeTab === 'ROSTER' && (
               <div className='space-y-2'>
-              <p className='text-xs font-bold text-slate-400'>Filter By Date </p>
-              <input
-                type="date"
-                value={filterDate}
-                onChange={(e) => setFilterDate(e.target.value)}
-               
-                className="bg-white/3 border border-white/10 text-xs text-white rounded-xl px-3 py-2 focus:outline-none"
-              />
+                <p className='text-xs font-bold text-slate-400'>Filter By Date </p>
+                <CustomCalendar
+                  mode="single"
+                  value={filterDate ? new Date(filterDate) : null}
+                  onChange={(date) => {
+                    if (date) {
+                      const yyyy = date.getFullYear();
+                      const mm = String(date.getMonth() + 1).padStart(2, '0');
+                      const dd = String(date.getDate()).padStart(2, '0');
+                      setFilterDate(`${yyyy}-${mm}-${dd}`);
+                    } else {
+                      setFilterDate('');
+                    }
+                  }}
+                  placeholder="Filter by date"
+                />
               </div>
             )}
+
 
             {activeTab === 'ROSTER' && userRole === 'TICKETER' && (
               <div className="inline-flex rounded-full border border-white/10 bg-white/3 p-1">
@@ -603,16 +614,27 @@ export default function LocationsPage({ role = 'TICKETER' }: { role?: string }) 
         onClose={() => setOpenCreateDrawer(false)}
       >
         <div className="space-y-4">
-          <div>
+                   <div>
             <label className="text-slate-500 text-[10px] font-bold uppercase tracking-widest block mb-1">Target Date</label>
-            <input
-              type="date"
-              value={selectedAssignDate}
-              onChange={(e) => setSelectedAssignDate(e.target.value)}
-              min={new Date().toISOString().split('T')[0]} // Front-end past-date lock
-              className="w-full rounded-xl bg-white/3 border border-white/10 px-4 py-2.5 text-sm text-white focus:outline-none"
+            <CustomCalendar
+              mode="single"
+              value={selectedAssignDate ? new Date(selectedAssignDate) : null}
+              onChange={(date) => {
+                if (date) {
+                  const yyyy = date.getFullYear();
+                  const mm = String(date.getMonth() + 1).padStart(2, '0');
+                  const dd = String(date.getDate()).padStart(2, '0');
+                  setSelectedAssignDate(`${yyyy}-${mm}-${dd}`);
+                } else {
+                  setSelectedAssignDate('');
+                }
+              }}
+              minDate={new Date()} // Past-date lock
+              placeholder="Select target date"
+              className="w-full"
             />
           </div>
+
 
           <div className="space-y-3">
             <div className="flex justify-between items-center">
