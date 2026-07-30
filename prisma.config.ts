@@ -1,7 +1,6 @@
 // prisma.config.ts
-import { defineConfig } from "prisma/config";
 
-export default defineConfig({
+const config = {
   schema: "prisma/schema.prisma",
   migrations: {
     path: "prisma/migrations",
@@ -11,4 +10,6 @@ export default defineConfig({
       ? (process.env.DIRECT_DATABASE_URL ?? process.env.DATABASE_URL)
       : process.env.LOCAL_DATABASE_URL,
   },
-});
+};
+
+export default config;
