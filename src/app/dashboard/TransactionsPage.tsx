@@ -29,10 +29,14 @@ interface SsePayload {
 
 interface SseEvent {
   type: string;
-  data: SsePayload;
+  data: unknown;
 }
 
-export default function TransactionsPage() {
+interface TransactionsPageProps {
+ role?: string;
+}
+
+export default function TransactionsPage({ role }: TransactionsPageProps={}) {
   const [q, setQ] = useState('');
   const [status, setStatus] = useState<'ALL' | 'CREDIT' | 'DEBIT'>('ALL');
   const [transactions, setTransactions] = useState<TransactionEntry[]>([]);
@@ -153,7 +157,8 @@ function useTransactionsSse(
   setFailures: React.Dispatch<React.SetStateAction<number>>
 ) {
   useEffect(() => {
-    const handleEvent = ({ type, data }: SseEvent) => {
+    const handleEvent = ({ type, data: rawData  }: SseEvent) => {
+       const data = rawData as SsePayload; // Safe typecast
       switch (type) {
         case 'TOPUP_CREATED': {
           setTransactions((prev) => {

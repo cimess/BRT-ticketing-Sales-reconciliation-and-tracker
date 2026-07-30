@@ -18,6 +18,7 @@ export interface DashboardMetrics {
   expectedRemittance?: number;
   totalRemitted?: number;
   supervisorCash?: number;
+  posSessionId?: string | null;
   companyRemitted?: number;
   circulatingFloat?: number;
   topUpBankBalance?: number;
