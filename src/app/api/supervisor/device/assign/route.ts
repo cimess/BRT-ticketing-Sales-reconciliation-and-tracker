@@ -185,7 +185,7 @@ export async function PUT(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     const { company_id } = session.user;
-    const { sessionId, reason } = await req.json();
+    const { sessionId, reason,maintenance } = await req.json();
 
     if (!sessionId) {
       return NextResponse.json({ error: "Session ID is required" }, { status: 400 });
@@ -256,7 +256,7 @@ export async function PUT(req: Request) {
       // d. Release device back to INACTIVE status
       await tx.pos_devices.update({
         where: { id: posSession.device_id, company_id },
-        data: { status: "INACTIVE" },
+        data: { status: maintenance? "MAINTENANCE" :"INACTIVE" },
       });
 
       // audit log for supervisor action

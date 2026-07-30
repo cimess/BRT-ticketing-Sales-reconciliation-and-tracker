@@ -144,7 +144,9 @@ export default function DashboardLayout({
   return (
     <SseProvider role={session?.user?.role || "ADMIN"}>
       <DashboardProvider>
-        <div className="flex h-screen overflow-hidden bg-linear-to-b from-black via-slate-950 to-black text-white">
+        <div className="flex h-screen overflow-hidden bg-linear-to-b from-zinc-950 via-zinc-900 to-zinc-950
+
+ text-white">
           <div className={`fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden pointer-events-none opacity-0`} />
 
           <div

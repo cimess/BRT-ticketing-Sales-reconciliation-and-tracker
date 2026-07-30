@@ -392,12 +392,16 @@ export default function LocationsPage({ role = 'TICKETER' }: { role?: string }) 
 
           <div className="flex flex-wrap items-center gap-3">
             {activeTab === 'ROSTER' && (
+              <div className='space-y-2'>
+              <p className='text-xs font-bold text-slate-400'>Filter By Date </p>
               <input
                 type="date"
                 value={filterDate}
                 onChange={(e) => setFilterDate(e.target.value)}
+               
                 className="bg-white/3 border border-white/10 text-xs text-white rounded-xl px-3 py-2 focus:outline-none"
               />
+              </div>
             )}
 
             {activeTab === 'ROSTER' && userRole === 'TICKETER' && (

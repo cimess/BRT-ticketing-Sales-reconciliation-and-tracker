@@ -89,6 +89,9 @@ export default function PosDevicesPage({
   const [selectedSession, setSelectedSession] = useState<PosDeviceSession | null>(null);
   const [sessionDetails, setSessionDetails] = useState<PosDeviceSession | null>(null);
 
+  // State to track which device is currently being returned from maintenance
+  const [resolvingDeviceId, setResolvingDeviceId] = useState<string | null>(null);
+
   // Form Fields
   const [newDeviceName, setNewDeviceName] = useState('');
   const [newDeviceSerial, setNewDeviceSerial] = useState('');
@@ -100,6 +103,9 @@ export default function PosDevicesPage({
   const [isAssigning, setIsAssigning] = useState(false);
   const [isReturning, setIsReturning] = useState(false);
   const [isTopuping, setIsTopuping] = useState(false);
+  const [maintenance,setMaintenance] = useState(false);
+  // New state for maintenance reason
+  
 
 
   const { refreshMetrics } = useDashboard();
@@ -223,6 +229,7 @@ export default function PosDevicesPage({
       const res = await api.put(endpoint, {
         sessionId: activeSession.id,
         reason: returnReason,
+        maintenance,
       });
       if (res.data.success) {
         toast.success(res.data.message || "Device returned successfully");
@@ -238,6 +245,32 @@ export default function PosDevicesPage({
       }
     } finally {
       setIsReturning(false); // Reset loading state
+    }
+  };
+
+   // API Call: Return POS device from maintenance to inactive
+  const handleReturnFromMaintenance = async (device: PosDevice) => {
+    if (!device) return;
+    
+    // Prevent concurrent/double clicks
+    if (resolvingDeviceId) return; 
+    setResolvingDeviceId(device.id);
+    try {
+      const res = await api.put('/supervisor/device/maintenance', {
+        deviceId: device.id,
+      });
+      if (res.data.success) {
+        toast.success(res.data.message || "Device returned to active service");
+        await onRefresh();
+      }
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        toast.error(err?.response?.data?.error || "Failed to return device from maintenance");
+      } else {
+        toast.error("Failed to return device from maintenance");
+      }
+    } finally {
+      setResolvingDeviceId(null);
     }
   };
 
@@ -266,12 +299,12 @@ export default function PosDevicesPage({
       }
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        toast.error(err?.response?.data?.error || "Failed to topup POS");
+        toast.error(err?.response?.data?.error||err.response?.data?.message || "Failed to topup POS");
       } else {
         toast.error("Failed to topup POS");
       }
     } finally {
-      setIsTopuping(false); // Reset loading state
+      setIsTopuping(false); // Reset loading state  
     }
   };
 
@@ -393,7 +426,7 @@ export default function PosDevicesPage({
       header: 'created_at',
       cell: (r) => <span className="text-slate-500 text-xs">{r?.created_at ? new Date(r.created_at).toLocaleDateString() : '—'}</span>
     },
-    {
+       {
       id: 'actions',
       header: 'actions',
       align: 'right',
@@ -421,11 +454,17 @@ export default function PosDevicesPage({
               )
             )}
             {r?.status === 'MAINTENANCE' && (
-              <span className="text-slate-500 text-xs italic py-1.5">Maintenance</span>
+              <button
+                onClick={() => handleReturnFromMaintenance(r)}
+                disabled={resolvingDeviceId === r.id}
+                className="px-3.5 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 rounded-xl transition-colors cursor-pointer font-semibold"
+              >
+                {resolvingDeviceId === r.id ? "Resolving..." : "Mark Available"}
+              </button>
             )}
           </div>
         ) : role === 'ADMIN' ? (
-          <div className="flex gap-2 justify-end">
+                    <div className="flex gap-2 justify-end">
             {r?.status === 'ACTIVE' && (
               <button
                 onClick={() => handleOpenReturn(r)}
@@ -438,14 +477,22 @@ export default function PosDevicesPage({
               <span className="text-slate-500 text-xs italic py-1.5">Available</span>
             )}
             {r?.status === 'MAINTENANCE' && (
-              <span className="text-slate-500 text-xs italic py-1.5">Maintenance</span>
+              <button
+                onClick={() => handleReturnFromMaintenance(r)}
+                disabled={resolvingDeviceId === r.id}
+                className="px-3.5 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 rounded-xl transition-colors cursor-pointer font-semibold"
+              >
+                {resolvingDeviceId === r.id ? "Resolving..." : "Mark Available"}
+              </button>
             )}
           </div>
+
         ) : (
           <span className="text-slate-500 text-xs italic py-1.5">View Only</span>
         )
       )
     }
+
   ];
 
   if (isLoading) {
@@ -749,12 +796,12 @@ export default function PosDevicesPage({
                         <h4 className="text-sm font-bold text-white">{item.name}</h4>
                         <p className="text-[10px] text-slate-500 mt-0.5 font-mono">{item.serial_number}</p>
                       </div>
-                      <Badge variant={item.status === 'ACTIVE' ? 'success' : item.status === 'INACTIVE' ? 'neutral' : 'danger'}>
+                      <Badge variant={item.status === 'ACTIVE' ? 'success' : item.status === 'INACTIVE' ? 'neutral' : item.status === 'MAINTENANCE' ? 'warning' : 'danger'}>
                         {item.status}
                       </Badge>
                     </div>
 
-                    <div className="flex justify-end gap-2 pt-2 border-t border-white/5 mt-auto">
+                                   <div className="flex justify-end gap-2 pt-2 border-t border-white/5 mt-auto">
                       {item.status === 'INACTIVE' && role === 'SUPERVISOR' && (
                         <button
                           onClick={() => handleOpenAssign(item)}
@@ -763,25 +810,30 @@ export default function PosDevicesPage({
                           Assign
                         </button>
                       )}
-                      {item.status === 'ACTIVE' && (
-                        (role !== 'SUPERVISOR' || sessions.some(s => s.deviceId === item.id && s.status === 'ACTIVE')) ? (
-                          <button
-                            onClick={() => handleOpenReturn(item)}
-                            className="px-3.5 py-1.5 text-xs font-bold text-white bg-amber-600 hover:bg-amber-500 rounded-xl transition-colors cursor-pointer"
-                          >
-                            Return
-                          </button>
-                        ) : (
-                          <span className="text-slate-500 text-xs italic py-1.5">Assigned (Other)</span>
-                        )
-                      )}
-                      {item.status === 'INACTIVE' && role === 'ADMIN' && (
+                      
+                                     {item.status === 'INACTIVE' && role === 'ADMIN' && (
                         <span className="text-slate-500 text-xs italic py-1.5">Available</span>
                       )}
-                      {item.status === 'MAINTENANCE' && (
-                        <span className="text-slate-500 text-xs italic py-1.5">Maintenance</span>
+                      {item.status === 'ACTIVE' && (role === 'ADMIN' || (role === 'SUPERVISOR' && sessions.some(s => s.deviceId === item.id && s.status === 'ACTIVE'))) && (
+                        <button
+                          onClick={() => handleOpenReturn(item)}
+                          className="px-3.5 py-1.5 text-xs font-bold text-white bg-amber-600 hover:bg-amber-500 rounded-xl transition-colors cursor-pointer"
+                        >
+                          Return
+                        </button>
+                      )}
+                      {item.status === 'MAINTENANCE' && (role === 'SUPERVISOR' || role === 'ADMIN') && (
+                        <button
+                          onClick={() => handleReturnFromMaintenance(item)}
+                          disabled={resolvingDeviceId === item.id}
+                          className="px-3.5 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 rounded-xl transition-colors cursor-pointer font-semibold"
+                        >
+                          {resolvingDeviceId === item.id ? "Resolving..." : "Mark Available"}
+                        </button>
                       )}
                     </div>
+
+
                   </div>
                 ))}
             </div>
@@ -1047,6 +1099,12 @@ export default function PosDevicesPage({
               <p className="text-xs text-amber-200 leading-relaxed">
                 The terminal&apos;s final float balance will be locked into this session&apos;s history and carried over to the next user upon assignment.
               </p>
+            </div>
+            <div className="space-y-2 flex gap-2">
+              <input type="checkbox" checked={maintenance} onChange={(e) => setMaintenance(e.target.checked)} />
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-400">{maintenance ? "Return for Maintenance" : "Return to User"}</label>
+
+
             </div>
 
             <div className="pt-4 flex gap-3">

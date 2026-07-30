@@ -1,4 +1,5 @@
-import React from 'react';
+import { ChevronDown } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
 
 export function PageScaffold({
   title,
@@ -68,16 +69,65 @@ export function Select<T extends string>({
   onChange,
   options,
 }: SelectProps<T>) {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Find the label of the currently selected option
+  const selectedLabel = options.find((o) => o.value === value)?.label || "";
+
+  // Close the dropdown list if the user clicks outside of the element
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value as T)}
-    >
-      {options.map((o) => (
-        <option key={o.value} value={o.value}>
-          {o.label}
-        </option>
-      ))}
-    </select>
+    <div ref={dropdownRef} className="relative w-full lg:w-48 text-left">
+      {/* Clickable Select Input Trigger */}
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between rounded-xl bg-white/[0.03] border border-white/10 px-4 py-2.5 text-sm text-white focus:outline-hidden focus:border-white/20 transition-all cursor-pointer"
+      >
+        <span className="truncate">{selectedLabel}</span>
+        <ChevronDown 
+          className={`w-4 h-4 text-slate-500 transition-transform duration-200 ml-2 shrink-0 ${
+            isOpen ? "rotate-180" : ""
+          }`} 
+        />
+      </button>
+
+      {/* Styled Dropdown List & Active States */}
+      {isOpen && (
+        <ul className="absolute z-50 w-full mt-2 p-1.5 bg-zinc-950 border border-white/10 rounded-xl shadow-2xl max-h-60 overflow-y-auto focus:outline-hidden">
+          {options.map((option) => {
+            const isSelected = option.value === value;
+            return (
+              <li
+                key={option.value}
+                onClick={() => {
+                  onChange(option.value);
+                  setIsOpen(false);
+                }}
+                className={`
+                  px-3.5 py-2 text-sm rounded-lg cursor-pointer transition-colors truncate
+                  ${isSelected
+                    ? "bg-amber-600 text-white font-semibold" // Active/selected option background & text
+                    : "text-slate-300 hover:bg-white/5 hover:text-white" // Hover background & text
+                  }
+                `}
+              >
+                {option.label}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
   );
 }
