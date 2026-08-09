@@ -2,7 +2,6 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { readReplicas } from "@prisma/extension-read-replicas";
 import pg from "pg";
-
 import sslConfig from "./database-ssl";
 
 const { Pool } = pg;

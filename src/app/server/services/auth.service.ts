@@ -55,6 +55,7 @@ export default async function register(body: RegisterBody) {
         }
         // Admin Registration using global token
         if (safeCompare(token, process.env.REGISTER_TOKEN || "") && role === "ADMIN") {
+           
             // Find or create company
             let company = await tx.company.findFirst({
                 where: { code: companyCode.toUpperCase() }

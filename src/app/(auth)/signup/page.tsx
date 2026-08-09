@@ -376,7 +376,7 @@ export default function Register() {
               text-white px-5 py-3.5 outline-none focus:border-white/20 transition-all font-medium"
                                     value={token}
                                     onChange={(e) => {
-                                        const val = e.target.value.trim().toUpperCase();
+                                        const val = e.target.value.trim();
                                         setToken(val);
                                         // Clear message/role immediately if token is deleted or reduced
                                         if (val.length < 16) {
