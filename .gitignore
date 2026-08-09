@@ -48,6 +48,8 @@ next-env.d.ts
 *.db
 *.sqlite
 *.sqlite3
+# Explicitly allow Prisma migration SQL files
+!prisma/migrations/**/migration.sql
 # DuckDB persistent caches & temp files
 *.duckdb
 *.duckdb.tmp
